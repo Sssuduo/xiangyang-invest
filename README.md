@@ -8,10 +8,37 @@
 
 - Python 3.10+
 - Node.js 18+
+- Git（用于版本管理）
 
 ### 一键启动（Windows）
 
 双击项目根目录下的 `run.bat` 文件，自动完成依赖安装和服务启动。
+
+### 从 Git 克隆（换到另一台电脑）
+
+```bash
+# 1. 克隆仓库
+git clone <你的远程仓库地址>
+cd 项目1
+
+# 2. 安装后端依赖并启动
+cd backend
+pip install -r requirements.txt
+python app.py
+
+# 3. 新开终端，安装前端依赖并启动
+cd frontend
+npm install --registry https://registry.npmmirror.com
+npm run dev
+```
+
+首次运行 `python app.py` 会自动创建 SQLite 数据库和初始数据（管理员账号 + 省份数据）。
+
+> 如需推送到远程仓库，先在 GitHub/Gitee 创建空仓库，然后：
+> ```bash
+> git remote add origin https://github.com/你的用户名/仓库名.git
+> git push -u origin master
+> ```
 
 ### 手动启动
 

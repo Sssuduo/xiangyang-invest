@@ -1,0 +1,97 @@
+/* ============================================================
+   襄阳农高区招商服务网站 — 全局样式
+   ============================================================ */
+
+/* CSS 变量 */
+:root {
+  --primary-color: #1a3a5c;
+  --primary-light: #2a5a8c;
+  --accent-color: #c9a84c;
+  --accent-light: #e0c878;
+  --text-primary: #2c3e50;
+  --text-secondary: #5a6c7d;
+  --bg-light: #f5f6f8;
+  --bg-white: #ffffff;
+  --border-color: #e0e4e8;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.16);
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+}
+
+/* 全局重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  font-size: 16px;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-decoration: none;
+  color: var(--primary-color);
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
+/* Element Plus 主题覆盖 */
+:root {
+  --el-color-primary: var(--primary-color);
+  --el-color-primary-light-3: var(--primary-light);
+}
+
+/* 通用页面容器 */
+.page-container {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* 全屏容器（轮播用） */
+.fullscreen-container {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 居中 Flex 容器 */
+.center-flex {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 淡入动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.5s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

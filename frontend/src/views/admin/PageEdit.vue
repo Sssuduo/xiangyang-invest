@@ -223,12 +223,12 @@ function initQuill() {
     placeholder: '请输入文字内容...'
   })
 
-  if (form.value.rich_text_content) {
-    quillEditor.root.innerHTML = form.value.rich_text_content
+  if (form.rich_text_content) {
+    quillEditor.root.innerHTML = form.rich_text_content
   }
 
   quillEditor.on('text-change', () => {
-    form.value.rich_text_content = quillEditor.root.innerHTML
+    form.rich_text_content = quillEditor.root.innerHTML
   })
 }
 
@@ -243,7 +243,7 @@ async function onFileSelected(e) {
     const res = await uploadImage(file)
     console.log('上传响应:', res)
     if (res.code === 0) {
-      form.value.background_image = res.data.url
+      form.background_image = res.data.url
       ElMessage.success('上传成功')
     } else {
       ElMessage.error({ message: res.message || '上传失败', duration: 8000 })

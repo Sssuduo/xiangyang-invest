@@ -29,24 +29,30 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240">
+          <el-table-column label="操作" min-width="260">
             <template #default="{ row }">
-              <el-button size="small" @click="$router.push(`/admin/pages/${row.id}/edit`)">
-                编辑
-              </el-button>
-              <el-button
-                v-if="row.sort_order > 0"
-                size="small"
-                @click="moveUp(row)"
-              >
-                上移
-              </el-button>
-              <el-button size="small" @click="moveDown(row)">
-                下移
-              </el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">
-                删除
-              </el-button>
+              <div class="action-buttons">
+                <el-button size="small" @click="$router.push(`/admin/pages/${row.id}/edit`)">
+                  编辑
+                </el-button>
+                <el-button
+                  size="small"
+                  :disabled="row.sort_order <= 0"
+                  @click="moveUp(row)"
+                >
+                  上移
+                </el-button>
+                <el-button
+                  size="small"
+                  :disabled="row.sort_order >= pages.length - 1"
+                  @click="moveDown(row)"
+                >
+                  下移
+                </el-button>
+                <el-button size="small" type="danger" @click="handleDelete(row)">
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -134,5 +140,6 @@ onMounted(loadPages)
 .admin-content { padding: 32px; max-width: 1200px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; }
 h2 { color: var(--primary-color); }
+.action-buttons { display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; }
 .empty-state { text-align: center; padding: 60px 0; color: var(--text-secondary); }
 </style>

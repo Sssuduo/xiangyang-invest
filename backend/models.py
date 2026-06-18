@@ -40,6 +40,7 @@ class HomepageConfig(db.Model):
     subtitle_text = db.Column(db.String(512), default='招商服务一站式平台')
     button1_text = db.Column(db.String(64), default='襄阳农高区介绍')
     button2_text = db.Column(db.String(64), default='招商工具箱')
+    carousel_interval = db.Column(db.Integer, default=8)  # 轮播自动切换间隔（秒），默认8秒
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
@@ -49,7 +50,8 @@ class HomepageConfig(db.Model):
             'title_text': self.title_text or '',
             'subtitle_text': self.subtitle_text or '',
             'button1_text': self.button1_text or '襄阳农高区介绍',
-            'button2_text': self.button2_text or '招商工具箱'
+            'button2_text': self.button2_text or '招商工具箱',
+            'carousel_interval': self.carousel_interval if self.carousel_interval is not None else 8
         }
 
 

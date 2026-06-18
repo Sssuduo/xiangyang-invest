@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 2; cd \"h:\\\\项目1\\\\frontend\"; Start-Process node -ArgumentList \"node_modules/vite/bin/vite.js\" -WindowStyle Minimized; Start-Sleep 4; try { $r = Invoke-WebRequest -Uri \"http://localhost:5173/\" -UseBasicParsing -TimeoutSec 3; Write-Output \"Frontend restarted OK\" } catch { Write-Output \"Frontend FAILED: $_\" })"
+    ]
+  }
+}

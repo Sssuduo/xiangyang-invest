@@ -10,8 +10,8 @@
       </el-radio-group>
     </div>
 
-    <!-- 悬浮信息卡片 -->
-    <teleport to="body">
+    <!-- 悬浮信息卡片 — 仅在组件挂载且有悬停数据时显示 -->
+    <teleport to="body" v-if="isMounted">
       <ProvinceCard
         v-if="hoveredProvince"
         :province="hoveredProvince"
@@ -35,6 +35,7 @@ const chartRef = ref(null)
 const currentScope = ref(props.mapScope || 'china')
 const hoveredProvince = ref(null)
 const cardPosition = ref({ x: 0, y: 0 })
+const isMounted = ref(true)
 let chart = null
 let geoJsonData = null
 let provinceData = []
@@ -50,6 +51,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  isMounted.value = false
+  hoveredProvince.value = null
   window.removeEventListener('resize', handleResize)
   chart?.dispose()
 })

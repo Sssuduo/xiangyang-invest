@@ -1,10 +1,10 @@
 <template>
   <div
     class="image-text-slide"
-    :style="{ backgroundImage: page.background_image ? `url(${page.background_image})` : 'linear-gradient(135deg, #1a3a5c, #2a5a8c)' }"
+    :style="bgStyle"
   >
     <div
-      v-if="page.rich_text_content"
+      v-if="hasContent"
       class="image-text-overlay"
       :style="overlayStyle"
       v-html="page.rich_text_content"
@@ -19,6 +19,30 @@ const props = defineProps({
   page: { type: Object, required: true }
 })
 
+// 只在有实际文字内容时才显示叠加层
+const hasContent = computed(() => {
+  const html = (props.page.rich_text_content || '').trim()
+  if (!html) return false
+  // 过滤掉空标签（如 <p><br></p>）
+  const stripped = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').trim()
+  return stripped.length > 0
+})
+
+// 背景图自适应：无图用渐变占位
+const bgStyle = computed(() => {
+  if (props.page.background_image) {
+    return {
+      backgroundImage: `url(${props.page.background_image})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat'
+    }
+  }
+  return {
+    background: 'linear-gradient(135deg, #1a3a5c 0%, #2a5a8c 50%, #0d2137 100%)'
+  }
+})
+
 const overlayStyle = computed(() => ({
   left: `${props.page.text_position_x || 10}%`,
   top: `${props.page.text_position_y || 10}%`,
@@ -31,8 +55,6 @@ const overlayStyle = computed(() => ({
 .image-text-slide {
   width: 100%;
   height: 100%;
-  background-size: cover;
-  background-position: center;
   position: relative;
 }
 
@@ -53,13 +75,6 @@ const overlayStyle = computed(() => ({
   margin-bottom: 16px;
   color: #fff;
 }
-
-.image-text-overlay :deep(p) {
-  margin-bottom: 12px;
-}
-
-.image-text-overlay :deep(img) {
-  max-width: 100%;
-  border-radius: 8px;
-}
+.image-text-overlay :deep(p) { margin-bottom: 12px; }
+.image-text-overlay :deep(img) { max-width: 100%; border-radius: 8px; }
 </style>

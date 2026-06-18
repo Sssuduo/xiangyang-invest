@@ -45,6 +45,11 @@
             <el-input v-model="form.button2_text" placeholder="如：招商工具箱" />
           </el-form-item>
 
+          <el-form-item label="轮播速度">
+            <el-input-number v-model="form.carousel_interval" :min="1" :max="30" :step="1" />
+            <span class="unit-hint">秒（自动轮播的切换间隔，默认8秒）</span>
+          </el-form-item>
+
           <el-divider content-position="left">实时预览</el-divider>
           <div class="homepage-preview" :style="previewStyle">
             <div class="preview-overlay">
@@ -80,7 +85,8 @@ const form = ref({
   title_text: '襄阳农高区',
   subtitle_text: '招商服务一站式平台',
   button1_text: '襄阳农高区介绍',
-  button2_text: '招商工具箱'
+  button2_text: '招商工具箱',
+  carousel_interval: 8
 })
 
 const saving = ref(false)
@@ -158,6 +164,7 @@ h2 { color: var(--primary-color); }
 .bg-upload { display: flex; align-items: center; width: 100%; }
 .upload-label { display: inline-flex; cursor: pointer; }
 .upload-label input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0,0,0,0); }
+.unit-hint { font-size: 12px; color: #909399; margin-left: 8px; }
 .bg-preview { margin-top: 12px; }
 .bg-preview img { max-width: 400px; max-height: 200px; border-radius: 8px; border: 1px solid var(--border-color); }
 

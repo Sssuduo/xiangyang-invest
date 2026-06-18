@@ -34,6 +34,15 @@ def init_database(app):
     # 创建所有表
     db.create_all()
 
+    # 为已有数据库添加新字段（幂等操作，不丢失数据）
+    try:
+        db.session.execute(db.text(
+            "ALTER TABLE homepage_config ADD COLUMN carousel_interval INTEGER DEFAULT 8"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()  # 列已存在则忽略
+
     # 创建默认管理员账号
     if not AdminUser.query.filter_by(username='admin').first():
         admin = AdminUser(

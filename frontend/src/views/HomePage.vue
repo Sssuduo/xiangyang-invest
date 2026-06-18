@@ -40,13 +40,19 @@ const config = ref({
   button2_text: '招商工具箱'
 })
 
-const bgStyle = computed(() => ({
-  backgroundImage: config.value.background_image
-    ? `url(${config.value.background_image})`
-    : 'linear-gradient(135deg, #1a3a5c 0%, #2a5a8c 50%, #1a3a5c 100%)',
-  backgroundSize: 'cover',
-  backgroundPosition: 'center'
-}))
+const bgStyle = computed(() => {
+  if (config.value.background_image) {
+    return {
+      backgroundImage: `url(${config.value.background_image})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat'
+    }
+  }
+  return {
+    background: 'linear-gradient(135deg, #1a3a5c 0%, #2a5a8c 50%, #0d2137 100%)'
+  }
+})
 
 onMounted(async () => {
   try {

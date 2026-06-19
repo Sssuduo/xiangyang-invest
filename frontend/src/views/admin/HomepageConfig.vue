@@ -38,27 +38,12 @@
           <el-form-item label="副标题">
             <el-input v-model="form.subtitle_text" placeholder="如：招商服务一站式平台" />
           </el-form-item>
-          <el-form-item label="按钮1文字">
-            <el-input v-model="form.button1_text" placeholder="如：襄阳农高区介绍" />
-          </el-form-item>
-          <el-form-item label="按钮2文字">
-            <el-input v-model="form.button2_text" placeholder="如：招商工具箱" />
-          </el-form-item>
-
-          <el-form-item label="轮播速度">
-            <el-input-number v-model="form.carousel_interval" :min="1" :max="30" :step="1" />
-            <span class="unit-hint">秒（自动轮播的切换间隔，默认8秒）</span>
-          </el-form-item>
 
           <el-divider content-position="left">实时预览</el-divider>
           <div class="homepage-preview" :style="previewStyle">
             <div class="preview-overlay">
               <h1 class="preview-title">{{ form.title_text || '襄阳农高区' }}</h1>
               <p class="preview-subtitle">{{ form.subtitle_text || '招商服务一站式平台' }}</p>
-              <div class="preview-buttons">
-                <span class="preview-btn">{{ form.button1_text || '襄阳农高区介绍' }}</span>
-                <span class="preview-btn">{{ form.button2_text || '招商工具箱' }}</span>
-              </div>
             </div>
           </div>
 
@@ -83,10 +68,7 @@ import { uploadImage } from '@/api/upload'
 const form = ref({
   background_image: '',
   title_text: '襄阳农高区',
-  subtitle_text: '招商服务一站式平台',
-  button1_text: '襄阳农高区介绍',
-  button2_text: '招商工具箱',
-  carousel_interval: 8
+  subtitle_text: '招商服务一站式平台'
 })
 
 const saving = ref(false)
@@ -186,13 +168,17 @@ h2 { color: var(--primary-color); }
   color: #fff;
 }
 .preview-title { font-size: 32px; font-weight: 700; letter-spacing: 4px; margin-bottom: 8px; }
-.preview-subtitle { font-size: 14px; opacity: 0.8; margin-bottom: 32px; }
-.preview-buttons { display: flex; gap: 20px; }
-.preview-btn {
-  padding: 10px 28px;
-  border: 2px solid rgba(255,255,255,0.6);
+.preview-subtitle { font-size: 14px; opacity: 0.8; }
+
+.layout-note {
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
   border-radius: 8px;
-  font-size: 14px;
-  background: rgba(255,255,255,0.1);
+  padding: 14px 18px;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
 }
+.layout-note p { margin: 0; }
+.layout-note strong { color: #303133; }
 </style>

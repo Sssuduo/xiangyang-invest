@@ -4,7 +4,7 @@
     :style="bgStyle"
   >
     <div
-      v-if="hasContent"
+      v-if="hasContent && !dimmed"
       class="image-text-overlay"
       :style="overlayStyle"
       v-html="page.rich_text_content"
@@ -16,7 +16,8 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  page: { type: Object, required: true }
+  page: { type: Object, required: true },
+  dimmed: { type: Boolean, default: false }   // 非激活卡片时隐藏文字叠加层
 })
 
 // 只在有实际文字内容时才显示叠加层

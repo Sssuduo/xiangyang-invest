@@ -26,6 +26,11 @@
       <span>轮播页管理</span>
     </el-menu-item>
 
+    <el-menu-item index="/admin/carousel">
+      <el-icon><Setting /></el-icon>
+      <span>轮播设置</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/provinces">
       <el-icon><Location /></el-icon>
       <span>省份信息</span>
@@ -34,6 +39,11 @@
     <el-menu-item index="/admin/models">
       <el-icon><Cpu /></el-icon>
       <span>大模型管理</span>
+    </el-menu-item>
+
+    <el-menu-item index="/admin/contact">
+      <el-icon><User /></el-icon>
+      <span>联系我们</span>
     </el-menu-item>
 
     <el-menu-item index="/admin/prompts">

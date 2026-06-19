@@ -38,9 +38,13 @@ class HomepageConfig(db.Model):
     background_image = db.Column(db.String(512), default='')
     title_text = db.Column(db.String(255), default='襄阳农高区')
     subtitle_text = db.Column(db.String(512), default='招商服务一站式平台')
-    button1_text = db.Column(db.String(64), default='襄阳农高区介绍')
-    button2_text = db.Column(db.String(64), default='招商工具箱')
     carousel_interval = db.Column(db.Integer, default=8)  # 轮播自动切换间隔（秒），默认8秒
+    carousel_display_mode = db.Column(db.String(20), default='coverflow')  # 'coverflow' | 'fullscreen'
+    carousel_width = db.Column(db.Integer, default=85)    # 轮播宽度（视口百分比），默认85%
+    carousel_height = db.Column(db.Integer, default=80)   # 轮播高度（视口百分比），默认80%
+    presentation_interval = db.Column(db.Integer, default=5)  # 演示模式自动切换间隔（秒），默认5秒
+    carousel_autoplay = db.Column(db.Boolean, default=True)  # 轮播模式是否自动播放，默认开启
+    presentation_autoplay = db.Column(db.Boolean, default=True)  # 演示模式是否自动播放，默认开启
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
@@ -49,9 +53,13 @@ class HomepageConfig(db.Model):
             'background_image': self.background_image or '',
             'title_text': self.title_text or '',
             'subtitle_text': self.subtitle_text or '',
-            'button1_text': self.button1_text or '襄阳农高区介绍',
-            'button2_text': self.button2_text or '招商工具箱',
-            'carousel_interval': self.carousel_interval if self.carousel_interval is not None else 8
+            'carousel_interval': self.carousel_interval if self.carousel_interval is not None else 8,
+            'carousel_display_mode': self.carousel_display_mode or 'coverflow',
+            'carousel_width': self.carousel_width if self.carousel_width is not None else 85,
+            'carousel_height': self.carousel_height if self.carousel_height is not None else 80,
+            'presentation_interval': self.presentation_interval if self.presentation_interval is not None else 5,
+            'carousel_autoplay': self.carousel_autoplay if self.carousel_autoplay is not None else True,
+            'presentation_autoplay': self.presentation_autoplay if self.presentation_autoplay is not None else True
         }
 
 
@@ -120,6 +128,41 @@ class ProvinceInfo(db.Model):
             'card_title': self.card_title or '',
             'card_content': self.card_content or '',
             'is_highlighted': self.is_highlighted,
+            'has_city_highlights': bool(CityInfo.query.filter_by(province_id=self.id, is_highlighted=True).first()),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class CityInfo(db.Model):
+    """城市/区县高亮信息（省份的子级）"""
+    __tablename__ = 'city_infos'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    province_id = db.Column(db.Integer, db.ForeignKey('province_infos.id'), nullable=False)
+    city_code = db.Column(db.String(6), nullable=False)
+    city_name = db.Column(db.String(64), nullable=False)
+    is_highlighted = db.Column(db.Boolean, nullable=False, default=False)
+    card_title = db.Column(db.String(255), default='')
+    card_content = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('province_id', 'city_code', name='uq_province_city'),
+    )
+
+    province = db.relationship('ProvinceInfo', backref=db.backref('cities', lazy='dynamic'))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'province_id': self.province_id,
+            'city_code': self.city_code,
+            'city_name': self.city_name,
+            'is_highlighted': self.is_highlighted,
+            'card_title': self.card_title or '',
+            'card_content': self.card_content or '',
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -192,4 +235,29 @@ class QuickPrompt(db.Model):
             'category': self.category or 'general',
             'is_active': self.is_active,
             'sort_order': self.sort_order
+        }
+
+
+class ContactInfo(db.Model):
+    """联系我们 — 个人名片配置（单行记录）"""
+    __tablename__ = 'contact_info'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(128), default='')
+    title = db.Column(db.String(255), default='')
+    phone = db.Column(db.String(32), default='')
+    email = db.Column(db.String(255), default='')
+    intro = db.Column(db.Text, default='')
+    wechat_qr_image = db.Column(db.String(512), default='')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name or '',
+            'title': self.title or '',
+            'phone': self.phone or '',
+            'email': self.email or '',
+            'intro': self.intro or '',
+            'wechat_qr_image': self.wechat_qr_image or ''
         }

@@ -1,4 +1,4 @@
-from models import AdminUser, HomepageConfig, ProvinceInfo
+from models import AdminUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
 from extensions import db
 
 
@@ -35,13 +35,27 @@ def init_database(app):
     db.create_all()
 
     # 为已有数据库添加新字段（幂等操作，不丢失数据）
+    migrations = [
+        "ALTER TABLE homepage_config ADD COLUMN carousel_interval INTEGER DEFAULT 8",
+        "ALTER TABLE homepage_config ADD COLUMN carousel_display_mode VARCHAR(20) DEFAULT 'coverflow'",
+        "ALTER TABLE homepage_config ADD COLUMN carousel_width INTEGER DEFAULT 85",
+        "ALTER TABLE homepage_config ADD COLUMN carousel_height INTEGER DEFAULT 80",
+        "ALTER TABLE homepage_config ADD COLUMN presentation_interval INTEGER DEFAULT 5",
+        "ALTER TABLE homepage_config ADD COLUMN carousel_autoplay BOOLEAN DEFAULT 1",
+        "ALTER TABLE homepage_config ADD COLUMN presentation_autoplay BOOLEAN DEFAULT 1",
+    ]
+    for sql in migrations:
+        try:
+            db.session.execute(db.text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()  # 列已存在则忽略
+
+    # 创建 contact_info 表（如果不存在——db.create_all 只创建缺失的表）
     try:
-        db.session.execute(db.text(
-            "ALTER TABLE homepage_config ADD COLUMN carousel_interval INTEGER DEFAULT 8"
-        ))
-        db.session.commit()
+        db.create_all()
     except Exception:
-        db.session.rollback()  # 列已存在则忽略
+        pass
 
     # 创建默认管理员账号
     if not AdminUser.query.filter_by(username='admin').first():
@@ -58,6 +72,12 @@ def init_database(app):
         config = HomepageConfig()
         db.session.add(config)
         print('[种子数据] 首页配置已初始化')
+
+    # 创建默认联系我们配置
+    if not ContactInfo.query.first():
+        contact = ContactInfo()
+        db.session.add(contact)
+        print('[种子数据] 联系我们配置已初始化')
 
     # 插入中国省份数据（如果不存在）
     china_count = ProvinceInfo.query.filter_by(map_scope='china').count()

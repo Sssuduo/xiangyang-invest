@@ -32,7 +32,9 @@ def update_homepage():
 
     updatable_fields = [
         'background_image', 'title_text', 'subtitle_text',
-        'button1_text', 'button2_text', 'carousel_interval'
+        'carousel_interval', 'carousel_display_mode',
+        'carousel_width', 'carousel_height',
+        'presentation_interval', 'carousel_autoplay', 'presentation_autoplay'
     ]
     for field in updatable_fields:
         if field in data:

@@ -1,5 +1,5 @@
 from flask import request, jsonify
-from models import CarouselPage, ProvinceInfo, LLMModel, QuickPrompt, HomepageConfig
+from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
 from extensions import db
 from routes import api_bp
 from services.llm_service import call_llm, build_messages
@@ -15,6 +15,20 @@ def get_homepage_config():
     config = HomepageConfig.query.first()
     if not config:
         config = HomepageConfig()
+        db.session.add(config)
+        db.session.commit()
+    return jsonify({'code': 0, 'data': config.to_dict()})
+
+
+# ============================================================
+# 联系我们
+# ============================================================
+@api_bp.route('/contact', methods=['GET'])
+def get_contact_info():
+    """获取联系我们配置"""
+    config = ContactInfo.query.first()
+    if not config:
+        config = ContactInfo()
         db.session.add(config)
         db.session.commit()
     return jsonify({'code': 0, 'data': config.to_dict()})
@@ -47,6 +61,17 @@ def get_provinces():
     scope = request.args.get('scope', 'china')
     provinces = ProvinceInfo.query.filter_by(map_scope=scope).all()
     return jsonify({'code': 0, 'data': [p.to_dict() for p in provinces]})
+
+
+# ============================================================
+# 城市信息（省份子级）
+# ============================================================
+@api_bp.route('/provinces/<int:province_id>/cities', methods=['GET'])
+def get_province_cities(province_id):
+    """获取省份下高亮的城市"""
+    province = ProvinceInfo.query.get_or_404(province_id)
+    cities = province.cities.filter_by(is_highlighted=True).all()
+    return jsonify({'code': 0, 'data': [c.to_dict() for c in cities]})
 
 
 # ============================================================

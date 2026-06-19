@@ -10,6 +10,7 @@ admin_provinces_bp = Blueprint('admin_provinces', __name__, url_prefix='/api/adm
 admin_models_bp = Blueprint('admin_models', __name__, url_prefix='/api/admin')
 admin_prompts_bp = Blueprint('admin_prompts', __name__, url_prefix='/api/admin')
 admin_homepage_bp = Blueprint('admin_homepage', __name__, url_prefix='/api/admin')
+admin_contact_bp = Blueprint('admin_contact', __name__, url_prefix='/api/admin')
 
 
 def register_routes(app):
@@ -21,6 +22,7 @@ def register_routes(app):
     from routes import admin_models as _admin_models
     from routes import admin_prompts as _admin_prompts
     from routes import admin_homepage as _admin_homepage
+    from routes import admin_contact as _admin_contact
     from routes import admin_debug as _admin_debug
 
     app.register_blueprint(api.api_bp)
@@ -30,6 +32,7 @@ def register_routes(app):
     app.register_blueprint(admin_models.admin_models_bp)
     app.register_blueprint(admin_prompts.admin_prompts_bp)
     app.register_blueprint(admin_homepage.admin_homepage_bp)
+    app.register_blueprint(admin_contact.admin_contact_bp)
 
     # 注册 debug 路由和错误处理器
     _admin_debug.register_debug_routes(app)

@@ -1,6 +1,6 @@
 <template>
-  <div class="map-slide">
-    <ChinaMap :map-scope="page.map_scope || 'china'" />
+  <div class="map-slide" :class="{ dimmed: !interactive }">
+    <ChinaMap :map-scope="page.map_scope || 'china'" :interactive="interactive" />
   </div>
 </template>
 
@@ -8,9 +8,16 @@
 import ChinaMap from '@/components/map/ChinaMap.vue'
 
 defineProps({
-  page: { type: Object, required: true }
+  page: { type: Object, required: true },
+  interactive: { type: Boolean, default: true }
 })
 </script>
+
+<style scoped>
+.map-slide.dimmed {
+  pointer-events: none;
+}
+</style>
 
 <style scoped>
 .map-slide {

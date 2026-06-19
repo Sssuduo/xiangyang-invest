@@ -17,6 +17,16 @@ const routes = [
     component: () => import('@/views/ToolboxView.vue')
   },
   {
+    path: '/national',
+    name: 'NationalAgriZone',
+    component: () => import('@/views/NationalAgriZone.vue')
+  },
+  {
+    path: '/contact',
+    name: 'Contact',
+    component: () => import('@/views/ContactView.vue')
+  },
+  {
     path: '/admin/login',
     name: 'AdminLogin',
     component: () => import('@/views/admin/LoginView.vue')
@@ -97,6 +107,18 @@ const routes = [
     path: '/admin/homepage',
     name: 'AdminHomepage',
     component: () => import('@/views/admin/HomepageConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/carousel',
+    name: 'AdminCarousel',
+    component: () => import('@/views/admin/CarouselConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/contact',
+    name: 'AdminContact',
+    component: () => import('@/views/admin/ContactConfig.vue'),
     meta: { requiresAuth: true }
   },
   {

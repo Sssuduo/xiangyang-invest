@@ -1,22 +1,7 @@
 <template>
   <div class="homepage" :style="bgStyle">
     <!-- ===== 顶部导航栏 ===== -->
-    <header class="top-nav" :class="{ scrolled: isScrolled }">
-      <div class="nav-inner">
-        <!-- Logo / 品牌名 -->
-        <router-link to="/" class="nav-brand">
-          <span class="brand-text">襄阳农高区</span>
-        </router-link>
-
-        <!-- 导航菜单 -->
-        <nav class="nav-menu">
-          <router-link to="/national" class="nav-item">国家农高区</router-link>
-          <router-link to="/intro" class="nav-item">襄阳农高区介绍</router-link>
-          <router-link to="/toolbox" class="nav-item">招商工具箱</router-link>
-          <router-link to="/contact" class="nav-item">联系我们</router-link>
-        </nav>
-      </div>
-    </header>
+    <BusinessNavbar variant="home" :scrolled="isScrolled" />
 
     <!-- ===== 主视觉区 ===== -->
     <div class="hero-section">
@@ -41,6 +26,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getHomepageConfig } from '@/api/homepage'
+import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 
 const config = ref({
   background_image: '',
@@ -92,60 +78,6 @@ onUnmounted(() => {
   position: relative; overflow-x: hidden;
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
 }
-
-/* ============================================================
-   顶部导航栏 — OPPO 风格：透明→毛玻璃
-   ============================================================ */
-.top-nav {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-  padding: 0 48px; height: 72px;
-  display: flex; align-items: center;
-  transition: background 0.4s, backdrop-filter 0.4s, box-shadow 0.4s;
-  background: transparent;
-}
-.top-nav.scrolled {
-  background: rgba(15, 25, 35, 0.85);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.06);
-}
-
-.nav-inner {
-  width: 100%; max-width: 1280px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between;
-}
-
-/* 品牌 */
-.nav-brand {
-  text-decoration: none; color: #fff;
-  font-size: 22px; font-weight: 700; letter-spacing: 3px;
-  transition: opacity 0.3s;
-}
-.nav-brand:hover { opacity: 0.8; }
-.brand-text {
-  background: linear-gradient(90deg, #fff, #cfd9e6);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* 菜单 */
-.nav-menu { display: flex; gap: 40px; align-items: center; }
-.nav-item {
-  text-decoration: none; color: rgba(255,255,255,0.75);
-  font-size: 15px; font-weight: 400; letter-spacing: 1px;
-  padding: 6px 0;
-  position: relative;
-  transition: color 0.3s;
-}
-.nav-item::after {
-  content: ''; position: absolute; bottom: 0; left: 0; width: 0; height: 2px;
-  background: #fff; border-radius: 1px;
-  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.nav-item:hover { color: #fff; }
-.nav-item:hover::after { width: 100%; }
-.nav-item.router-link-active { color: #fff; }
-.nav-item.router-link-active::after { width: 100%; }
 
 /* ============================================================
    主视觉区 — 全屏 hero

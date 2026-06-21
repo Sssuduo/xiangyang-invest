@@ -4,7 +4,7 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'}
 
 
 def allowed_file(filename):

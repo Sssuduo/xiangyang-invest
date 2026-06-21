@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -238,6 +239,161 @@ class QuickPrompt(db.Model):
         }
 
 
+# ============================================================
+# 招商对接项目库
+# ============================================================
+
+class FollowStatusDict(db.Model):
+    """跟进状态字典"""
+    __tablename__ = 'follow_status_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    display_color = db.Column(db.String(7), default='#909399')
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'display_color': self.display_color, 'sort_order': self.sort_order,
+            'is_active': self.is_active
+        }
+
+
+class MeetingStatusDict(db.Model):
+    """上会状态字典"""
+    __tablename__ = 'meeting_status_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    display_color = db.Column(db.String(7), default='#909399')
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'display_color': self.display_color, 'sort_order': self.sort_order,
+            'is_active': self.is_active
+        }
+
+
+class OrganizationDict(db.Model):
+    """单位字典（推介单位 & 包保单位共用）"""
+    __tablename__ = 'organization_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class ProjectTypeDict(db.Model):
+    """项目类型字典"""
+    __tablename__ = 'project_type_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class InvestmentProject(db.Model):
+    """招商对接项目"""
+    __tablename__ = 'investment_projects'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    order_no = db.Column(db.Integer, nullable=False, default=0)
+    project_name = db.Column(db.String(255), nullable=False)
+    invest_enterprise = db.Column(db.String(255), nullable=False)
+    enterprise_info = db.Column(db.Text, nullable=False)
+    project_content = db.Column(db.Text, nullable=False)
+    invest_amount = db.Column(db.Numeric(15, 2), nullable=False)  # 万元
+
+    follow_status_code = db.Column(db.String(32), nullable=False)
+    meeting_status_code = db.Column(db.String(32), nullable=False, default='not_meeting')
+    recommend_unit_code = db.Column(db.String(32), default='')
+    responsible_unit_code = db.Column(db.String(32), nullable=False)
+    project_type_code = db.Column(db.String(32), nullable=False)
+
+    person_in_charge = db.Column(db.String(64), default='')
+    project_doc = db.Column(db.Text, default='')
+    first_contact_date = db.Column(db.Date)
+
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    demands = db.relationship('EnterpriseDemand', backref='project', lazy='dynamic',
+                              order_by='EnterpriseDemand.sort_order')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'order_no': self.order_no,
+            'project_name': self.project_name,
+            'invest_enterprise': self.invest_enterprise,
+            'enterprise_info': self.enterprise_info or '',
+            'project_content': self.project_content or '',
+            'invest_amount': float(self.invest_amount) if self.invest_amount else 0,
+            'follow_status_code': self.follow_status_code,
+            'meeting_status_code': self.meeting_status_code,
+            'recommend_unit_code': self.recommend_unit_code or '',
+            'responsible_unit_code': self.responsible_unit_code,
+            'project_type_code': self.project_type_code,
+            'person_in_charge': self.person_in_charge or '',
+            'project_doc': self.project_doc or '',
+            'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
+            'is_deleted': self.is_deleted,
+            'demands': [d.to_dict() for d in self.demands.all()],
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class EnterpriseDemand(db.Model):
+    """企业诉求子表"""
+    __tablename__ = 'enterprise_demands'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
+    demand_content = db.Column(db.Text, nullable=False)
+    resolution = db.Column(db.Text, default='')
+    status = db.Column(db.String(32), nullable=False, default='pending')  # pending/processing/resolved
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'demand_content': self.demand_content,
+            'resolution': self.resolution or '',
+            'status': self.status,
+            'sort_order': self.sort_order,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 class ContactInfo(db.Model):
     """联系我们 — 个人名片配置（单行记录）"""
     __tablename__ = 'contact_info'
@@ -260,4 +416,127 @@ class ContactInfo(db.Model):
             'email': self.email or '',
             'intro': self.intro or '',
             'wechat_qr_image': self.wechat_qr_image or ''
+        }
+
+
+class ExportFieldConfig(db.Model):
+    """导出字段配置"""
+    __tablename__ = 'export_field_config'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_visible = db.Column(db.Boolean, default=True)
+    column_width = db.Column(db.Integer, default=120)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_visible': self.is_visible,
+            'column_width': self.column_width,
+            'sort_order': self.sort_order
+        }
+
+
+class ImportFieldConfig(db.Model):
+    """导入字段配置（导入模板的列定义）"""
+    __tablename__ = 'import_field_config'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_required = db.Column(db.Boolean, default=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_enabled': self.is_enabled,
+            'is_required': self.is_required,
+            'sort_order': self.sort_order
+        }
+
+
+class InvestmentActivity(db.Model):
+    """招商动态"""
+    __tablename__ = 'investment_activities'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
+    date = db.Column(db.DateTime, nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    files = db.Column(db.Text, default='[]')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = db.relationship('InvestmentProject', backref=db.backref('activities', lazy='dynamic'))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'project_name': self.project.project_name if self.project else '',
+            'date': self.date.strftime('%Y-%m-%d %H:%M') if self.date else None,
+            'content': self.content,
+            'files': json.loads(self.files) if self.files else [],
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
+        }
+
+
+class ExportFieldConfigActivity(db.Model):
+    """招商动态导出字段配置"""
+    __tablename__ = 'export_field_config_activity'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_visible = db.Column(db.Boolean, default=True)
+    column_width = db.Column(db.Integer, default=120)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_visible': self.is_visible,
+            'column_width': self.column_width,
+            'sort_order': self.sort_order
+        }
+
+
+class ImportFieldConfigActivity(db.Model):
+    """招商动态导入字段配置"""
+    __tablename__ = 'import_field_config_activity'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_required = db.Column(db.Boolean, default=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_enabled': self.is_enabled,
+            'is_required': self.is_required,
+            'sort_order': self.sort_order
         }

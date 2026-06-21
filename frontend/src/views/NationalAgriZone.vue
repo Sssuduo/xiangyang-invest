@@ -1,19 +1,7 @@
 <template>
   <div class="national-page">
     <!-- ===== 顶部导航栏（透明叠加） ===== -->
-    <header class="top-nav">
-      <div class="nav-inner">
-        <router-link to="/" class="nav-brand">
-          <span class="brand-text">襄阳农高区</span>
-        </router-link>
-        <nav class="nav-menu">
-          <router-link to="/national" class="nav-item active-item">国家农高区</router-link>
-          <router-link to="/intro" class="nav-item">襄阳农高区介绍</router-link>
-          <router-link to="/toolbox" class="nav-item">招商工具箱</router-link>
-          <router-link to="/contact" class="nav-item">联系我们</router-link>
-        </nav>
-      </div>
-    </header>
+    <BusinessNavbar variant="overlay" />
 
     <!-- ===== 地图主体（全屏） ===== -->
     <div class="map-stage">
@@ -55,6 +43,7 @@
 <script setup>
 import { ref } from 'vue'
 import ChinaMap from '@/components/map/ChinaMap.vue'
+import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 
 const isMapFocused = ref(false)
 
@@ -73,44 +62,6 @@ function handleFocusChange(province) {
   background: linear-gradient(160deg, #dce8f5 0%, #c8daf0 50%, #b0c8e8 100%);
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
 }
-
-/* ============================================================
-   顶部导航栏 — 透明毛玻璃
-   ============================================================ */
-.top-nav {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 100;
-  padding: 0 48px; height: 64px;
-  display: flex; align-items: center;
-  background: rgba(255,255,255,0.72);
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
-}
-.nav-inner {
-  width: 100%; max-width: 1400px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.nav-brand { text-decoration: none; font-size: 20px; font-weight: 700; letter-spacing: 3px; }
-.brand-text {
-  background: linear-gradient(90deg, #1a3a5c, #2a5a8c);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.nav-menu { display: flex; gap: 36px; align-items: center; }
-.nav-item {
-  text-decoration: none; color: #4a5568; font-size: 14px;
-  font-weight: 400; letter-spacing: 1px; padding: 4px 0;
-  position: relative; transition: color 0.3s;
-}
-.nav-item::after {
-  content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 2px;
-  background: #1a3a5c; border-radius: 1px;
-  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.nav-item:hover { color: #1a3a5c; }
-.nav-item:hover::after { width: 100%; }
-.active-item { color: #1a3a5c; font-weight: 600; }
-.active-item::after { width: 100%; }
 
 /* ============================================================
    地图舞台

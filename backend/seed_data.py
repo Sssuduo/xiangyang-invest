@@ -1,4 +1,6 @@
 from models import AdminUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, ExportFieldConfig, ImportFieldConfig
+from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
 from extensions import db
 
 
@@ -112,3 +114,196 @@ def init_database(app):
         print(f'[种子数据] 已插入 {len(HUBEI_CITIES)} 个湖北城市数据')
 
     db.session.commit()
+
+    # ---- 招商对接项目库 - 字典种子数据 ----
+    _seed_investment_dicts()
+
+    # ---- 导出字段配置 ----
+    _seed_export_fields()
+
+    # ---- 导入字段配置 ----
+    _seed_import_fields()
+
+    # ---- 招商动态 - 导出字段配置 ----
+    _seed_activity_export_fields()
+
+    # ---- 招商动态 - 导入字段配置 ----
+    _seed_activity_import_fields()
+
+
+def _seed_investment_dicts():
+    """初始化招商对接项目库的字典表"""
+    # 跟进状态
+    follow_statuses = [
+        ('follow_focus', '重点跟进', '#e6a23c', 1),
+        ('follow_keep', '保持对接', '#909399', 2),
+    ]
+    for code, name, color, order in follow_statuses:
+        if not FollowStatusDict.query.filter_by(code=code).first():
+            db.session.add(FollowStatusDict(code=code, name=name, display_color=color, sort_order=order))
+
+    # 上会状态
+    meeting_statuses = [
+        ('not_meeting', '未上会', '#909399', 1),
+        ('recommend_meeting', '推荐上会', '#409eff', 2),
+        ('meeting_done', '已上会', '#67c23a', 3),
+    ]
+    for code, name, color, order in meeting_statuses:
+        if not MeetingStatusDict.query.filter_by(code=code).first():
+            db.session.add(MeetingStatusDict(code=code, name=name, display_color=color, sort_order=order))
+
+    # 单位字典
+    organizations = [
+        ('org_shi_taiban', '市委台办'),
+        ('org_shi_laoganju', '市委老干局'),
+        ('org_shi_rensheju', '市人社局'),
+        ('org_shi_nongyenongcunju', '市农业农村局'),
+        ('org_quweiban', '区委办'),
+        ('org_zhengfuban', '区政府办'),
+        ('org_renda', '区人大常委会'),
+        ('org_zhengxie', '区政协'),
+        ('org_tongzhanbu', '区委统战部'),
+        ('org_zuzhibu', '区委组织部'),
+        ('org_shehuibu', '区委社会工作部'),
+        ('org_laoganju', '区委老干局'),
+        ('org_caizhengju', '区财政局'),
+        ('org_chengguanju', '区城管局'),
+        ('org_nongyenongcunju', '区农业农村局'),
+        ('org_xiangzhouguotou', '襄州国投'),
+        ('org_xiangbeijianyu', '襄北监狱'),
+        ('org_zhaoshang', '区招商服务中心'),
+        ('org_nonggaoqu', '农高区创建专班'),
+    ]
+    for i, (code, name) in enumerate(organizations):
+        existing = OrganizationDict.query.filter_by(code=code).first()
+        if existing:
+            existing.name = name
+            existing.sort_order = i + 1
+        else:
+            db.session.add(OrganizationDict(code=code, name=name, sort_order=i + 1))
+
+    # 项目类型
+    project_types = [
+        ('type_xuqin', '畜禽粪污循环利用'),
+        ('type_yangzhi', '养殖种植'),
+        ('type_guangai', '农业灌溉装备'),
+        ('type_jiegan', '秸秆综合利用'),
+        ('type_sheshi', '设施农业'),
+        ('type_hongshu', '红薯精深加工'),
+        ('type_shipin', '食品加工'),
+        ('type_nongji', '农机装备制造'),
+        ('type_zhihui', '智慧农业'),
+    ]
+    for i, (code, name) in enumerate(project_types):
+        existing = ProjectTypeDict.query.filter_by(code=code).first()
+        if existing:
+            existing.name = name
+            existing.sort_order = i + 1
+        else:
+            db.session.add(ProjectTypeDict(code=code, name=name, sort_order=i + 1))
+
+    db.session.commit()
+    print('[种子数据] 招商对接项目库字典已初始化')
+
+
+def _seed_export_fields():
+    """初始化导出字段配置"""
+    fields = [
+        ('order_no', '序号', 60, 1),
+        ('project_name', '项目名称', 180, 2),
+        ('project_type_code', '项目类型', 120, 3),
+        ('invest_enterprise', '投资商名称', 160, 4),
+        ('enterprise_info', '企业简介', 300, 5),
+        ('project_content', '项目内容', 300, 6),
+        ('invest_amount', '投资金额(万元)', 120, 7),
+        ('follow_status_code', '跟进状态', 100, 8),
+        ('meeting_status_code', '上会状态', 100, 9),
+        ('recommend_unit_code', '推介单位', 140, 10),
+        ('responsible_unit_code', '责任单位', 140, 11),
+        ('person_in_charge', '责任人', 80, 12),
+        ('project_doc', '项目文档', 200, 13),
+        ('first_contact_date', '首次对接时间', 120, 14),
+    ]
+    for field_key, field_label, column_width, sort_order in fields:
+        if not ExportFieldConfig.query.filter_by(field_key=field_key).first():
+            db.session.add(ExportFieldConfig(
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 导出字段配置已初始化')
+
+
+def _seed_import_fields():
+    """初始化导入字段配置"""
+    fields = [
+        ('order_no', '顺序号', True, False, 1),
+        ('project_name', '项目名称', True, True, 2),
+        ('project_type_code', '项目类型', True, True, 3),
+        ('invest_enterprise', '投资商名称', True, True, 4),
+        ('enterprise_info', '企业简介', True, True, 5),
+        ('project_content', '项目内容', True, True, 6),
+        ('invest_amount', '投资金额(万元)', True, True, 7),
+        ('follow_status_code', '跟进状态', True, True, 8),
+        ('meeting_status_code', '上会状态', True, False, 9),
+        ('recommend_unit_code', '推介单位', True, False, 10),
+        ('responsible_unit_code', '责任单位', True, True, 11),
+        ('person_in_charge', '责任人', True, False, 12),
+        ('first_contact_date', '首次对接时间', True, False, 13),
+    ]
+    for field_key, field_label, is_enabled, is_required, sort_order in fields:
+        if not ImportFieldConfig.query.filter_by(field_key=field_key).first():
+            db.session.add(ImportFieldConfig(
+                field_key=field_key,
+                field_label=field_label,
+                is_enabled=is_enabled,
+                is_required=is_required,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 导入字段配置已初始化')
+
+
+def _seed_activity_export_fields():
+    """初始化招商动态导出字段配置"""
+    fields = [
+        ('project_name', '所属项目', 180, 1),
+        ('date', '日期', 160, 2),
+        ('content', '动态内容', 400, 3),
+        ('files', '附件', 200, 4),
+    ]
+    for field_key, field_label, column_width, sort_order in fields:
+        if not ExportFieldConfigActivity.query.filter_by(field_key=field_key).first():
+            db.session.add(ExportFieldConfigActivity(
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 招商动态导出字段配置已初始化')
+
+
+def _seed_activity_import_fields():
+    """初始化招商动态导入字段配置"""
+    fields = [
+        ('project_name', '所属项目', True, True, 1),
+        ('date', '日期', True, True, 2),
+        ('content', '动态内容', True, True, 3),
+        ('files', '附件(URL)', True, False, 4),
+    ]
+    for field_key, field_label, is_enabled, is_required, sort_order in fields:
+        if not ImportFieldConfigActivity.query.filter_by(field_key=field_key).first():
+            db.session.add(ImportFieldConfigActivity(
+                field_key=field_key,
+                field_label=field_label,
+                is_enabled=is_enabled,
+                is_required=is_required,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 招商动态导入字段配置已初始化')

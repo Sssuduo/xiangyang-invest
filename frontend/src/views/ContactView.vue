@@ -1,19 +1,7 @@
 <template>
   <div class="contact-page">
     <!-- ===== 顶部导航栏（复用首页风格） ===== -->
-    <header class="top-nav">
-      <div class="nav-inner">
-        <router-link to="/" class="nav-brand">
-          <span class="brand-text">襄阳农高区</span>
-        </router-link>
-        <nav class="nav-menu">
-          <router-link to="/national" class="nav-item">国家农高区</router-link>
-          <router-link to="/intro" class="nav-item">襄阳农高区介绍</router-link>
-          <router-link to="/toolbox" class="nav-item">招商工具箱</router-link>
-          <router-link to="/contact" class="nav-item">联系我们</router-link>
-        </nav>
-      </div>
-    </header>
+    <BusinessNavbar variant="contact" />
 
     <!-- ===== 主体内容 ===== -->
     <div class="contact-body">
@@ -79,6 +67,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
 import { getContactInfo } from '@/api/contact'
+import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 
 const info = ref({
   name: '',
@@ -117,44 +106,6 @@ onMounted(async () => {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   display: flex; flex-direction: column;
 }
-
-/* ============================================================
-   顶部导航栏
-   ============================================================ */
-.top-nav {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-  padding: 0 48px; height: 72px;
-  display: flex; align-items: center;
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
-}
-.nav-inner {
-  width: 100%; max-width: 1280px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.nav-brand { text-decoration: none; font-size: 22px; font-weight: 700; letter-spacing: 3px; }
-.brand-text {
-  background: linear-gradient(90deg, #1a3a5c, #2a5a8c);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.nav-menu { display: flex; gap: 40px; align-items: center; }
-.nav-item {
-  text-decoration: none; color: #4a5568; font-size: 15px;
-  font-weight: 400; letter-spacing: 1px; padding: 6px 0;
-  position: relative; transition: color 0.3s;
-}
-.nav-item::after {
-  content: ''; position: absolute; bottom: 0; left: 0; width: 0; height: 2px;
-  background: #1a3a5c; border-radius: 1px;
-  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.nav-item:hover { color: #1a3a5c; }
-.nav-item:hover::after { width: 100%; }
-.nav-item.router-link-active { color: #1a3a5c; font-weight: 600; }
-.nav-item.router-link-active::after { width: 100%; }
 
 /* ============================================================
    主体内容

@@ -122,6 +122,52 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/investment',
+    name: 'Investment',
+    component: () => import('@/views/InvestmentView.vue')
+  },
+  {
+    path: '/investment-activity',
+    name: 'InvestmentActivity',
+    component: () => import('@/views/ActivityView.vue')
+  },
+  {
+    path: '/admin/investment',
+    name: 'AdminInvestment',
+    component: () => import('@/views/admin/InvestmentList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/activity',
+    name: 'AdminActivity',
+    component: () => import('@/views/admin/ActivityList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/import-config',
+    name: 'AdminImportConfig',
+    component: () => import('@/views/admin/ImportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/export-config',
+    name: 'AdminExportConfig',
+    component: () => import('@/views/admin/ExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/activity-import-config',
+    name: 'AdminActivityImportConfig',
+    component: () => import('@/views/admin/ActivityImportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/activity-export-config',
+    name: 'AdminActivityExportConfig',
+    component: () => import('@/views/admin/ActivityExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/debug',
     name: 'Debug',
     component: () => import('@/views/DebugView.vue')

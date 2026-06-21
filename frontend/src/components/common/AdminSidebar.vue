@@ -31,6 +31,38 @@
       <span>轮播设置</span>
     </el-menu-item>
 
+    <!-- 招商项目管理 -->
+    <el-menu-item index="/admin/investment">
+      <el-icon><Folder /></el-icon>
+      <span>招商项目管理</span>
+    </el-menu-item>
+
+    <!-- 招商动态管理 -->
+    <el-menu-item index="/admin/activity">
+      <el-icon><Notebook /></el-icon>
+      <span>招商动态管理</span>
+    </el-menu-item>
+
+    <!-- 导出配置子菜单 -->
+    <el-sub-menu index="sub-export">
+      <template #title>
+        <el-icon><Download /></el-icon>
+        <span>导出配置</span>
+      </template>
+      <el-menu-item index="/admin/export-config">招商项目导出</el-menu-item>
+      <el-menu-item index="/admin/activity-export-config">招商动态导出</el-menu-item>
+    </el-sub-menu>
+
+    <!-- 导入配置子菜单 -->
+    <el-sub-menu index="sub-import">
+      <template #title>
+        <el-icon><Upload /></el-icon>
+        <span>导入配置</span>
+      </template>
+      <el-menu-item index="/admin/import-config">招商项目导入</el-menu-item>
+      <el-menu-item index="/admin/activity-import-config">招商动态导入</el-menu-item>
+    </el-sub-menu>
+
     <el-menu-item index="/admin/provinces">
       <el-icon><Location /></el-icon>
       <span>省份信息</span>
@@ -75,6 +107,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

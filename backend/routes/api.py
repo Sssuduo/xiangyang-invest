@@ -1,5 +1,7 @@
 from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
+from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict
+from models import InvestmentActivity
 from extensions import db
 from routes import api_bp
 from services.llm_service import call_llm, build_messages
@@ -186,3 +188,99 @@ def upload_image():
         return jsonify({'code': 0, 'data': {'url': url}})
     except ValueError as e:
         return jsonify({'code': 1, 'message': str(e)}), 400
+
+
+# ============================================================
+# 招商对接项目（公开）
+# ============================================================
+@api_bp.route('/investment/projects', methods=['GET'])
+def list_public_projects():
+    """公开项目列表（树形表格用）"""
+    search = request.args.get('search', '').strip()
+    follow_status = request.args.get('follow_status', '').strip()
+    meeting_status = request.args.get('meeting_status', '').strip()
+
+    q = InvestmentProject.query.filter_by(is_deleted=False)
+
+    if search:
+        like = f'%{search}%'
+        q = q.filter(db.or_(
+            InvestmentProject.project_name.ilike(like),
+            InvestmentProject.invest_enterprise.ilike(like),
+            InvestmentProject.project_content.ilike(like),
+            InvestmentProject.person_in_charge.ilike(like)
+        ))
+
+    if follow_status:
+        q = q.filter_by(follow_status_code=follow_status)
+    if meeting_status:
+        q = q.filter_by(meeting_status_code=meeting_status)
+
+    # 排序：重点跟进优先 → 顺序号升序
+    q = q.order_by(
+        db.case(
+            (InvestmentProject.follow_status_code == 'follow_focus', 0),
+            else_=1
+        ),
+        InvestmentProject.order_no.asc(),
+        InvestmentProject.created_at.desc()
+    )
+
+    projects = q.all()
+
+    # 返回带字典名称的数据（前台直接使用）
+    follow_map = {d.code: d for d in FollowStatusDict.query.all()}
+    meeting_map = {d.code: d for d in MeetingStatusDict.query.all()}
+    org_map = {d.code: d for d in OrganizationDict.query.all()}
+    type_map = {d.code: d for d in ProjectTypeDict.query.all()}
+
+    result = []
+    for p in projects:
+        d = p.to_dict()
+        fu = follow_map.get(p.follow_status_code)
+        d['follow_status_name'] = fu.name if fu else ''
+        d['follow_status_color'] = fu.display_color if fu else '#909399'
+        mu = meeting_map.get(p.meeting_status_code)
+        d['meeting_status_name'] = mu.name if mu else ''
+        d['meeting_status_color'] = mu.display_color if mu else '#909399'
+        ou = org_map.get(p.recommend_unit_code)
+        d['recommend_unit_name'] = ou.name if ou else ''
+        ou2 = org_map.get(p.responsible_unit_code)
+        d['responsible_unit_name'] = ou2.name if ou2 else ''
+        tu = type_map.get(p.project_type_code)
+        d['project_type_name'] = tu.name if tu else ''
+        result.append(d)
+
+    return jsonify({'code': 0, 'data': result})
+
+
+# ============================================================
+# 招商动态（公开）
+# ============================================================
+@api_bp.route('/investment/activities', methods=['GET'])
+def list_public_activities():
+    """公开招商动态列表"""
+    search = request.args.get('search', '').strip()
+    project_id = request.args.get('project_id', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+
+    q = InvestmentActivity.query.join(InvestmentProject)
+
+    if search:
+        like = f'%{search}%'
+        q = q.filter(db.or_(
+            InvestmentProject.project_name.ilike(like),
+            InvestmentActivity.content.ilike(like)
+        ))
+
+    if project_id:
+        q = q.filter(InvestmentActivity.project_id == int(project_id))
+    if date_from:
+        q = q.filter(InvestmentActivity.date >= date_from)
+    if date_to:
+        q = q.filter(InvestmentActivity.date <= date_to)
+
+    q = q.order_by(InvestmentActivity.date.desc())
+    activities = q.all()
+    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities]})

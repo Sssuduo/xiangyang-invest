@@ -62,8 +62,8 @@ def create_activity():
     if not data:
         return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
 
-    # 必填字段校验
-    required = ['project_id', 'date', 'content']
+    # 必填字段校验（date 改为选填）
+    required = ['project_id', 'content']
     for field in required:
         if not data.get(field):
             return jsonify({'code': 1, 'message': f'{field} 为必填字段'}), 400
@@ -121,3 +121,21 @@ def delete_activity(activity_id):
     db.session.delete(activity)
     db.session.commit()
     return jsonify({'code': 0, 'message': '动态已删除'})
+
+
+@admin_activity_bp.route('/activity/activities/batch-delete', methods=['POST'])
+@login_required
+def batch_delete_activities():
+    """批量删除动态"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
+
+    ids = data.get('ids', [])
+    if not ids or not isinstance(ids, list):
+        return jsonify({'code': 1, 'message': '请提供要删除的动态ID列表'}), 400
+
+    deleted = InvestmentActivity.query.filter(InvestmentActivity.id.in_(ids)).delete(synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({'code': 0, 'message': f'成功删除 {deleted} 条动态', 'data': {'count': deleted}})

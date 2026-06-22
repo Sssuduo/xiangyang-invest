@@ -25,3 +25,7 @@ export function updateActivity(id, data) {
 export function deleteActivity(id) {
   return api.delete(`/admin/activity/activities/${id}`)
 }
+
+export function batchDeleteActivities(ids) {
+  return api.post('/admin/activity/activities/batch-delete', { ids })
+}

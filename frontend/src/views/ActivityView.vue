@@ -23,6 +23,9 @@
           <el-button v-if="selectedIds.length > 0" type="success" @click="handleExport">
             <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
           </el-button>
+          <el-button v-if="selectedIds.length > 0" type="danger" @click="handleBatchDelete">
+            <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
+          </el-button>
           <el-dropdown trigger="click" @command="handleImportCmd">
             <el-button type="default">
               <el-icon><Upload /></el-icon> 动态导入 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -111,10 +114,10 @@
           <el-form-item label="日期" prop="date">
             <el-date-picker
               v-model="form.date"
-              type="datetime"
-              placeholder="选择日期时间"
-              format="YYYY-MM-DD HH:mm"
-              value-format="YYYY-MM-DDTHH:mm"
+              type="date"
+              placeholder="选择日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
               style="width: 100%;"
             />
           </el-form-item>
@@ -159,8 +162,63 @@
       </div>
     </el-drawer>
 
-    <!-- 导入对话框 -->
-    <el-dialog v-model="importDialogVisible" title="导入动态" width="900px" :close-on-click-modal="false" @closed="resetImport">
+    <!-- ========== 下载导入模板对话框 ========== -->
+    <el-dialog
+      v-model="templateDialogVisible"
+      title="下载导入模板"
+      width="780px"
+      :close-on-click-modal="false"
+      @closed="resetTemplateDialog"
+    >
+      <!-- 筛选栏 -->
+      <div class="template-filter">
+        <span class="filter-label">跟进状态：</span>
+        <el-select v-model="templateFollowStatus" placeholder="全部" clearable style="width: 200px;" @change="loadTemplateProjects">
+          <el-option v-for="s in followStatusList" :key="s.code" :label="s.name" :value="s.code" />
+        </el-select>
+        <el-button type="primary" @click="loadTemplateProjects">
+          <el-icon><Search /></el-icon> 查询
+        </el-button>
+        <span class="template-count">共 {{ templateProjects.length }} 个项目</span>
+      </div>
+
+      <!-- 项目表格 -->
+      <el-table
+        :data="templateProjects"
+        stripe
+        size="small"
+        max-height="380"
+        row-key="id"
+        class="template-table"
+        empty-text="暂无匹配的项目"
+      >
+        <el-table-column type="selection" width="45" />
+        <el-table-column prop="project_name" label="项目名称" min-width="180" show-overflow-tooltip />
+        <el-table-column label="跟进状态" width="110">
+          <template #default="{ row }">
+            <span>{{ row.follow_status_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="invest_enterprise" label="投资企业" min-width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ row, $index }">
+            <el-button size="small" link type="danger" @click="removeTemplateProject($index)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <el-button @click="templateDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleDownloadTemplate">
+          <el-icon><Download /></el-icon> 下载导入模板 ({{ templateSelectedCount }} 个项目)
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ========== 导入动态对话框 ========== -->
+    <el-dialog v-model="importDialogVisible" title="导入动态" width="1080px" :close-on-click-modal="false" @closed="resetImport">
       <template v-if="importStep === 'select'">
         <el-upload
           ref="importUploadRef"
@@ -174,27 +232,76 @@
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
           <div class="el-upload__text">拖动 Excel 文件到此处 或 <em>点击选取文件</em></div>
           <template #tip>
-            <div class="el-upload__tip">仅支持 .xlsx / .xls 格式，请先下载导入模板填写数据</div>
+            <div class="el-upload__tip">仅支持 .xlsx / .xls 格式。系统将自动识别动态内容中的日期并智能拆分为多条记录。</div>
           </template>
         </el-upload>
       </template>
 
       <template v-if="importStep === 'preview'">
+        <!-- 统计信息 -->
         <div class="import-summary">
           <span>总计 <strong>{{ importRows.length }}</strong> 条</span>
           <span class="summary-valid">有效 <strong>{{ importValidCount }}</strong> 条</span>
           <span v-if="importErrorCount > 0" class="summary-error">错误 <strong>{{ importErrorCount }}</strong> 条</span>
+          <span v-if="importSplitInfo" class="summary-split">{{ importSplitInfo }}</span>
         </div>
+
+        <!-- 全局年份设置 -->
+        <div class="import-year-bar">
+          <span class="year-label">默认年份：</span>
+          <el-input-number v-model="importDefaultYear" :min="2000" :max="2100" size="small" style="width: 120px;" @change="onDefaultYearChange" />
+          <span class="year-hint">（可逐行修改年份列）</span>
+        </div>
+
         <el-alert v-if="importErrorCount > 0" type="warning" :closable="false" show-icon style="margin-bottom: 12px;">
           存在错误数据的行已标红，请修正后重新导入，或删除错误行后进行部分导入
         </el-alert>
+        <el-alert v-if="importHasSplit" type="info" :closable="false" show-icon style="margin-bottom: 12px;">
+          系统已自动识别动态内容中的日期，并按日期拆分为独立行。请核对拆分结果，确认无误后点击导入。
+        </el-alert>
+
         <div class="import-table-wrap">
           <el-table :data="importRows" stripe size="small" max-height="400" row-key="row" :row-class-name="importRowClass">
             <el-table-column type="index" label="#" width="40" />
-            <el-table-column v-for="h in importHeaders" :key="h" :label="h" min-width="110" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.data[h] ?? '' }}</template>
+            <el-table-column label="项目ID" width="75" align="center">
+              <template #default="{ row }">
+                <span class="project-id-tag">{{ row.data.project_id || '-' }}</span>
+              </template>
             </el-table-column>
-            <el-table-column label="状态" width="80" align="center">
+            <el-table-column label="所属项目" width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.data.project_name }}</template>
+            </el-table-column>
+            <el-table-column label="年份" width="90" align="center">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.data.year"
+                  :min="2000"
+                  :max="2100"
+                  size="small"
+                  controls-position="right"
+                  style="width: 85px;"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="月日" width="110">
+              <template #default="{ row }">
+                <span>{{ row.data.month_day || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="动态内容" min-width="300">
+              <template #default="{ row }">
+                <el-tooltip placement="top" :show-after="400" popper-class="import-content-tooltip">
+                  <template #content>
+                    <div class="tooltip-content-text">{{ row.data.content }}</div>
+                  </template>
+                  <span class="import-content-cell" :class="{ 'split-highlight': row._split }">{{ row.data.content }}</span>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+            <el-table-column label="附件(URL)" width="120" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.data.files || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="75" align="center">
               <template #default="{ row }">
                 <el-tag v-if="row._valid" type="success" size="small">正常</el-tag>
                 <el-tooltip v-else placement="top" :content="row.errors.join('\n')">
@@ -202,9 +309,9 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="70" align="center">
+            <el-table-column label="操作" width="65" align="center">
               <template #default="{ row, $index }">
-                <el-button v-if="!row._valid" size="small" link type="danger" @click="removeImportRow($index)">
+                <el-button size="small" link type="danger" @click="removeImportRow($index)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </template>
@@ -229,15 +336,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
-import { getPublicActivities, createActivity, updateActivity, getActivity, deleteActivity } from '@/api/activity'
+import { getPublicActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
 import { getPublicProjects } from '@/api/investment'
 import { downloadActivityExcel } from '@/api/activity_export'
-import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute } from '@/api/activity_import'
+import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
+import { getDictItems } from '@/api/dict'
 
 const tableRef = ref(null)
 const activities = ref([])
@@ -249,6 +357,9 @@ const filterDateFrom = ref('')
 const filterDateTo = ref('')
 const selectedIds = ref([])
 const projectList = ref([])
+
+// 字典数据
+const followStatusList = ref([])
 
 let searchTimer = null
 
@@ -267,7 +378,17 @@ const fileList = ref([])
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 
-// 导入
+// ---- 下载导入模板对话框 ----
+const templateDialogVisible = ref(false)
+const templateFollowStatus = ref('')
+const templateProjects = ref([])
+const templateTableRef = ref(null)
+const templateSelectedCount = computed(() => {
+  // 表格中当前展示的项目数（即选中要下载的）
+  return templateProjects.value.length
+})
+
+// ---- 导入对话框 ----
 const importDialogVisible = ref(false)
 const importStep = ref('select')
 const importFileList = ref([])
@@ -277,6 +398,9 @@ const importRows = ref([])
 const importing = ref(false)
 const importValidCount = ref(0)
 const importErrorCount = ref(0)
+const importSplitInfo = ref('')
+const importDefaultYear = ref(new Date().getFullYear())
+const importHasSplit = computed(() => importRows.value.some(r => r._split))
 
 const defaultForm = () => ({
   project_id: '',
@@ -289,11 +413,21 @@ const form = reactive(defaultForm())
 
 const rules = {
   project_id: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
-  date: [{ required: true, message: '请选择日期', trigger: 'change' }],
   content: [{ required: true, message: '请输入动态内容', trigger: 'blur' }]
 }
 
-onMounted(async () => { await loadProjects(); fetchData() })
+onMounted(async () => {
+  await loadProjects()
+  await loadDicts()
+  fetchData()
+})
+
+async function loadDicts() {
+  try {
+    const res = await getDictItems('follow_statuses')
+    if (res.code === 0) followStatusList.value = res.data || []
+  } catch { /* ignore */ }
+}
 
 async function loadProjects() {
   try {
@@ -352,10 +486,63 @@ async function handleExport() {
   } catch { /* cancelled */ }
 }
 
+// ---- 批量删除 ----
+async function handleBatchDelete() {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 条动态吗？此操作不可恢复。`,
+      '批量删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    const res = await batchDeleteActivities(selectedIds.value)
+    if (res.code === 0) {
+      ElMessage.success(res.message)
+      selectedIds.value = []
+      fetchData()
+    }
+  } catch { /* cancelled */ }
+}
+
+// ---- 下载导入模板对话框 ----
+function resetTemplateDialog() {
+  templateFollowStatus.value = ''
+  templateProjects.value = []
+}
+
+async function loadTemplateProjects() {
+  try {
+    const res = await getTemplateProjects(templateFollowStatus.value)
+    if (res.code === 0) templateProjects.value = res.data || []
+  } catch {
+    templateProjects.value = []
+  }
+}
+
+function removeTemplateProject(idx) {
+  templateProjects.value.splice(idx, 1)
+}
+
+async function handleDownloadTemplate() {
+  if (templateProjects.value.length === 0) {
+    ElMessage.warning('请至少保留一个项目')
+    return
+  }
+  try {
+    const ids = templateProjects.value.map(p => p.id)
+    await downloadActivityImportTemplate(ids)
+    ElMessage.success('模板下载成功')
+    templateDialogVisible.value = false
+  } catch (err) {
+    ElMessage.error(err.message)
+  }
+}
+
 // ---- 导入 ----
 function handleImportCmd(cmd) {
   if (cmd === 'download-template') {
-    downloadActivityImportTemplate().catch(err => ElMessage.error(err.message))
+    resetTemplateDialog()
+    loadTemplateProjects()
+    templateDialogVisible.value = true
   } else if (cmd === 'import-data') {
     resetImport()
     importDialogVisible.value = true
@@ -369,6 +556,8 @@ function resetImport() {
   importRows.value = []
   importValidCount.value = 0
   importErrorCount.value = 0
+  importSplitInfo.value = ''
+  importDefaultYear.value = new Date().getFullYear()
 }
 
 async function handleImportFile(file) {
@@ -379,11 +568,19 @@ async function handleImportFile(file) {
     importRows.value = res.data.rows
     importValidCount.value = res.data.valid_count
     importErrorCount.value = res.data.error_count
+    importSplitInfo.value = res.data.split_info || ''
+    importDefaultYear.value = res.data.default_year || new Date().getFullYear()
     importStep.value = 'preview'
   } catch (err) {
     ElMessage.error(err.message)
     importFileList.value = []
   }
+}
+
+function onDefaultYearChange(val) {
+  importRows.value.forEach(r => {
+    r.data.year = val
+  })
 }
 
 function importRowClass({ row }) { return !row._valid ? 'import-error-row' : '' }
@@ -430,10 +627,9 @@ async function openEdit(row) {
     if (res.code === 0) {
       const d = res.data
       form.project_id = d.project_id || ''
-      form.date = d.date ? d.date.replace(' ', 'T') : ''
+      form.date = d.date ? d.date.substring(0, 10) : ''
       form.content = d.content || ''
       form.files = d.files || []
-      // 解析已有的文件列表
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
@@ -549,12 +745,68 @@ async function handleDelete(row) {
 .upload-wrapper :deep(.el-upload-dragger) { padding: 16px 0; }
 .upload-wrapper :deep(.el-upload__text) { font-size: 13px; }
 
-/* 导入对话框 */
-.import-summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 14px; }
+/* ---- 导入对话框 ---- */
+.import-summary { display: flex; gap: 24px; margin-bottom: 8px; font-size: 14px; flex-wrap: wrap; }
 .import-summary strong { font-size: 18px; margin: 0 2px; }
 .summary-valid { color: #67c23a; }
 .summary-error { color: #f56c6c; }
+.summary-split { color: #409eff; font-size: 12px; }
+
+.import-year-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; padding: 8px 14px;
+  background: #f0f7ff; border-radius: 6px; border: 1px solid #d6e8ff;
+}
+.year-label { font-size: 13px; color: #1a3a5c; font-weight: 600; }
+.year-hint { font-size: 12px; color: #909399; }
+
 .import-table-wrap { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
 :deep(.import-error-row) { background-color: #fef0f0 !important; }
 :deep(.import-error-row:hover > td) { background-color: #fde2e2 !important; }
+
+.import-content-cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+  max-height: 4.5em;
+  cursor: pointer;
+}
+.split-highlight { background: #ecf5ff; padding: 1px 4px; border-radius: 3px; font-weight: 500; }
+.project-id-tag {
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 12px;
+  color: #1a3a5c;
+  background: #f0f5ff;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* ---- 模板下载对话框 ---- */
+.template-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+.filter-label { font-size: 14px; color: #606266; font-weight: 500; white-space: nowrap; }
+.template-count { font-size: 13px; color: #909399; margin-left: auto; }
+.template-table { margin-bottom: 4px; }
+</style>
+
+<!-- 非 scoped 样式：用于 Element Plus teleported popper -->
+<style>
+.import-content-tooltip {
+  max-width: 600px !important;
+}
+.import-content-tooltip .tooltip-content-text {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 13px;
+}
 </style>

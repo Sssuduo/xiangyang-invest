@@ -162,6 +162,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/dict',
+    name: 'AdminDict',
+    component: () => import('@/views/admin/DictConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/activity-export-config',
     name: 'AdminActivityExportConfig',
     component: () => import('@/views/admin/ActivityExportConfig.vue'),

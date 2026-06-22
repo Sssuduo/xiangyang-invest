@@ -1,6 +1,6 @@
 from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
-from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict
+from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
 from models import InvestmentActivity
 from extensions import db
 from routes import api_bp
@@ -199,6 +199,7 @@ def list_public_projects():
     search = request.args.get('search', '').strip()
     follow_status = request.args.get('follow_status', '').strip()
     meeting_status = request.args.get('meeting_status', '').strip()
+    project_type = request.args.get('project_type', '').strip()
 
     q = InvestmentProject.query.filter_by(is_deleted=False)
 
@@ -215,6 +216,8 @@ def list_public_projects():
         q = q.filter_by(follow_status_code=follow_status)
     if meeting_status:
         q = q.filter_by(meeting_status_code=meeting_status)
+    if project_type:
+        q = q.filter_by(project_type_code=project_type)
 
     # 排序：重点跟进优先 → 顺序号升序
     q = q.order_by(
@@ -233,6 +236,7 @@ def list_public_projects():
     meeting_map = {d.code: d for d in MeetingStatusDict.query.all()}
     org_map = {d.code: d for d in OrganizationDict.query.all()}
     type_map = {d.code: d for d in ProjectTypeDict.query.all()}
+    demand_type_map = {d.code: d for d in DemandTypeDict.query.all()}
 
     result = []
     for p in projects:
@@ -249,6 +253,12 @@ def list_public_projects():
         d['responsible_unit_name'] = ou2.name if ou2 else ''
         tu = type_map.get(p.project_type_code)
         d['project_type_name'] = tu.name if tu else ''
+        # 诉求字典名称
+        for dd in d.get('demands', []) or []:
+            dt = demand_type_map.get(dd.get('demand_type_code'))
+            dd['demand_type_name'] = dt.name if dt else ''
+            du = org_map.get(dd.get('unit_code'))
+            dd['unit_name'] = du.name if du else ''
         result.append(d)
 
     return jsonify({'code': 0, 'data': result})

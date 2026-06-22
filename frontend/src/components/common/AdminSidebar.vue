@@ -78,6 +78,11 @@
       <span>联系我们</span>
     </el-menu-item>
 
+    <el-menu-item index="/admin/dict">
+      <el-icon><Collection /></el-icon>
+      <span>字典配置</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/prompts">
       <el-icon><ChatDotSquare /></el-icon>
       <span>提示词管理</span>
@@ -107,7 +112,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

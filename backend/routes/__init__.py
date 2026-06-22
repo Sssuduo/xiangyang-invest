@@ -15,6 +15,9 @@ admin_investment_bp = Blueprint('admin_investment', __name__, url_prefix='/api/a
 admin_export_bp = Blueprint('admin_export', __name__, url_prefix='/api/admin')
 admin_import_bp = Blueprint('admin_import', __name__, url_prefix='/api/admin')
 
+# 字典管理
+admin_dict_bp = Blueprint('admin_dict', __name__, url_prefix='/api/admin')
+
 # 招商动态
 admin_activity_bp = Blueprint('admin_activity', __name__, url_prefix='/api/admin')
 admin_activity_export_bp = Blueprint('admin_activity_export', __name__, url_prefix='/api/admin')
@@ -34,6 +37,7 @@ def register_routes(app):
     from routes import admin_investment as _admin_investment
     from routes import admin_export as _admin_export
     from routes import admin_import as _admin_import
+    from routes import admin_dict as _admin_dict
     from routes import admin_activity as _admin_activity
     from routes import admin_activity_export as _admin_activity_export
     from routes import admin_activity_import as _admin_activity_import
@@ -48,6 +52,7 @@ def register_routes(app):
     app.register_blueprint(admin_homepage.admin_homepage_bp)
     app.register_blueprint(admin_contact.admin_contact_bp)
     app.register_blueprint(admin_investment.admin_investment_bp)
+    app.register_blueprint(admin_dict.admin_dict_bp)
     app.register_blueprint(admin_export.admin_export_bp)
     app.register_blueprint(admin_import.admin_import_bp)
     app.register_blueprint(admin_activity.admin_activity_bp)

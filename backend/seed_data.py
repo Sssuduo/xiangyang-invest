@@ -1,5 +1,5 @@
 from models import AdminUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, ExportFieldConfig, ImportFieldConfig
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
 from extensions import db
 
@@ -45,6 +45,9 @@ def init_database(app):
         "ALTER TABLE homepage_config ADD COLUMN presentation_interval INTEGER DEFAULT 5",
         "ALTER TABLE homepage_config ADD COLUMN carousel_autoplay BOOLEAN DEFAULT 1",
         "ALTER TABLE homepage_config ADD COLUMN presentation_autoplay BOOLEAN DEFAULT 1",
+        # V3.1: 企业诉求新增字段
+        "ALTER TABLE enterprise_demands ADD COLUMN demand_type_code VARCHAR(32) DEFAULT ''",
+        "ALTER TABLE enterprise_demands ADD COLUMN unit_code VARCHAR(32) DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -166,6 +169,8 @@ def _seed_investment_dicts():
         ('org_zuzhibu', '区委组织部'),
         ('org_shehuibu', '区委社会工作部'),
         ('org_laoganju', '区委老干局'),
+        ('org_fagaiwei', '区发改委'),
+        ('org_kejingju', '区科经局'),
         ('org_caizhengju', '区财政局'),
         ('org_chengguanju', '区城管局'),
         ('org_nongyenongcunju', '区农业农村局'),
@@ -201,6 +206,22 @@ def _seed_investment_dicts():
             existing.sort_order = i + 1
         else:
             db.session.add(ProjectTypeDict(code=code, name=name, sort_order=i + 1))
+
+    # 诉求类型
+    demand_types = [
+        ('demand_land', '用地保障'),
+        ('demand_production', '生产要素保障'),
+        ('demand_policy', '政策支持'),
+        ('demand_platform', '平台公司参与'),
+        ('demand_other', '其它'),
+    ]
+    for i, (code, name) in enumerate(demand_types):
+        existing = DemandTypeDict.query.filter_by(code=code).first()
+        if existing:
+            existing.name = name
+            existing.sort_order = i + 1
+        else:
+            db.session.add(DemandTypeDict(code=code, name=name, sort_order=i + 1))
 
     db.session.commit()
     print('[种子数据] 招商对接项目库字典已初始化')
@@ -291,8 +312,9 @@ def _seed_activity_export_fields():
 def _seed_activity_import_fields():
     """初始化招商动态导入字段配置"""
     fields = [
+        ('project_id', '项目ID', True, False, 0),     # 数据库主键，模板下载时自动填入
         ('project_name', '所属项目', True, True, 1),
-        ('date', '日期', True, True, 2),
+        ('date', '日期', True, False, 2),              # 日期选填
         ('content', '动态内容', True, True, 3),
         ('files', '附件(URL)', True, False, 4),
     ]

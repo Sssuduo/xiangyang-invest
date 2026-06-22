@@ -5,9 +5,14 @@
       <div class="admin-content">
         <div class="page-header">
           <h2>招商动态管理</h2>
-          <el-button type="primary" @click="openCreate">
-            <el-icon><Plus /></el-icon> 添加动态
-          </el-button>
+          <div class="page-header-actions">
+            <el-button v-if="selectedIds.length > 0" type="danger" @click="handleBatchDelete">
+              <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
+            </el-button>
+            <el-button type="primary" @click="openCreate">
+              <el-icon><Plus /></el-icon> 添加动态
+            </el-button>
+          </div>
         </div>
 
         <!-- 搜索筛选 -->
@@ -28,7 +33,8 @@
           />
         </div>
 
-        <el-table :data="activities" stripe row-key="id" v-loading="loading" empty-text="暂无动态数据">
+        <el-table :data="activities" stripe row-key="id" v-loading="loading" @selection-change="handleSelectionChange" empty-text="暂无动态数据">
+          <el-table-column type="selection" width="45" />
           <el-table-column label="所属项目" width="180">
             <template #default="{ row }">
               <el-tag effect="plain" size="small" type="info">{{ row.project_name }}</el-tag>
@@ -78,10 +84,10 @@
           <el-form-item label="日期" prop="date">
             <el-date-picker
               v-model="form.date"
-              type="datetime"
-              placeholder="选择日期时间"
-              format="YYYY-MM-DD HH:mm"
-              value-format="YYYY-MM-DDTHH:mm"
+              type="date"
+              placeholder="选择日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
               style="width: 100%;"
             />
           </el-form-item>
@@ -130,16 +136,17 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, InfoFilled, Document, UploadFilled } from '@element-plus/icons-vue'
+import { Search, Plus, InfoFilled, Document, UploadFilled, Delete } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
-import { getActivities, createActivity, updateActivity, getActivity, deleteActivity } from '@/api/activity'
+import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
 import { getPublicProjects } from '@/api/investment'
 
 const activities = ref([])
 const loading = ref(false)
 const searchText = ref('')
 const filterProjectId = ref('')
+const selectedIds = ref([])
 const filterDateRange = ref([])
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
@@ -173,7 +180,6 @@ const form = reactive(defaultForm())
 
 const rules = {
   project_id: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
-  date: [{ required: true, message: '请选择日期', trigger: 'change' }],
   content: [{ required: true, message: '请输入动态内容', trigger: 'blur' }]
 }
 
@@ -213,6 +219,8 @@ function onDateRangeChange(vals) {
 
 function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
 
+function handleSelectionChange(selection) { selectedIds.value = selection.map(s => s.id) }
+
 function handleView(row) {
   viewActivity.value = row
   viewDrawerVisible.value = true
@@ -234,7 +242,7 @@ async function openEdit(row) {
     if (res.code === 0) {
       const d = res.data
       form.project_id = d.project_id || ''
-      form.date = d.date ? d.date.replace(' ', 'T') : ''
+      form.date = d.date ? d.date.substring(0, 10) : ''
       form.content = d.content || ''
       form.files = d.files || []
       try {
@@ -295,6 +303,22 @@ async function handleSave() {
   finally { saving.value = false }
 }
 
+async function handleBatchDelete() {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 条动态吗？此操作不可恢复。`,
+      '批量删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    const res = await batchDeleteActivities(selectedIds.value)
+    if (res.code === 0) {
+      ElMessage.success(res.message)
+      selectedIds.value = []
+      fetchData()
+    }
+  } catch { /* cancelled */ }
+}
+
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm('确定要删除该动态吗？', '确认删除', {
@@ -313,6 +337,7 @@ async function handleDelete(row) {
 .admin-content { padding: 28px 32px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { color: #1a3a5c; margin: 0; }
+.page-header-actions { display: flex; gap: 10px; align-items: center; }
 
 .filter-bar { display: flex; gap: 16px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
 .search-input { width: 320px; }

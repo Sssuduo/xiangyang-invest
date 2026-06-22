@@ -7,9 +7,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="顺序号">{{ project.order_no }}</el-descriptions-item>
         <el-descriptions-item label="项目类型">
-          <el-tag effect="dark" size="small" :color="dictMatch('project_types', project.project_type_code)?.display_color">
-            {{ project.project_type_name || project.project_type_code }}
-          </el-tag>
+          <span class="project-type-tag">{{ project.project_type_name || project.project_type_code }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="投资金额">
           <strong class="amount-txt">{{ formatAmount(project.invest_amount) }}</strong>
@@ -20,7 +18,7 @@
           <div class="text-block">{{ project.enterprise_info }}</div>
         </el-descriptions-item>
         <el-descriptions-item label="项目内容" :span="2">
-          <div class="text-block">{{ project.project_content }}</div>
+          <div class="text-block text-block-lg">{{ project.project_content }}</div>
         </el-descriptions-item>
         <el-descriptions-item label="跟进状态">
           <el-tag :color="project.follow_status_color" effect="dark" size="small">{{ project.follow_status_name || project.follow_status_code }}</el-tag>
@@ -37,15 +35,20 @@
 
         <!-- 企业诉求 -->
         <template v-if="project.demands && project.demands.length > 0">
-          <el-descriptions-item label="企业诉求" :span="2">
-            <div class="demand-list">
-              <div v-for="(d, i) in project.demands" :key="d.id" class="demand-item">
-                <div class="demand-header">
-                  <span class="demand-index">{{ i + 1 }}. {{ d.demand_content }}</span>
+          <el-descriptions-item label="企业诉求" :span="2" label-class-name="demand-label-top">
+            <div class="demand-list-drawer">
+              <div v-for="(d, i) in project.demands" :key="d.id" class="demand-card-drawer">
+                <div class="dmd-header">
+                  <span class="dmd-idx">诉求 {{ i + 1 }}</span>
+                  <span v-if="d.demand_type_name || d.demand_type_code" class="dmd-type-badge">{{ d.demand_type_name || d.demand_type_code }}</span>
+                  <span v-if="d.unit_name || d.unit_code" class="dmd-unit-tag"><el-icon><OfficeBuilding /></el-icon> {{ d.unit_name || d.unit_code }}</span>
+                  <div class="dmd-top-spacer"></div>
                   <el-tag :color="dStatusColor(d.status)" effect="dark" size="small">{{ dStatusName(d.status) }}</el-tag>
                 </div>
-                <div v-if="d.resolution" class="demand-resolution">
-                  <span class="res-label">解决措施：</span>{{ d.resolution }}
+                <div class="dmd-body">{{ d.demand_content }}</div>
+                <div v-if="d.resolution" class="dmd-res">
+                  <span class="dmd-res-label"><el-icon><ArrowRight /></el-icon> 解决措施</span>
+                  <span class="dmd-res-text">{{ d.resolution }}</span>
                 </div>
               </div>
             </div>
@@ -61,7 +64,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Document } from '@element-plus/icons-vue'
+import { Document, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -74,33 +77,92 @@ function handleClose() { emit('update:modelValue', false) }
 
 function formatAmount(a) { if (!a && a !== 0) return '-'; const n = Number(a); return n >= 10000 ? (n / 10000).toFixed(2) + ' 亿元' : n.toLocaleString('zh-CN') + ' 万元' }
 function fmtDt(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN', { hour12: false }) }
-function dictMatch(key, code) {
-  // 从 project 数据中查找对应的 color
-  const colorMap = {
-    follow_statuses: 'follow_status_color',
-    meeting_statuses: 'meeting_status_color'
-  }
-  const colorKey = colorMap[key]
-  if (colorKey && props.project?.[colorKey]) {
-    return { display_color: props.project[colorKey] }
-  }
-  return null
-}
 function dStatusColor(s) { return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399' }
 function dStatusName(s) { return { pending: '待处理', processing: '处理中', resolved: '已解决' }[s] || s }
 </script>
 
 <style scoped>
 .detail-desc :deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
+.detail-desc :deep(.demand-label-top .el-descriptions__label) { vertical-align: top; padding-top: 14px; }
 .text-block { white-space: pre-wrap; line-height: 1.7; font-size: 13px; color: #303133; max-height: 200px; overflow-y: auto; }
+.text-block-lg { max-height: 400px; }
 .amount-txt { color: #e6a23c; font-size: 16px; }
 .doc-link { color: #409eff; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .doc-link:hover { text-decoration: underline; }
-.demand-list { width: 100%; }
-.demand-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-.demand-item:last-child { border-bottom: none; }
-.demand-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.demand-index { font-size: 13px; color: #303133; flex: 1; }
-.demand-resolution { margin-top: 6px; font-size: 12px; color: #606266; padding-left: 20px; }
-.res-label { font-weight: 500; color: #909399; }
+.project-type-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #1a3a5c;
+  background: #e8f0f8;
+  border: 1px solid #c8daf0;
+  border-radius: 4px;
+}
+
+/* 诉求卡片 */
+.demand-list-drawer { width: 100%; }
+.demand-card-drawer {
+  background: #f8f9fb;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.demand-card-drawer:last-child { margin-bottom: 0; }
+.dmd-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dmd-idx { font-size: 13px; font-weight: 600; color: #606266; }
+.dmd-type-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: #1a3a5c;
+  background: #e8f0f8;
+  border: 1px solid #c8daf0;
+  border-radius: 3px;
+}
+.dmd-unit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #1a3a5c;
+  background: #f0f5ff;
+  border: 1px solid #c8daf0;
+  border-radius: 3px;
+  padding: 1px 8px;
+}
+.dmd-top-spacer { flex: 1; }
+.dmd-body {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.6;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e4e7ed;
+  white-space: pre-wrap;
+}
+.dmd-res {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+.dmd-res-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: #409eff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dmd-res-text {
+  color: #606266;
+  line-height: 1.6;
+}
 </style>

@@ -12,6 +12,9 @@
           <el-select v-model="filterMeetingStatus" placeholder="上会状态" clearable @change="fetchData" style="width: 140px;">
             <el-option v-for="d in dicts.meeting_statuses" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
+          <el-select v-model="filterProjectType" placeholder="项目类型" clearable @change="fetchData" style="width: 140px;">
+            <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
+          </el-select>
           <el-button v-if="selectedIds.length > 0" type="success" @click="handleExport">
             <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
           </el-button>
@@ -38,37 +41,56 @@
 
         <el-table
           ref="tableRef"
-          :data="projects"
+          :data="pagedProjects"
           stripe
           row-key="id"
           :row-class-name="tableRowClassName"
           v-loading="loading"
           @selection-change="handleSelectionChange"
+          @expand-change="nextTick(updateExpandWidth)"
           empty-text="暂无招商项目数据"
           style="width: 100%"
         >
           <el-table-column type="selection" width="45" />
-          <el-table-column type="expand">
+          <el-table-column type="expand" width="42">
             <template #default="{ row }">
-              <div class="expand-content">
-                <div class="expand-grid">
-                  <div class="expand-item"><label>项目名称</label><span>{{ row.project_name }}</span></div>
-                  <div class="expand-item"><label>投资商名称</label><span>{{ row.invest_enterprise }}</span></div>
-                  <div class="expand-item full-width"><label>企业简介</label><span class="pre-wrap">{{ row.enterprise_info }}</span></div>
-                  <div class="expand-item full-width"><label>项目内容</label><span class="pre-wrap">{{ row.project_content }}</span></div>
-                  <div class="expand-item"><label>推介单位</label><span>{{ row.recommend_unit_name || '-' }}</span></div>
-                  <div class="expand-item"><label>首次对接</label><span>{{ row.first_contact_date || '-' }}</span></div>
-                  <div class="expand-item" v-if="row.project_doc">
-                    <label>项目文档</label>
-                    <a :href="row.project_doc" target="_blank" class="doc-link"><el-icon><Document /></el-icon> 查看</a>
+              <div class="expand-content" :style="{ width: expandWidth + 'px', maxWidth: expandWidth + 'px' }">
+                <div class="expand-block">
+                  <div class="expand-block-title">基础信息</div>
+                  <div class="expand-grid">
+                    <div class="expand-item"><label>项目名称</label><span>{{ row.project_name }}</span></div>
+                    <div class="expand-item"><label>投资商名称</label><span>{{ row.invest_enterprise }}</span></div>
+                    <div class="expand-item"><label>推介单位</label><span>{{ row.recommend_unit_name || '-' }}</span></div>
+                    <div class="expand-item"><label>首次对接</label><span>{{ row.first_contact_date || '-' }}</span></div>
                   </div>
-                  <div class="expand-item full-width" v-if="row.demands && row.demands.length > 0">
-                    <label>企业诉求</label>
-                    <div class="demand-list">
-                      <div v-for="(d, i) in row.demands" :key="d.id" class="demand-row">
+                </div>
+                <div class="expand-block">
+                  <div class="expand-block-title">企业简介</div>
+                  <p class="expand-text-block">{{ row.enterprise_info }}</p>
+                </div>
+                <div class="expand-block">
+                  <div class="expand-block-title">项目内容</div>
+                  <p class="expand-text-block">{{ row.project_content }}</p>
+                </div>
+                <div class="expand-block" v-if="row.project_doc">
+                  <div class="expand-block-title">项目文档</div>
+                  <a :href="row.project_doc" target="_blank" class="doc-link"><el-icon><Document /></el-icon> 查看</a>
+                </div>
+                <div class="expand-block" v-if="row.demands && row.demands.length > 0">
+                  <div class="expand-block-title">企业诉求</div>
+                  <div class="demand-list">
+                    <div v-for="(d, i) in row.demands" :key="d.id" class="demand-row-card">
+                      <div class="demand-row-top">
                         <span class="demand-idx">{{ i + 1 }}.</span>
-                        <span class="demand-text">{{ d.demand_content }}</span>
-                        <el-tag :color="demandStatusColor(d.status)" effect="dark" size="small" style="margin-left: 8px;">{{ demandStatusName(d.status) }}</el-tag>
+                        <span v-if="d.demand_type_name || d.demand_type_code" class="demand-type-badge">{{ d.demand_type_name || d.demand_type_code }}</span>
+                        <span v-if="d.unit_name || d.unit_code" class="demand-unit-tag"><el-icon><OfficeBuilding /></el-icon> {{ d.unit_name || d.unit_code }}</span>
+                        <div class="demand-top-spacer"></div>
+                        <el-tag :color="demandStatusColor(d.status)" effect="dark" size="small">{{ demandStatusName(d.status) }}</el-tag>
+                      </div>
+                      <div class="demand-row-body">{{ d.demand_content }}</div>
+                      <div v-if="d.resolution" class="demand-row-res">
+                        <span class="res-divider"><el-icon><ArrowRight /></el-icon> 解决措施</span>
+                        <span class="res-text">{{ d.resolution }}</span>
                       </div>
                     </div>
                   </div>
@@ -81,12 +103,12 @@
           <el-table-column prop="project_name" label="项目名称" min-width="160" show-overflow-tooltip />
           <el-table-column label="项目类型" width="150">
             <template #default="{ row }">
-              <el-tag effect="plain" size="small" type="info">{{ row.project_type_name || row.project_type_code }}</el-tag>
+              <span class="project-type-tag">{{ row.project_type_name || row.project_type_code }}</span>
             </template>
           </el-table-column>
           <el-table-column label="投资商名称" width="160">
             <template #default="{ row }">
-              <el-tooltip :content="row.enterprise_info" placement="top" :show-after="300">
+              <el-tooltip :content="row.enterprise_info" placement="top" :show-after="300" popper-class="enterprise-tooltip">
                 <span class="enterprise-name">{{ row.invest_enterprise }}</span>
               </el-tooltip>
             </template>
@@ -100,7 +122,7 @@
           </el-table-column>
           <el-table-column label="投资金额" width="130" align="right">
             <template #default="{ row }">
-              <span :class="{ 'amount-big': row.invest_amount >= 10000 }">{{ formatAmount(row.invest_amount) }}</span>
+              <span>{{ formatAmount(row.invest_amount) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="跟进状态" width="110" align="center">
@@ -117,14 +139,46 @@
             <template #default="{ row }">{{ row.responsible_unit_name || row.responsible_unit_code }}</template>
           </el-table-column>
           <el-table-column prop="person_in_charge" label="责任人" width="90" />
-          <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="handleView(row)">查看</el-button>
-              <el-button size="small" link type="success" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
+              <div class="action-cell">
+                <el-button size="small" link type="success" @click="openEdit(row)">编辑</el-button>
+                <el-button size="small" link type="warning" @click="handleAddActivity(row)">动态</el-button>
+                <el-button size="small" link type="primary" @click="handleAI(row)">AI助手</el-button>
+                <el-dropdown trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
+                  <el-button size="small" link class="action-more">
+                    <el-icon><MoreFilled /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="view">
+                        <el-icon><View /></el-icon> 项目详情
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>
+                        <el-icon><Delete /></el-icon> 删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
             </template>
           </el-table-column>
         </el-table>
+
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[5, 10, 20, 50]"
+            :total="projects.length"
+            layout="total, sizes, prev, pager, next"
+            background
+            small
+            @size-change="handleSizeChange"
+            @current-change="handlePageChange"
+          />
+          <el-checkbox v-model="showAll" class="show-all-check" @change="handleShowAllChange">展示全部</el-checkbox>
+        </div>
       </div>
     </div>
 
@@ -193,7 +247,7 @@
             <span class="section-title">项目详情</span>
           </div>
           <el-form-item label="项目内容" prop="project_content">
-            <el-input v-model="form.project_content" type="textarea" :rows="3" placeholder="项目详细内容..." maxlength="5000" show-word-limit />
+            <el-input v-model="form.project_content" type="textarea" :rows="6" placeholder="项目详细内容..." maxlength="5000" show-word-limit />
           </el-form-item>
           <el-form-item label="项目文档">
             <div class="upload-wrapper">
@@ -209,13 +263,12 @@
                 multiple
                 drag
                 accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
+                class="upload-compact"
               >
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
-                <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
-                </template>
               </el-upload>
+              <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
             </div>
           </el-form-item>
 
@@ -271,6 +324,18 @@
                 <span class="demand-card-title">诉求 {{ i + 1 }}</span>
                 <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
               </div>
+              <el-row :gutter="12" style="margin-bottom: 8px;">
+                <el-col :span="12">
+                  <el-select v-model="d.demand_type_code" placeholder="诉求类型" size="small" style="width: 100%;">
+                    <el-option v-for="dt in dicts.demand_types" :key="dt.code" :label="dt.name" :value="dt.code" />
+                  </el-select>
+                </el-col>
+                <el-col :span="12">
+                  <el-select v-model="d.unit_code" placeholder="对接单位" size="small" style="width: 100%;">
+                    <el-option v-for="org in dicts.organizations" :key="org.code" :label="org.name" :value="org.code" />
+                  </el-select>
+                </el-col>
+              </el-row>
               <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
               <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
               <el-select v-model="d.status" size="small" style="width: 120px;">
@@ -362,9 +427,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown } from '@element-plus/icons-vue'
+
+const router = useRouter()
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, MoreFilled, View, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getPublicProjects } from '@/api/investment'
@@ -378,8 +446,65 @@ const loading = ref(false)
 const searchText = ref('')
 const filterFollowStatus = ref('')
 const filterMeetingStatus = ref('')
+const filterProjectType = ref('')
 const selectedIds = ref([])
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [] })
+const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [] })
+
+// 分页
+const currentPage = ref(1)
+const pageSize = ref(5)
+const showAll = ref(false)
+
+const pagedProjects = computed(() => {
+  if (showAll.value) return projects.value
+  const start = (currentPage.value - 1) * pageSize.value
+  return projects.value.slice(start, start + pageSize.value)
+})
+
+function handlePageChange() { /* currentPage 已双向绑定 */ }
+function handleSizeChange() {
+  currentPage.value = 1
+}
+function handleShowAllChange(val) {
+  currentPage.value = 1
+}
+
+// 展开卡片固定宽度 & 冻结效果
+const expandWidth = ref(1488)
+let tableScrollWrapper = null
+
+function updateExpandWidth() {
+  const el = tableRef.value?.$el
+  if (el) {
+    expandWidth.value = el.clientWidth || 1488
+  }
+}
+
+function onTableScroll(e) {
+  const sl = e.target.scrollLeft
+  const cells = tableRef.value?.$el?.querySelectorAll('.el-table__expanded-cell')
+  cells?.forEach(c => {
+    c.style.transform = `translateX(${sl}px)`
+  })
+}
+
+onMounted(() => {
+  nextTick(() => {
+    updateExpandWidth()
+    tableScrollWrapper = tableRef.value?.$el?.querySelector('.el-table__body-wrapper')
+    if (tableScrollWrapper) {
+      tableScrollWrapper.addEventListener('scroll', onTableScroll)
+    }
+    window.addEventListener('resize', updateExpandWidth)
+  })
+})
+
+onBeforeUnmount(() => {
+  if (tableScrollWrapper) {
+    tableScrollWrapper.removeEventListener('scroll', onTableScroll)
+  }
+  window.removeEventListener('resize', updateExpandWidth)
+})
 
 let searchTimer = null
 
@@ -454,8 +579,11 @@ async function fetchData() {
     if (searchText.value) params.search = searchText.value
     if (filterFollowStatus.value) params.follow_status = filterFollowStatus.value
     if (filterMeetingStatus.value) params.meeting_status = filterMeetingStatus.value
+    if (filterProjectType.value) params.project_type = filterProjectType.value
     const res = await getPublicProjects(params)
     projects.value = res.data || []
+    currentPage.value = 1
+    nextTick(updateExpandWidth)
   } catch { projects.value = [] }
   finally { loading.value = false }
 }
@@ -481,6 +609,22 @@ function demandStatusColor(s) {
 function demandStatusName(s) {
   const map = { pending: '待处理', processing: '处理中', resolved: '已解决' }
   return map[s] || s
+}
+
+// ---- 操作列 ----
+function handleRowCmd(cmd, row) {
+  if (cmd === 'view') {
+    viewProject.value = row
+    viewDrawerVisible.value = true
+  } else if (cmd === 'delete') {
+    handleDelete(row)
+  }
+}
+function handleAddActivity(row) {
+  router.push({ path: '/admin/activity', query: { project_id: row.id } })
+}
+function handleAI(row) {
+  router.push({ path: '/toolbox', query: { topic: row.project_name } })
 }
 
 // ---- 查看 ----
@@ -605,7 +749,11 @@ async function openEdit(row) {
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
       form.first_contact_date = d.first_contact_date || ''
-      form.demands = (d.demands || []).map(dd => ({ ...dd }))
+      form.demands = (d.demands || []).map(dd => ({
+        ...dd,
+        demand_type_code: dd.demand_type_code || '',
+        unit_code: dd.unit_code || ''
+      }))
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -617,7 +765,7 @@ function resetForm() {
   formRef.value?.clearValidate()
 }
 
-function addDemand() { form.demands.push({ demand_content: '', resolution: '', status: 'pending' }) }
+function addDemand() { form.demands.push({ demand_type_code: '', demand_content: '', resolution: '', unit_code: '', status: 'pending' }) }
 function removeDemand(i) { form.demands.splice(i, 1) }
 
 // ---- 文件上传处理 ----
@@ -730,23 +878,151 @@ async function handleDelete(row) {
 .search-input { width: 320px; }
 
 /* 展开行 */
-.expand-content { padding: 12px 24px; background: #fafbfc; }
-.expand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 32px; }
-.expand-item { display: flex; flex-direction: column; gap: 4px; }
-.expand-item.full-width { grid-column: 1 / -1; }
+.expand-content {
+  padding: 8px 20px 16px;
+  background: #f5f7fa;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.expand-block {
+  margin-top: 14px;
+  padding: 12px 16px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+  box-sizing: border-box;
+}
+.expand-block:first-child { margin-top: 6px; }
+.expand-block-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a3a5c;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e4e7ed;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.expand-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 28px;
+}
+.expand-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .expand-item label { font-size: 12px; color: #909399; font-weight: 500; }
-.expand-item span { font-size: 14px; color: #303133; }
-.pre-wrap { white-space: pre-wrap; line-height: 1.6; }
+.expand-item span {
+  font-size: 14px;
+  color: #303133;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.expand-text-block {
+  margin: 0;
+  font-size: 14px;
+  color: #303133;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 项目类型标签 */
+.project-type-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #1a3a5c;
+  background: #e8f0f8;
+  border: 1px solid #c8daf0;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .enterprise-name { cursor: default; border-bottom: 1px dotted #909399; }
 .content-preview { cursor: default; color: #606266; }
-.content-tooltip { max-width: 480px !important; white-space: pre-wrap !important; }
-.amount-big { color: #e6a23c; font-weight: 600; }
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
+}
+.show-all-check { margin-left: 8px; }
 .doc-link { color: #409eff; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .doc-link:hover { text-decoration: underline; }
-.demand-list { margin-top: 4px; }
-.demand-row { display: flex; align-items: center; padding: 4px 0; font-size: 13px; }
-.demand-idx { color: #909399; margin-right: 6px; min-width: 20px; }
-.demand-text { color: #303133; flex: 1; }
+
+/* 操作列 */
+.action-cell { display: flex; align-items: center; gap: 2px; }
+.action-more { font-size: 18px; padding: 4px; }
+
+/* 展开卡片 - 诉求 */
+.demand-list { width: 100%; }
+.demand-row-card {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #f8f9fb;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+.demand-row-card:last-child { margin-bottom: 0; }
+.demand-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.demand-idx { color: #909399; font-weight: 600; min-width: 20px; font-size: 13px; }
+.demand-type-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: #1a3a5c;
+  background: #e8f0f8;
+  border: 1px solid #c8daf0;
+  border-radius: 3px;
+}
+.demand-unit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #1a3a5c;
+  background: #f0f5ff;
+  border: 1px solid #c8daf0;
+  border-radius: 3px;
+  padding: 1px 8px;
+}
+.demand-top-spacer { flex: 1; }
+.demand-row-body {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.6;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e4e7ed;
+}
+.demand-row-res {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+.res-divider {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: #409eff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.res-text {
+  color: #606266;
+  line-height: 1.6;
+}
 :deep(.row-focus) { background-color: #fef7e8 !important; }
 :deep(.row-focus:hover > td) { background-color: #fdf0d5 !important; }
 :deep(.col-order-no) { padding-left: 4px !important; padding-right: 4px !important; }
@@ -783,6 +1059,8 @@ async function handleDelete(row) {
 .upload-wrapper { width: 100%; }
 .upload-wrapper :deep(.el-upload-dragger) { padding: 16px 0; }
 .upload-wrapper :deep(.el-upload__text) { font-size: 13px; }
+.upload-compact :deep(.el-upload-dragger) { padding: 8px 0 !important; height: 80px !important; }
+.upload-compact :deep(.el-upload-dragger .el-icon--upload) { font-size: 24px; margin-bottom: 0; }
 
 /* 导入对话框 */
 .import-summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 14px; }
@@ -792,4 +1070,26 @@ async function handleDelete(row) {
 .import-table-wrap { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
 :deep(.import-error-row) { background-color: #fef0f0 !important; }
 :deep(.import-error-row:hover > td) { background-color: #fde2e2 !important; }
+</style>
+
+<!-- 非 scoped 样式：覆盖 Element Plus teleport 到 body 的 popper 和内部表格结构 -->
+<style>
+/* 悬停留固定宽度 496px（popper 被 teleport 到 body，必须非 scoped） */
+.enterprise-tooltip {
+  max-width: 496px !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+.content-tooltip {
+  max-width: 496px !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+}
+
+/* 展开单元格冻结 + 宽度约束 */
+.el-table__expanded-cell {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
 </style>

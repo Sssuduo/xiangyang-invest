@@ -2,7 +2,7 @@ from datetime import date
 from flask import request, jsonify
 from flask_login import login_required
 from models import InvestmentProject, EnterpriseDemand
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
 from extensions import db
 from routes import admin_investment_bp
 
@@ -33,7 +33,8 @@ def get_dicts():
             'follow_statuses': [d.to_dict() for d in FollowStatusDict.query.order_by(FollowStatusDict.sort_order).all()],
             'meeting_statuses': [d.to_dict() for d in MeetingStatusDict.query.order_by(MeetingStatusDict.sort_order).all()],
             'organizations': [d.to_dict() for d in OrganizationDict.query.filter_by(is_active=True).order_by(OrganizationDict.sort_order).all()],
-            'project_types': [d.to_dict() for d in ProjectTypeDict.query.filter_by(is_active=True).order_by(ProjectTypeDict.sort_order).all()]
+            'project_types': [d.to_dict() for d in ProjectTypeDict.query.filter_by(is_active=True).order_by(ProjectTypeDict.sort_order).all()],
+            'demand_types': [d.to_dict() for d in DemandTypeDict.query.filter_by(is_active=True).order_by(DemandTypeDict.sort_order).all()]
         }
     })
 
@@ -129,8 +130,10 @@ def create_project():
         if d.get('demand_content', '').strip():
             db.session.add(EnterpriseDemand(
                 project_id=project.id,
+                demand_type_code=d.get('demand_type_code', ''),
                 demand_content=d['demand_content'],
                 resolution=d.get('resolution', ''),
+                unit_code=d.get('unit_code', ''),
                 status=d.get('status', 'pending'),
                 sort_order=i + 1
             ))
@@ -151,6 +154,7 @@ def get_project(project_id):
     meeting_map = {d.code: d for d in MeetingStatusDict.query.all()}
     org_map = {d.code: d for d in OrganizationDict.query.all()}
     type_map = {d.code: d for d in ProjectTypeDict.query.all()}
+    demand_type_map = {d.code: d for d in DemandTypeDict.query.all()}
 
     fu = follow_map.get(project.follow_status_code)
     data['follow_status_name'] = fu.name if fu else ''
@@ -164,6 +168,13 @@ def get_project(project_id):
     data['responsible_unit_name'] = ou2.name if ou2 else ''
     tu = type_map.get(project.project_type_code)
     data['project_type_name'] = tu.name if tu else ''
+
+    # 诉求字典名称
+    for d in data.get('demands', []) or []:
+        dt = demand_type_map.get(d.get('demand_type_code'))
+        d['demand_type_name'] = dt.name if dt else ''
+        du = org_map.get(d.get('unit_code'))
+        d['unit_name'] = du.name if du else ''
 
     return jsonify({'code': 0, 'data': data})
 
@@ -222,8 +233,10 @@ def update_project(project_id):
             if d.get('demand_content', '').strip():
                 db.session.add(EnterpriseDemand(
                     project_id=project_id,
+                    demand_type_code=d.get('demand_type_code', ''),
                     demand_content=d['demand_content'],
                     resolution=d.get('resolution', ''),
+                    unit_code=d.get('unit_code', ''),
                     status=d.get('status', 'pending'),
                     sort_order=i + 1
                 ))

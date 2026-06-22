@@ -368,14 +368,33 @@ class InvestmentProject(db.Model):
         }
 
 
+class DemandTypeDict(db.Model):
+    """诉求类型字典"""
+    __tablename__ = 'demand_type_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
 class EnterpriseDemand(db.Model):
     """企业诉求子表"""
     __tablename__ = 'enterprise_demands'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
+    demand_type_code = db.Column(db.String(32), default='')
     demand_content = db.Column(db.Text, nullable=False)
     resolution = db.Column(db.Text, default='')
+    unit_code = db.Column(db.String(32), default='')
     status = db.Column(db.String(32), nullable=False, default='pending')  # pending/processing/resolved
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -385,8 +404,10 @@ class EnterpriseDemand(db.Model):
         return {
             'id': self.id,
             'project_id': self.project_id,
+            'demand_type_code': self.demand_type_code or '',
             'demand_content': self.demand_content,
             'resolution': self.resolution or '',
+            'unit_code': self.unit_code or '',
             'status': self.status,
             'sort_order': self.sort_order,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -473,7 +494,7 @@ class InvestmentActivity(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
-    date = db.Column(db.DateTime, nullable=False)
+    date = db.Column(db.DateTime, nullable=True)
     content = db.Column(db.Text, nullable=False)
     files = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -486,7 +507,7 @@ class InvestmentActivity(db.Model):
             'id': self.id,
             'project_id': self.project_id,
             'project_name': self.project.project_name if self.project else '',
-            'date': self.date.strftime('%Y-%m-%d %H:%M') if self.date else None,
+            'date': self.date.strftime('%Y-%m-%d') if self.date else None,
             'content': self.content,
             'files': json.loads(self.files) if self.files else [],
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,

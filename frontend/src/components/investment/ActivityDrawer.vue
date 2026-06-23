@@ -1,8 +1,16 @@
 <template>
-  <el-drawer v-model="visible" title="动态详情" direction="rtl" size="560px" :before-close="handleClose">
+  <el-drawer v-model="visible" direction="rtl" size="560px" :before-close="handleClose">
+    <template #header>
+      <div class="drawer-title-bar">
+        <span class="drawer-title">
+          <el-icon><View /></el-icon>
+          动态详情
+        </span>
+      </div>
+    </template>
     <template v-if="activity">
       <el-descriptions :column="2" border size="small" class="detail-desc">
-        <el-descriptions-item label="所属项目" :span="2">
+        <el-descriptions-item label="项目" :span="2">
           <strong>{{ activity.project_name }}</strong>
         </el-descriptions-item>
         <el-descriptions-item label="日期" :span="2">
@@ -10,6 +18,11 @@
         </el-descriptions-item>
         <el-descriptions-item label="动态内容" :span="2">
           <div class="text-block">{{ activity.content || '-' }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="activity._tagNames && activity._tagNames.length > 0" label="动态标签" :span="2">
+          <el-tag v-for="(name, idx) in activity._tagNames" :key="idx" size="small" effect="plain" style="margin-right: 6px; margin-bottom: 4px;">
+            {{ name }}
+          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="附件" :span="2">
           <template v-if="activity.files && activity.files.length > 0">
@@ -37,7 +50,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Document } from '@element-plus/icons-vue'
+import { Document, View } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -62,6 +75,21 @@ function getFileName(url) {
 </script>
 
 <style scoped>
+.drawer-title-bar {
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  margin: 0 -20px 0 -20px;
+  padding: 20px 20px 20px 40px;
+}
+.drawer-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .detail-desc :deep(.el-descriptions__label) {
   width: 100px; font-weight: 500; color: #606266;
 }
@@ -82,4 +110,14 @@ function getFileName(url) {
   max-width: 400px;
 }
 .no-data { color: #909399; }
+</style>
+
+<style>
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
+}
 </style>

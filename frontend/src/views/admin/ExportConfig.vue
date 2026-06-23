@@ -10,7 +10,26 @@
           </el-button>
         </div>
 
-        <p class="page-desc">配置招商项目库 Excel 导出的字段、列宽和顺序。拖动行可调整导出顺序。</p>
+        <p class="page-desc">配置招商项目库 Excel 导出的字段、列宽和顺序。支持创建多个导出模板。</p>
+
+        <!-- 模板管理 -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="template-bar">
+            <span class="template-label">导出模板：</span>
+            <el-select v-model="currentTemplateId" placeholder="选择模板" style="width: 280px;" @change="onTemplateChange">
+              <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+            <el-button size="small" @click="openCreateTemplate">
+              <el-icon><Plus /></el-icon> 新建
+            </el-button>
+            <el-button size="small" @click="openRenameTemplate" :disabled="!currentTemplateId">
+              重命名
+            </el-button>
+            <el-button size="small" type="danger" @click="handleDeleteTemplate" :disabled="templates.length <= 1">
+              删除
+            </el-button>
+          </div>
+        </div>
 
         <!-- 字段配置 -->
         <div class="card">
@@ -38,10 +57,26 @@
                 <el-input-number v-model="row.column_width" :min="40" :max="600" :step="10" size="small" controls-position="right" style="width: 90px;" />
               </template>
             </el-table-column>
+            <el-table-column label="操作" width="130" align="center">
+              <template #default="{ row, $index }">
+                <el-button size="small" link @click="moveUp($index)" :disabled="$index === 0" title="上移">
+                  <el-icon><Top /></el-icon>
+                </el-button>
+                <el-button size="small" link @click="moveDown($index)" :disabled="$index === fields.length - 1" title="下移">
+                  <el-icon><Bottom /></el-icon>
+                </el-button>
+                <el-button v-if="row.is_custom" size="small" link type="danger" @click="removeCustomField($index)" title="删除">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
+          <el-button size="small" style="margin-top: 12px;" @click="addCustomField">
+            <el-icon><Plus /></el-icon> 添加自定义列
+          </el-button>
         </div>
 
-        <!-- 导出预览（字段列表下方） -->
+        <!-- 导出预览 -->
         <div class="card" style="margin-top: 20px;">
           <h4 class="card-title">导出预览</h4>
           <el-button size="small" :loading="previewing" @click="loadPreview" style="margin-bottom: 12px;">
@@ -57,10 +92,7 @@
                   :style="{ width: h.column_width + 'px' }"
                 >
                   {{ h.field_label }}
-                  <span
-                    class="col-resizer"
-                    @mousedown="startResize($event, i)"
-                  />
+                  <span class="col-resizer" @mousedown="startResize($event, i)" />
                 </div>
               </div>
               <div v-for="(row, ri) in previewRows" :key="ri" class="preview-data-row">
@@ -84,11 +116,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
-import { getExportFields, updateExportFields, exportPreview } from '@/api/export'
+import { Check, View, Rank, Plus, Delete, Top, Bottom } from '@element-plus/icons-vue'
+import { getExportFields, updateExportFields, exportPreview, getExportTemplates, createExportTemplate, updateExportTemplate, deleteExportTemplate } from '@/api/export'
 
+const templates = ref([])
+const currentTemplateId = ref(0)
 const fields = ref([])
 const loading = ref(false)
 const saving = ref(false)
@@ -96,17 +131,44 @@ const previewing = ref(false)
 const previewHeaders = ref([])
 const previewRows = ref([])
 const previewTotal = ref(0)
-
 const totalPreviewWidth = ref(0)
 
 onMounted(async () => {
-  await loadFields()
+  await loadTemplates()
+  if (currentTemplateId.value) {
+    await loadFields()
+  }
 })
 
+async function loadTemplates(autoSelect = true) {
+  try {
+    const res = await getExportTemplates()
+    if (res.code === 0) {
+      templates.value = res.data || []
+      if (autoSelect && templates.value.length > 0) {
+        // 检查当前选中的模板是否仍存在于列表中
+        const stillExists = templates.value.some(t => t.id === currentTemplateId.value)
+        if (!stillExists) {
+          currentTemplateId.value = templates.value[0].id
+        }
+        // 如果没有选中任何模板，默认选第一个
+        if (!currentTemplateId.value) {
+          currentTemplateId.value = templates.value[0].id
+        }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+async function onTemplateChange() {
+  await loadFields()
+}
+
 async function loadFields() {
+  if (!currentTemplateId.value) return
   loading.value = true
   try {
-    const res = await getExportFields()
+    const res = await getExportFields(currentTemplateId.value)
     if (res.code === 0) {
       fields.value = res.data.map(f => ({ ...f, column_width: f.column_width || 120 }))
     }
@@ -114,10 +176,78 @@ async function loadFields() {
   finally { loading.value = false }
 }
 
+async function openCreateTemplate() {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新模板名称', '新建导出模板', {
+      confirmButtonText: '创建', cancelButtonText: '取消',
+      inputPlaceholder: '模板名称'
+    })
+    if (value && value.trim()) {
+      const res = await createExportTemplate({ name: value.trim(), entity_type: 'investment' })
+      if (res.code === 0 && res.data && res.data.id) {
+        const newId = res.data.id
+        ElMessage.success(`模板「${res.data.name}」已创建`)
+        await loadTemplates(false)
+        // 确保新模板在列表中
+        const found = templates.value.find(t => t.id === newId)
+        if (found) {
+          currentTemplateId.value = newId
+          await loadFields()
+        } else {
+          // 降级：刷新模板列表后自动选择第一个
+          ElMessage.warning('模板已创建但未在列表中，请刷新页面')
+          await loadTemplates(true)
+          if (currentTemplateId.value) await loadFields()
+        }
+      } else {
+        ElMessage.error(res.message || '模板创建失败')
+      }
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '模板创建失败')
+  }
+}
+
+async function openRenameTemplate() {
+  if (!currentTemplateId.value) return
+  const tpl = templates.value.find(t => t.id === currentTemplateId.value)
+  if (!tpl) return
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新名称', '重命名模板', {
+      confirmButtonText: '确定', cancelButtonText: '取消',
+      inputPlaceholder: '模板名称', inputValue: tpl.name
+    })
+    if (value && value.trim()) {
+      await updateExportTemplate(currentTemplateId.value, { name: value.trim() })
+      ElMessage.success('模板已重命名')
+      await loadTemplates()
+    }
+  } catch { /* cancelled */ }
+}
+
+async function handleDeleteTemplate() {
+  if (templates.value.length <= 1) {
+    ElMessage.warning('至少保留一个导出模板')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定要删除该模板及其所有字段配置吗？', '确认删除', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    await deleteExportTemplate(currentTemplateId.value)
+    ElMessage.success('模板已删除')
+    currentTemplateId.value = 0
+    await loadTemplates()
+    if (currentTemplateId.value) {
+      await loadFields()
+    }
+  } catch { /* cancelled */ }
+}
+
 async function loadPreview() {
   previewing.value = true
   try {
-    const res = await exportPreview()
+    const res = await exportPreview([], currentTemplateId.value)
     if (res.code === 0) {
       previewHeaders.value = res.data.headers
       previewRows.value = res.data.rows
@@ -128,15 +258,52 @@ async function loadPreview() {
   finally { previewing.value = false }
 }
 
+let customFieldCounter = 1
+
+function addCustomField() {
+  const key = `custom_${customFieldCounter++}`
+  fields.value.push({
+    id: 0,
+    template_id: currentTemplateId.value,
+    field_key: key,
+    field_label: '自定义列',
+    is_visible: true,
+    is_custom: true,
+    column_width: 120,
+    sort_order: fields.value.length + 1,
+    _new: true
+  })
+}
+
+function removeCustomField(idx) {
+  fields.value.splice(idx, 1)
+}
+
+function moveUp(idx) {
+  if (idx <= 0) return
+  const arr = fields.value
+  ;[arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]]
+}
+
+function moveDown(idx) {
+  if (idx >= fields.value.length - 1) return
+  const arr = fields.value
+  ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+}
+
 async function handleSave() {
   saving.value = true
   try {
     const data = fields.value.map((f, i) => ({
-      id: f.id,
+      id: f.id || 0,
+      template_id: f.template_id,
+      field_key: f.field_key,
       field_label: f.field_label,
       is_visible: f.is_visible,
+      is_custom: f.is_custom || false,
       column_width: f.column_width,
-      sort_order: i + 1
+      sort_order: i + 1,
+      _new: f._new || false
     }))
     const res = await updateExportFields(data)
     if (res.code === 0) {
@@ -168,7 +335,6 @@ function onResize(e) {
   const newWidth = Math.max(40, Math.min(600, resizeStartWidth + diff))
   previewHeaders.value[resizeIndex].column_width = newWidth
   totalPreviewWidth.value = previewHeaders.value.reduce((s, h) => s + h.column_width, 0)
-  // 同步更新配置字段的宽度
   const key = previewHeaders.value[resizeIndex].field_key
   const field = fields.value.find(f => f.field_key === key)
   if (field) field.column_width = newWidth
@@ -183,7 +349,7 @@ function stopResize() {
 
 <style scoped>
 .admin-layout { display: flex; min-height: 100vh; }
-.admin-main { flex: 1; background: #f5f7fa; }
+.admin-main { flex: 1; background: #f5f7fa; min-width: 0; }
 .admin-content { padding: 28px 32px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .page-header h2 { color: #1a3a5c; margin: 0; }
@@ -192,7 +358,9 @@ function stopResize() {
 .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 8px rgba(0,0,0,0.04); }
 .card-title { margin: 0 0 14px; font-size: 15px; color: #303133; padding-bottom: 10px; border-bottom: 2px solid #1a3a5c; display: inline-block; }
 
-/* 预览表格 */
+.template-bar { display: flex; align-items: center; gap: 12px; }
+.template-label { font-size: 14px; font-weight: 500; color: #303133; }
+
 .preview-table-wrapper { overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 6px; }
 .preview-table { border-collapse: collapse; }
 .preview-header-row { display: flex; background: #1a3a5c; color: #fff; font-size: 12px; font-weight: 600; }

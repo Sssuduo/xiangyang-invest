@@ -25,7 +25,7 @@
         </div>
 
         <!-- 表格 -->
-        <el-table :data="projects" stripe row-key="id" v-loading="loading" empty-text="暂无项目">
+        <el-table :data="projects" row-key="id" v-loading="loading" empty-text="暂无项目">
           <el-table-column prop="order_no" label="序号" width="65" align="left" />
           <el-table-column prop="project_name" label="项目名称" min-width="150" show-overflow-tooltip />
           <el-table-column label="项目类型" width="140">
@@ -53,6 +53,13 @@
             <template #default="{ row }">{{ resolveName('organizations', row.responsible_unit_code) }}</template>
           </el-table-column>
           <el-table-column prop="person_in_charge" label="责任人" width="80" />
+          <el-table-column label="标签" width="160">
+            <template #default="{ row }">
+              <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ resolveName('project_tags', tag) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="handleView(row)">查看</el-button>
@@ -66,7 +73,7 @@
         <ProjectDrawer v-model="viewDrawerVisible" :project="viewProject" />
 
         <!-- 编辑抽屉（新建/编辑共用） -->
-        <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
+        <el-drawer v-model="editDrawerVisible" direction="rtl" size="780px" @closed="resetForm">
           <template #header>
             <div class="drawer-title-bar">
               <span class="drawer-title">{{ editMode === 'create' ? '新建项目' : '编辑项目' }}</span>
@@ -153,6 +160,15 @@
                 </div>
               </el-form-item>
 
+              <!-- 专班研判结论 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><DataAnalysis /></el-icon></span>
+                <span class="section-title">专班研判结论</span>
+              </div>
+              <el-form-item label="研判结论">
+                <el-input v-model="form.conclusion" type="textarea" :rows="4" placeholder="专班研判结论..." maxlength="3000" show-word-limit />
+              </el-form-item>
+
               <!-- 对接信息 -->
               <div class="section-header">
                 <span class="section-icon"><el-icon><Connection /></el-icon></span>
@@ -194,6 +210,17 @@
                 <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" style="width: 48%;" />
               </el-form-item>
 
+              <!-- 项目标签 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
+                <span class="section-title">项目标签</span>
+              </div>
+              <el-form-item label="标签">
+                <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+                  <el-option v-for="d in dicts.project_tags" :key="d.code" :label="d.name" :value="d.code" />
+                </el-select>
+              </el-form-item>
+
               <!-- 企业诉求 -->
               <div class="section-header">
                 <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
@@ -233,7 +260,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Delete, InfoFilled, OfficeBuilding, Connection, ChatLineSquare, UploadFilled } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, InfoFilled, OfficeBuilding, Connection, ChatLineSquare, UploadFilled, DataAnalysis, PriceTag } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getProjects, deleteProject, getDicts, createProject, updateProject, getProject, getMaxOrderNo } from '@/api/investment'
@@ -244,7 +271,7 @@ const searchText = ref('')
 const filterFollow = ref('')
 const filterMeeting = ref('')
 const filterType = ref('')
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [] })
+const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], project_tags: [] })
 
 // 查看抽屉
 const viewDrawerVisible = ref(false)
@@ -270,12 +297,14 @@ const defaultForm = () => ({
   enterprise_info: '',
   project_content: '',
   project_doc: '',
+  conclusion: '',
   follow_status_code: '',
   meeting_status_code: 'not_meeting',
   recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
   first_contact_date: '',
+  tags: [],
   demands: []
 })
 
@@ -289,7 +318,7 @@ const rules = {
   enterprise_info: [{ required: true, message: '请输入企业简介', trigger: 'blur' }],
   project_content: [{ required: true, message: '请输入项目内容', trigger: 'blur' }],
   follow_status_code: [{ required: true, message: '请选择跟进状态', trigger: 'change' }],
-  responsible_unit_code: [{ required: true, message: '请选择责任单位', trigger: 'change' }]
+  responsible_unit_code: [{ required: false, message: '请选择责任单位', trigger: 'change' }]
 }
 
 let searchTimer = null
@@ -320,7 +349,13 @@ function resolveColor(key, code) { return dicts[key]?.find(d => d.code === code)
 function formatMoney(a) { if (!a && a !== 0) return '-'; return Number(a).toLocaleString('zh-CN') }
 
 // ---- 查看 ----
-function handleView(row) { viewProject.value = row; viewDrawerVisible.value = true }
+function handleView(row) {
+  const tagMap = {}
+  ;(dicts.project_tags || []).forEach(t => { tagMap[t.code] = t.name })
+  row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
+  viewProject.value = row
+  viewDrawerVisible.value = true
+}
 
 // ---- 新建 ----
 async function openCreate() {
@@ -351,6 +386,7 @@ async function openEdit(row) {
       form.enterprise_info = d.enterprise_info || ''
       form.project_content = d.project_content || ''
       form.project_doc = d.project_doc || ''
+      form.conclusion = d.conclusion || ''
       // 解析已有的文件列表
       try {
         const parsed = typeof form.project_doc === 'string' ? JSON.parse(form.project_doc) : form.project_doc
@@ -362,6 +398,7 @@ async function openEdit(row) {
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
       form.first_contact_date = d.first_contact_date || ''
+      form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form.demands = (d.demands || []).map(dd => ({ ...dd }))
     }
     editDrawerVisible.value = true
@@ -416,12 +453,14 @@ async function handleSave() {
       enterprise_info: form.enterprise_info,
       project_content: form.project_content,
       project_doc: projectDoc,
+      conclusion: form.conclusion,
       follow_status_code: form.follow_status_code,
       meeting_status_code: form.meeting_status_code,
       recommend_unit_code: form.recommend_unit_code,
       responsible_unit_code: form.responsible_unit_code,
       person_in_charge: form.person_in_charge,
       first_contact_date: form.first_contact_date || null,
+      tags: form.tags,
       demands: form.demands
     }
 

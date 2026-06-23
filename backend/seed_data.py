@@ -1,5 +1,6 @@
 from models import AdminUser, BusinessUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ExportTemplate, ExportFieldConfig, ImportFieldConfig
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
+from models import ExportTemplate, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
 from models import ImportFieldConfigDemand
 from extensions import db
@@ -55,6 +56,9 @@ def init_database(app):
         "ALTER TABLE export_field_config ADD COLUMN template_id INTEGER DEFAULT 1",
         # V5.1: 自定义列 + 投资金额(亿元)
         "ALTER TABLE export_field_config ADD COLUMN is_custom BOOLEAN DEFAULT 0",
+        # V8: 项目标签 + 动态标签
+        "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
+        "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [
@@ -259,6 +263,33 @@ def _seed_investment_dicts():
             existing.sort_order = i + 1
         else:
             db.session.add(DemandTypeDict(code=code, name=name, sort_order=i + 1))
+
+    # 项目标签
+    project_tags = [
+        ('tag_shipin', '食品企业走进农高区'),
+    ]
+    for i, (code, name) in enumerate(project_tags):
+        existing = ProjectTagDict.query.filter_by(code=code).first()
+        if existing:
+            existing.name = name
+            existing.sort_order = i + 1
+        else:
+            db.session.add(ProjectTagDict(code=code, name=name, sort_order=i + 1))
+
+    # 动态标签
+    activity_tags = [
+        ('activity_tag_waichu', '外出考察'),
+        ('activity_tag_daofang', '到访接待'),
+        ('activity_tag_shipin', '食品企业走进农高区活动'),
+        ('activity_tag_diaodu', '调度推进'),
+    ]
+    for i, (code, name) in enumerate(activity_tags):
+        existing = ActivityTagDict.query.filter_by(code=code).first()
+        if existing:
+            existing.name = name
+            existing.sort_order = i + 1
+        else:
+            db.session.add(ActivityTagDict(code=code, name=name, sort_order=i + 1))
 
     db.session.commit()
     print('[种子数据] 招商对接项目库字典已初始化')

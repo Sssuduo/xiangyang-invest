@@ -1,7 +1,8 @@
+import json
 from datetime import date
 from flask import request, jsonify
 from models import InvestmentProject, EnterpriseDemand
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from extensions import db
 from routes import admin_investment_bp
 from routes.business_auth import dual_login_required
@@ -34,7 +35,9 @@ def get_dicts():
             'meeting_statuses': [d.to_dict() for d in MeetingStatusDict.query.order_by(MeetingStatusDict.sort_order).all()],
             'organizations': [d.to_dict() for d in OrganizationDict.query.filter_by(is_active=True).order_by(OrganizationDict.sort_order).all()],
             'project_types': [d.to_dict() for d in ProjectTypeDict.query.filter_by(is_active=True).order_by(ProjectTypeDict.sort_order).all()],
-            'demand_types': [d.to_dict() for d in DemandTypeDict.query.filter_by(is_active=True).order_by(DemandTypeDict.sort_order).all()]
+            'demand_types': [d.to_dict() for d in DemandTypeDict.query.filter_by(is_active=True).order_by(DemandTypeDict.sort_order).all()],
+            'project_tags': [d.to_dict() for d in ProjectTagDict.query.filter_by(is_active=True).order_by(ProjectTagDict.sort_order).all()],
+            'activity_tags': [d.to_dict() for d in ActivityTagDict.query.filter_by(is_active=True).order_by(ActivityTagDict.sort_order).all()]
         }
     })
 
@@ -100,7 +103,7 @@ def create_project():
 
     # 必填字段校验
     required = ['project_name', 'invest_enterprise', 'enterprise_info', 'project_content',
-                'follow_status_code', 'responsible_unit_code', 'project_type_code']
+                'follow_status_code', 'project_type_code']
     for field in required:
         if not data.get(field):
             return jsonify({'code': 1, 'message': f'{field} 为必填字段'}), 400
@@ -115,12 +118,13 @@ def create_project():
         follow_status_code=data['follow_status_code'],
         meeting_status_code=data.get('meeting_status_code', 'not_meeting'),
         recommend_unit_code=data.get('recommend_unit_code', ''),
-        responsible_unit_code=data['responsible_unit_code'],
+        responsible_unit_code=data.get('responsible_unit_code', ''),
         project_type_code=data['project_type_code'],
         person_in_charge=data.get('person_in_charge', ''),
         project_doc=data.get('project_doc', ''),
         investment_plan=data.get('investment_plan', ''),
         conclusion=data.get('conclusion', ''),
+        tags=json.dumps(data.get('tags', []), ensure_ascii=False),
         first_contact_date=_parse_date(data.get('first_contact_date'))
     )
 
@@ -219,13 +223,15 @@ def update_project(project_id):
         'order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
         'project_content', 'invest_amount', 'follow_status_code',
         'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
-        'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan', 'conclusion', 'first_contact_date'
+        'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'first_contact_date'
     ]
     for field in updatable_fields:
         if field in data:
             val = data[field]
             if field == 'first_contact_date':
                 val = _parse_date(val)
+            elif field == 'tags':
+                val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(project, field, val)
 
     # 同步企业诉求：先删后建

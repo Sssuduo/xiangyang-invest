@@ -32,6 +32,7 @@ def list_activities():
     project_id = request.args.get('project_id', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
+    tags = request.args.get('tags', '').strip()
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 20, type=int)
 
@@ -50,6 +51,11 @@ def list_activities():
         q = q.filter(InvestmentActivity.date >= date_from)
     if date_to:
         q = q.filter(InvestmentActivity.date <= date_to)
+    if tags:
+        tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+        if tag_list:
+            tag_conds = [InvestmentActivity.tags.like(f'%{t}%') for t in tag_list]
+            q = q.filter(db.or_(*tag_conds))
 
     total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
@@ -75,7 +81,8 @@ def create_activity():
         project_id=int(data['project_id']),
         date=_parse_datetime(data['date']),
         content=data['content'],
-        files=json.dumps(data.get('files', []), ensure_ascii=False)
+        files=json.dumps(data.get('files', []), ensure_ascii=False),
+        tags=json.dumps(data.get('tags', []), ensure_ascii=False)
     )
 
     db.session.add(activity)
@@ -100,7 +107,7 @@ def update_activity(activity_id):
     if not data:
         return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
 
-    updatable_fields = ['project_id', 'date', 'content', 'files']
+    updatable_fields = ['project_id', 'date', 'content', 'files', 'tags']
     for field in updatable_fields:
         if field in data:
             val = data[field]
@@ -108,7 +115,7 @@ def update_activity(activity_id):
                 val = int(val) if val else None
             elif field == 'date':
                 val = _parse_datetime(val)
-            elif field == 'files':
+            elif field in ('files', 'tags'):
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(activity, field, val)
 

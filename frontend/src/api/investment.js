@@ -31,6 +31,10 @@ export function deleteProject(id) {
   return api.delete(`/admin/investment/projects/${id}`)
 }
 
+export function batchDeleteProjects(ids) {
+  return api.post('/admin/investment/projects/batch-delete', { ids })
+}
+
 // 获取最大顺序号
 export function getMaxOrderNo() {
   return api.get('/admin/investment/max-order-no')

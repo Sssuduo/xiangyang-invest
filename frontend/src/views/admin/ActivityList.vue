@@ -18,7 +18,7 @@
         <!-- 搜索筛选 -->
         <div class="filter-bar">
           <el-input v-model="searchText" placeholder="搜索项目名称、动态内容..." :prefix-icon="Search" clearable class="search-input" @input="handleSearch" />
-          <el-select v-model="filterProjectId" placeholder="所属项目" clearable @change="fetchData" style="width: 180px;">
+          <el-select v-model="filterProjectId" placeholder="项目" clearable @change="currentPage = 1; fetchData()" style="width: 180px;">
             <el-option v-for="p in projectList" :key="p.id" :label="p.project_name" :value="p.id" />
           </el-select>
           <el-date-picker
@@ -31,22 +31,38 @@
             @change="onDateRangeChange"
             style="width: 240px;"
           />
+          <el-select v-model="filterTags" multiple collapse-tags placeholder="标签筛选" clearable @change="currentPage = 1; fetchData()" style="width: 200px;">
+            <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
+          </el-select>
         </div>
 
-        <el-table :data="activities" stripe row-key="id" v-loading="loading" @selection-change="handleSelectionChange" empty-text="暂无动态数据">
+        <el-table :data="activities" row-key="id" v-loading="loading" @selection-change="handleSelectionChange" empty-text="暂无动态数据">
           <el-table-column type="selection" width="45" />
-          <el-table-column label="所属项目" width="180">
+          <el-table-column label="项目" width="210">
             <template #default="{ row }">
-              <el-tag effect="plain" size="small" type="info">{{ row.project_name }}</el-tag>
+              <el-tag class="project-name-tag" @click="handleProjectClick(row)">
+                {{ row.project_name }}
+              </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="date" label="日期" width="170" />
-          <el-table-column label="动态内容" min-width="240" show-overflow-tooltip>
+          <el-table-column label="日期" width="140" align="center">
+            <template #default="{ row }">
+              <span class="date-cell">{{ row.date || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="动态内容" min-width="210" show-overflow-tooltip>
             <template #default="{ row }">{{ truncate(row.content, 60) }}</template>
           </el-table-column>
           <el-table-column label="附件" width="80" align="center">
             <template #default="{ row }">
               <span>{{ row.files ? row.files.length : 0 }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="标签" width="160">
+            <template #default="{ row }">
+              <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ getTagName(tag) }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="180">
@@ -57,17 +73,35 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @current-change="handlePageChange"
+          @size-change="handlePageSizeChange"
+          style="margin-top: 20px; justify-content: flex-end;"
+        />
       </div>
     </main>
 
     <!-- 查看抽屉 -->
     <ActivityDrawer v-model="viewDrawerVisible" :activity="viewActivity" />
 
+    <!-- 项目详情抽屉 -->
+    <ProjectDrawer v-model="projectDrawerVisible" :project="projectDrawerProject" />
+
     <!-- 编辑抽屉 -->
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
       <template #header>
         <div class="drawer-title-bar">
-          <span class="drawer-title">{{ editMode === 'create' ? '新建动态' : '编辑动态' }}</span>
+          <span class="drawer-title">
+            <el-icon><Edit /></el-icon>
+            {{ editMode === 'create' ? '新建动态' : '编辑动态' }}
+          </span>
         </div>
       </template>
       <div class="drawer-form">
@@ -76,7 +110,7 @@
             <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
             <span class="section-title">基础信息</span>
           </div>
-          <el-form-item label="所属项目" prop="project_id">
+          <el-form-item label="项目" prop="project_id">
             <el-select v-model="form.project_id" placeholder="请选择项目" filterable style="width: 100%;">
               <el-option v-for="p in projectList" :key="p.id" :label="p.project_name" :value="p.id" />
             </el-select>
@@ -123,6 +157,17 @@
             </div>
           </el-form-item>
 
+          <!-- 动态标签 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
+            <span class="section-title">动态标签</span>
+          </div>
+          <el-form-item label="标签">
+            <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+              <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="handleSave">{{ editMode === 'create' ? '创建' : '保存' }}</el-button>
@@ -136,27 +181,40 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, InfoFilled, Document, UploadFilled, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, PriceTag } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
+import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
-import { getPublicProjects } from '@/api/investment'
+import { getPublicProjects, getProject } from '@/api/investment'
+import { getDictItems } from '@/api/dict'
 
 const activities = ref([])
 const loading = ref(false)
 const searchText = ref('')
+const activityTagDicts = ref([])
 const filterProjectId = ref('')
 const selectedIds = ref([])
 const filterDateRange = ref([])
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
+const filterTags = ref([])
 const projectList = ref([])
+
+// 分页
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 let searchTimer = null
 
 // 查看抽屉
 const viewDrawerVisible = ref(false)
 const viewActivity = ref(null)
+
+// 项目详情抽屉
+const projectDrawerVisible = ref(false)
+const projectDrawerProject = ref(null)
 
 // 编辑抽屉
 const editDrawerVisible = ref(false)
@@ -173,17 +231,29 @@ const defaultForm = () => ({
   project_id: '',
   date: '',
   content: '',
-  files: []
+  files: [],
+  tags: []
 })
 
 const form = reactive(defaultForm())
 
 const rules = {
-  project_id: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
+  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
   content: [{ required: true, message: '请输入动态内容', trigger: 'blur' }]
 }
 
-onMounted(async () => { await loadProjects(); fetchData() })
+onMounted(async () => { await loadProjects(); loadActivityTags(); fetchData() })
+
+async function loadActivityTags() {
+  try {
+    const res = await getDictItems('activity_tags')
+    if (res.code === 0) activityTagDicts.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+function getTagName(code) {
+  return activityTagDicts.value.find(d => d.code === code)?.name || code
+}
 
 async function loadProjects() {
   try {
@@ -195,18 +265,20 @@ async function loadProjects() {
 async function fetchData() {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: currentPage.value, page_size: pageSize.value }
     if (searchText.value) params.search = searchText.value
     if (filterProjectId.value) params.project_id = filterProjectId.value
     if (filterDateFrom.value) params.date_from = filterDateFrom.value
     if (filterDateTo.value) params.date_to = filterDateTo.value
+    if (filterTags.value.length > 0) params.tags = filterTags.value.join(',')
     const res = await getActivities(params)
     activities.value = res.data || []
+    total.value = res.total || 0
   } catch { activities.value = [] }
   finally { loading.value = false }
 }
 
-function handleSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(fetchData, 300) }
+function handleSearch() { currentPage.value = 1; clearTimeout(searchTimer); searchTimer = setTimeout(fetchData, 300) }
 
 function onDateRangeChange(vals) {
   if (vals && vals.length === 2) {
@@ -214,16 +286,35 @@ function onDateRangeChange(vals) {
   } else {
     filterDateFrom.value = ''; filterDateTo.value = ''
   }
+  currentPage.value = 1
   fetchData()
 }
+
+function handlePageChange(page) { currentPage.value = page; fetchData() }
+function handlePageSizeChange(size) { pageSize.value = size; currentPage.value = 1; fetchData() }
 
 function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
 
 function handleSelectionChange(selection) { selectedIds.value = selection.map(s => s.id) }
 
 function handleView(row) {
+  const tagMap = {}
+  activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
+  row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
   viewActivity.value = row
   viewDrawerVisible.value = true
+}
+
+async function handleProjectClick(row) {
+  try {
+    const res = await getProject(row.project_id)
+    if (res.code === 0) {
+      projectDrawerProject.value = res.data
+      projectDrawerVisible.value = true
+    }
+  } catch (err) {
+    ElMessage.error('获取项目详情失败')
+  }
 }
 
 function openCreate() {
@@ -245,6 +336,7 @@ async function openEdit(row) {
       form.date = d.date ? d.date.substring(0, 10) : ''
       form.content = d.content || ''
       form.files = d.files || []
+      form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
@@ -288,7 +380,8 @@ async function handleSave() {
       project_id: form.project_id,
       date: form.date,
       content: form.content,
-      files: docUrls
+      files: docUrls,
+      tags: form.tags
     }
     if (editMode.value === 'create') {
       await createActivity(data)
@@ -342,11 +435,41 @@ async function handleDelete(row) {
 .filter-bar { display: flex; gap: 16px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
 .search-input { width: 320px; }
 
-.drawer-title-bar {
-  background: linear-gradient(135deg, #3a7abd 0%, #6ba3d6 100%);
-  margin: -20px -20px 0 -20px; padding: 10px 20px;
+.date-cell { color: #606266; font-size: 13px; white-space: nowrap; }
+
+.project-name-tag {
+  cursor: pointer;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a3a5c;
+  background: #e0ecf6;
+  border: 1px solid #b8d4ec;
+  border-radius: 6px;
+  transition: all 0.2s;
+  vertical-align: middle;
 }
-.drawer-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+.project-name-tag:hover { background: #d0e0f0; border-color: #90bcd8; }
+
+.drawer-title-bar {
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  margin: 0 -20px 0 -20px;
+  padding: 20px 20px 20px 40px;
+}
+.drawer-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .drawer-form { padding: 0 4px; }
 .drawer-form :deep(.el-form-item) { margin-bottom: 16px; }
 
@@ -363,4 +486,14 @@ async function handleDelete(row) {
 .upload-wrapper { width: 100%; }
 .upload-wrapper :deep(.el-upload-dragger) { padding: 16px 0; }
 .upload-wrapper :deep(.el-upload__text) { font-size: 13px; }
+</style>
+
+<style>
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
+}
 </style>

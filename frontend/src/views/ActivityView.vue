@@ -20,6 +20,9 @@
             @change="onDateRangeChange"
             style="width: 260px;"
           />
+          <el-select v-model="filterTags" multiple collapse-tags placeholder="标签筛选" clearable @change="currentPage = 1; fetchData()" style="width: 200px;">
+            <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
+          </el-select>
           <el-button v-if="selectedIds.length > 0" type="success" @click="handleExport">
             <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
           </el-button>
@@ -82,6 +85,13 @@
             <template #default="{ row }">
               <el-tag v-if="row.files && row.files.length > 0" effect="plain" size="small" type="success">{{ row.files.length }}</el-tag>
               <span v-else class="no-data">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="标签" width="160">
+            <template #default="{ row }">
+              <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ getTagName(tag) }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
@@ -173,6 +183,17 @@
                 </template>
               </el-upload>
             </div>
+          </el-form-item>
+
+          <!-- 动态标签 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
+            <span class="section-title">动态标签</span>
+          </div>
+          <el-form-item label="标签">
+            <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+              <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
           </el-form-item>
 
           <div class="drawer-footer">
@@ -360,7 +381,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
@@ -377,6 +398,7 @@ const activities = ref([])
 const loading = ref(false)
 const searchText = ref('')
 const filterProjectId = ref('')
+const filterTags = ref([])
 const filterDateRange = ref([])
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
@@ -390,6 +412,7 @@ const total = ref(0)
 
 // 字典数据
 const followStatusList = ref([])
+const activityTagDicts = ref([])
 
 let searchTimer = null
 
@@ -438,7 +461,8 @@ const defaultForm = () => ({
   project_id: '',
   date: '',
   content: '',
-  files: []
+  files: [],
+  tags: []
 })
 
 const form = reactive(defaultForm())
@@ -456,9 +480,17 @@ onMounted(async () => {
 
 async function loadDicts() {
   try {
-    const res = await getDictItems('follow_statuses')
-    if (res.code === 0) followStatusList.value = res.data || []
+    const [res1, res2] = await Promise.all([
+      getDictItems('follow_statuses'),
+      getDictItems('activity_tags')
+    ])
+    if (res1.code === 0) followStatusList.value = res1.data || []
+    if (res2.code === 0) activityTagDicts.value = res2.data || []
   } catch { /* ignore */ }
+}
+
+function getTagName(code) {
+  return activityTagDicts.value.find(d => d.code === code)?.name || code
 }
 
 async function loadProjects() {
@@ -476,6 +508,7 @@ async function fetchData() {
     if (filterProjectId.value) params.project_id = filterProjectId.value
     if (filterDateFrom.value) params.date_from = filterDateFrom.value
     if (filterDateTo.value) params.date_to = filterDateTo.value
+    if (filterTags.value.length > 0) params.tags = filterTags.value.join(',')
     const res = await getPublicActivities(params)
     activities.value = res.data || []
     total.value = res.total || 0
@@ -506,6 +539,9 @@ function truncate(text, max) { if (!text) return ''; return text.length > max ? 
 
 // ---- 查看 ----
 function handleView(row) {
+  const tagMap = {}
+  activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
+  row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
   viewActivity.value = row
   viewDrawerVisible.value = true
 }
@@ -696,6 +732,7 @@ async function openEdit(row) {
       form.date = d.date ? d.date.substring(0, 10) : ''
       form.content = d.content || ''
       form.files = d.files || []
+      form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
@@ -741,7 +778,8 @@ async function handleSave() {
       project_id: form.project_id,
       date: form.date,
       content: form.content,
-      files: docUrls
+      files: docUrls,
+      tags: form.tags
     }
 
     if (editMode.value === 'create') {

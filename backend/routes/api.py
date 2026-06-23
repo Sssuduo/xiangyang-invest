@@ -1,7 +1,8 @@
+import json
 from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
-from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
-from models import InvestmentActivity
+from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict
+from models import InvestmentActivity, EnterpriseDemand
 from extensions import db
 from routes import api_bp
 from services.llm_service import call_llm, build_messages
@@ -237,6 +238,8 @@ def list_public_projects():
     org_map = {d.code: d for d in OrganizationDict.query.all()}
     type_map = {d.code: d for d in ProjectTypeDict.query.all()}
     demand_type_map = {d.code: d for d in DemandTypeDict.query.all()}
+    demand_display_map = DemandTypeDict.build_display_name_map()
+    tag_map = {d.code: d.name for d in ProjectTagDict.query.all()}
 
     result = []
     for p in projects:
@@ -253,10 +256,11 @@ def list_public_projects():
         d['responsible_unit_name'] = ou2.name if ou2 else ''
         tu = type_map.get(p.project_type_code)
         d['project_type_name'] = tu.name if tu else ''
-        # 诉求字典名称
+        # 标签名称解析
+        d['tag_names'] = [tag_map.get(tc, tc) for tc in (json.loads(p.tags) if p.tags else [])]
+        # 诉求字典名称（二级显示：一级：二级）
         for dd in d.get('demands', []) or []:
-            dt = demand_type_map.get(dd.get('demand_type_code'))
-            dd['demand_type_name'] = dt.name if dt else ''
+            dd['demand_type_name'] = demand_display_map.get(dd.get('demand_type_code'), '')
             du = org_map.get(dd.get('unit_code'))
             dd['unit_name'] = du.name if du else ''
         result.append(d)
@@ -274,6 +278,9 @@ def list_public_activities():
     project_id = request.args.get('project_id', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
+    tags = request.args.get('tags', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 20, type=int)
 
     q = InvestmentActivity.query.join(InvestmentProject)
 
@@ -290,7 +297,93 @@ def list_public_activities():
         q = q.filter(InvestmentActivity.date >= date_from)
     if date_to:
         q = q.filter(InvestmentActivity.date <= date_to)
+    if tags:
+        tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+        if tag_list:
+            tag_conds = [InvestmentActivity.tags.like(f'%{t}%') for t in tag_list]
+            q = q.filter(db.or_(*tag_conds))
 
+    total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
-    activities = q.all()
-    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities]})
+    activities = q.offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities], 'total': total})
+
+
+# ============================================================
+# 企业诉求（公开）
+# ============================================================
+@api_bp.route('/investment/demands', methods=['GET'])
+def list_public_demands():
+    """公开企业诉求列表"""
+    search = request.args.get('search', '').strip()
+    project_id = request.args.get('project_id', '').strip()
+    demand_type = request.args.get('demand_type', '').strip()
+    project_type = request.args.get('project_type', '').strip()
+    status = request.args.get('status', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 20, type=int)
+
+    q = EnterpriseDemand.query.join(InvestmentProject)
+
+    if search:
+        like = f'%{search}%'
+        q = q.filter(db.or_(
+            InvestmentProject.project_name.ilike(like),
+            EnterpriseDemand.demand_content.ilike(like)
+        ))
+
+    if project_id:
+        q = q.filter(EnterpriseDemand.project_id == int(project_id))
+    if project_type:
+        q = q.filter(InvestmentProject.project_type_code == project_type)
+    if demand_type:
+        codes = [c.strip() for c in demand_type.split(',') if c.strip()]
+        if len(codes) == 1:
+            q = q.filter(EnterpriseDemand.demand_type_code == codes[0])
+        else:
+            q = q.filter(EnterpriseDemand.demand_type_code.in_(codes))
+    if status:
+        q = q.filter(EnterpriseDemand.status == status)
+
+    total = q.count()
+    q = q.order_by(EnterpriseDemand.created_at.desc())
+    demands = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    # 解析字典名称
+    type_map = DemandTypeDict.build_display_name_map()
+    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+
+    result = []
+    for d in demands:
+        item = d.to_dict()
+        item['project_name'] = d.project.project_name if d.project else ''
+        item['demand_type_name'] = type_map.get(d.demand_type_code, '')
+        item['unit_name'] = org_map.get(d.unit_code, '')
+        result.append(item)
+
+    return jsonify({'code': 0, 'data': result, 'total': total})
+
+
+# ============================================================
+# 企业诉求字典（公开）
+# ============================================================
+@api_bp.route('/investment/demand-dicts', methods=['GET'])
+def get_demand_dicts():
+    """获取企业诉求相关字典（需求类型 + 对接单位 + 跟进状态 + 项目类型）"""
+    demand_types = DemandTypeDict.query.filter_by(is_active=True)\
+        .order_by(DemandTypeDict.sort_order).all()
+    organizations = OrganizationDict.query.filter_by(is_active=True)\
+        .order_by(OrganizationDict.sort_order).all()
+    follow_statuses = FollowStatusDict.query.filter_by(is_active=True)\
+        .order_by(FollowStatusDict.sort_order).all()
+    project_types = ProjectTypeDict.query.filter_by(is_active=True)\
+        .order_by(ProjectTypeDict.sort_order).all()
+    return jsonify({
+        'code': 0,
+        'data': {
+            'demand_types': [d.to_dict() for d in demand_types],
+            'organizations': [o.to_dict() for o in organizations],
+            'follow_statuses': [f.to_dict() for f in follow_statuses],
+            'project_types': [p.to_dict() for p in project_types]
+        }
+    })

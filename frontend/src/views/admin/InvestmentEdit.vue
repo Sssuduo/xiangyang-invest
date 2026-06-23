@@ -89,6 +89,14 @@
             <el-input v-model="form.person_in_charge" placeholder="负责人姓名" maxlength="64" style="width: 200px;" />
           </el-form-item>
 
+          <!-- 项目标签 -->
+          <el-divider content-position="left">项目标签</el-divider>
+          <el-form-item label="标签">
+            <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+              <el-option v-for="d in dicts.project_tags" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+
           <!-- 保存 -->
           <el-form-item>
             <el-button type="primary" size="large" :loading="saving" @click="handleSave">
@@ -119,7 +127,8 @@ const dicts = reactive({
   follow_statuses: [],
   meeting_statuses: [],
   organizations: [],
-  project_types: []
+  project_types: [],
+  project_tags: []
 })
 
 const form = reactive({
@@ -136,7 +145,8 @@ const form = reactive({
   recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
-  first_contact_date: ''
+  first_contact_date: '',
+  tags: []
 })
 
 const rules = {
@@ -177,6 +187,7 @@ async function loadProject() {
       // 确保数值类型
       form.order_no = Number(form.order_no) || 0
       form.invest_amount = Number(form.invest_amount) || 0
+      form.tags = Array.isArray(form.tags) ? form.tags : []
     }
   } catch (err) {
     ElMessage.error(err.message)

@@ -356,6 +356,40 @@ class ProjectTypeDict(db.Model):
         }
 
 
+class ProjectTagDict(db.Model):
+    """项目标签字典"""
+    __tablename__ = 'project_tag_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class ActivityTagDict(db.Model):
+    """动态标签字典"""
+    __tablename__ = 'activity_tag_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
 class InvestmentProject(db.Model):
     """招商对接项目"""
     __tablename__ = 'investment_projects'
@@ -378,6 +412,7 @@ class InvestmentProject(db.Model):
     project_doc = db.Column(db.Text, default='')
     investment_plan = db.Column(db.Text, default='')
     conclusion = db.Column(db.Text, default='')
+    tags = db.Column(db.Text, default='[]')
     first_contact_date = db.Column(db.Date)
 
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
@@ -405,6 +440,7 @@ class InvestmentProject(db.Model):
             'project_doc': self.project_doc or '',
             'investment_plan': self.investment_plan or '',
             'conclusion': self.conclusion or '',
+            'tags': json.loads(self.tags) if self.tags else [],
             'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
             'is_deleted': self.is_deleted,
             'demands': [d.to_dict() for d in self.demands.all()],
@@ -586,6 +622,7 @@ class InvestmentActivity(db.Model):
     date = db.Column(db.DateTime, nullable=True)
     content = db.Column(db.Text, nullable=False)
     files = db.Column(db.Text, default='[]')
+    tags = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -599,6 +636,7 @@ class InvestmentActivity(db.Model):
             'date': self.date.strftime('%Y-%m-%d') if self.date else None,
             'content': self.content,
             'files': json.loads(self.files) if self.files else [],
+            'tags': json.loads(self.tags) if self.tags else [],
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

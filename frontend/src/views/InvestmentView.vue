@@ -175,6 +175,13 @@
             <template #default="{ row }">{{ row.responsible_unit_name || row.responsible_unit_code }}</template>
           </el-table-column>
           <el-table-column prop="person_in_charge" label="责任人" width="70" />
+          <el-table-column label="标签" width="160">
+            <template #default="{ row }">
+              <el-tag v-for="(name, idx) in (row.tag_names || [])" :key="idx" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ name }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="185" fixed="right">
             <template #default="{ row }">
               <div class="action-cell">
@@ -402,6 +409,17 @@
             <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" style="width: 48%;" />
           </el-form-item>
 
+          <!-- 项目标签 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
+            <span class="section-title">项目标签</span>
+          </div>
+          <el-form-item label="标签">
+            <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+              <el-option v-for="d in dicts.project_tags" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+
           <!-- 企业诉求 -->
           <div class="section-header">
             <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
@@ -561,7 +579,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import ActivityTimelineDrawer from '@/components/investment/ActivityTimelineDrawer.vue'
@@ -581,7 +599,7 @@ const filterFollowStatus = ref('')
 const filterMeetingStatus = ref('')
 const filterProjectType = ref('')
 const selectedIds = ref([])
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [] })
+const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [], project_tags: [] })
 
 const demandTypeTree = computed(() => {
   const types = dicts.demand_types || []
@@ -753,6 +771,7 @@ const defaultForm = () => ({
   responsible_unit_code: '',
   person_in_charge: '',
   first_contact_date: '',
+  tags: [],
   demands: []
 })
 
@@ -834,6 +853,8 @@ function handleAI(row) {
 
 // ---- 查看 ----
 function handleView(row) {
+  // tag_names 来自公开 API 已解析；_tagNames 用于 ProjectDrawer 展示
+  row._tagNames = row.tag_names || []
   viewProject.value = row
   viewDrawerVisible.value = true
 }
@@ -1010,6 +1031,7 @@ async function openEdit(row) {
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
       form.first_contact_date = d.first_contact_date || ''
+      form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form.demands = (d.demands || []).map(dd => {
         const code = dd.demand_type_code || ''
         let cascader = []
@@ -1106,6 +1128,7 @@ async function handleSave() {
       responsible_unit_code: form.responsible_unit_code,
       person_in_charge: form.person_in_charge,
       first_contact_date: form.first_contact_date || null,
+      tags: form.tags,
       demands: form.demands
     }
 

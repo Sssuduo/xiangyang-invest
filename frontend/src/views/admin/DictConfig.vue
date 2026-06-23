@@ -55,7 +55,7 @@
 
           <el-table-column label="名称" min-width="160">
             <template #default="{ row }">
-              <span>{{ row.name }}</span>
+              <span :class="{ 'child-name': row.parent_code }">{{ row.parent_code ? getParentName(row.parent_code) + '：' + row.name : row.name }}</span>
             </template>
           </el-table-column>
 
@@ -101,8 +101,13 @@
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="显示名称" />
         </el-form-item>
+        <el-form-item v-if="activeTab === 'demand_types'" label="父级">
+          <el-select v-model="form.parent_code" placeholder="无（作为一级）" clearable style="width: 100%;">
+            <el-option v-for="p in parentOptions" :key="p.code" :label="p.name" :value="p.code" />
+          </el-select>
+        </el-form-item>
         <el-form-item v-if="currentTabHasColor" label="颜色">
-          <el-color-picker v-model="form.display_color" show-alpha />
+          <el-color-picker v-model="form.display_color" />
           <span style="margin-left: 8px; font-size: 12px; color: #909399;">{{ form.display_color }}</span>
         </el-form-item>
         <el-form-item label="启用">
@@ -133,6 +138,8 @@ const tabs = [
   { key: 'organizations', label: '单位字典' },
   { key: 'project_types', label: '项目类型' },
   { key: 'demand_types', label: '诉求类型' },
+  { key: 'project_tags', label: '项目标签' },
+  { key: 'activity_tags', label: '动态标签' },
 ]
 const tabsWithColor = ['follow_statuses', 'meeting_statuses']
 
@@ -141,6 +148,17 @@ const currentTabHasColor = computed(() => tabsWithColor.includes(activeTab.value
 
 // ---- 数据 ----
 const items = ref([])
+
+// 父级候选（仅一级节点，且排除自身）
+const parentOptions = computed(() => {
+  if (activeTab.value !== 'demand_types') return []
+  return items.value.filter(i => !i.parent_code)
+})
+
+function getParentName(parentCode) {
+  const p = items.value.find(i => i.code === parentCode)
+  return p ? p.name : parentCode
+}
 
 async function loadItems() {
   try {
@@ -193,6 +211,7 @@ const saving = ref(false)
 const defaultForm = () => ({
   code: '',
   name: '',
+  parent_code: '',
   display_color: '#909399',
   is_active: true
 })
@@ -215,6 +234,7 @@ function openEdit(row) {
   editingId.value = row.id
   form.code = row.code
   form.name = row.name
+  form.parent_code = row.parent_code || ''
   form.display_color = row.display_color || '#909399'
   form.is_active = row.is_active
   dialogVisible.value = true
@@ -235,6 +255,7 @@ async function handleSave() {
       name: form.name,
       is_active: form.is_active
     }
+    if (activeTab.value === 'demand_types') data.parent_code = form.parent_code
     if (currentTabHasColor.value) data.display_color = form.display_color
 
     if (dialogMode.value === 'create') {
@@ -313,4 +334,5 @@ onMounted(loadItems)
   margin-right: 6px;
 }
 .color-code { font-size: 12px; color: #909399; vertical-align: middle; }
+.child-name { color: #409eff; padding-left: 16px; }
 </style>

@@ -7,29 +7,66 @@
       <nav class="nav-menu">
         <router-link to="/national" class="nav-item" active-class="active-item">国家农高区</router-link>
         <router-link to="/intro" class="nav-item" active-class="active-item">襄阳农高区介绍</router-link>
-        <!-- 招商项目库 下拉菜单 -->
-        <el-dropdown trigger="hover" class="nav-dropdown" @command="handleCommand">
+        <!-- 招商项目库 下拉菜单 — 仅登录后可见 -->
+        <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isInvestmentRoute }">
             招商项目库
             <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="/investment-dashboard">数据看板</el-dropdown-item>
               <el-dropdown-item command="/investment">招商项目管理</el-dropdown-item>
               <el-dropdown-item command="/investment-activity">招商动态管理</el-dropdown-item>
+              <el-dropdown-item command="/investment-demand">企业诉求管理</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
+        <!-- 登录 / 用户信息 -->
+        <template v-if="businessAuth.isLoggedIn">
+          <span class="nav-item nav-user">
+            <el-icon><UserFilled /></el-icon>
+            {{ businessAuth.user?.display_name || businessAuth.user?.username }}
+          </span>
+          <span class="nav-item nav-logout" @click="handleLogout">退出</span>
+        </template>
+        <span v-else class="nav-item nav-login" @click="showLoginDialog = true">登录</span>
       </nav>
     </div>
   </header>
+
+  <!-- 登录弹窗 -->
+  <el-dialog
+    v-model="showLoginDialog"
+    title="用户登录"
+    width="400px"
+    :close-on-click-modal="false"
+    append-to-body
+  >
+    <el-form ref="loginFormRef" :model="loginForm" :rules="loginRules" label-position="top" @submit.prevent="handleLogin">
+      <el-form-item label="用户名" prop="username">
+        <el-input v-model="loginForm.username" placeholder="请输入用户名" :prefix-icon="User" />
+      </el-form-item>
+      <el-form-item label="密码" prop="password">
+        <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password :prefix-icon="Lock" @keyup.enter="handleLogin" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" :loading="loginLoading" style="width: 100%" @click="handleLogin">
+          登 录
+        </el-button>
+      </el-form-item>
+      <p v-if="loginError" class="login-error">{{ loginError }}</p>
+    </el-form>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, User, Lock } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
 
 const props = defineProps({
   variant: { type: String, default: 'light' }, // 'home' | 'light' | 'overlay' | 'contact'
@@ -38,6 +75,7 @@ const props = defineProps({
 
 const route = useRoute()
 const router = useRouter()
+const businessAuth = useBusinessAuthStore()
 
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 
@@ -48,6 +86,56 @@ function handleCommand(path) {
 }
 
 const navClass = computed(() => `nav-${props.variant}`)
+
+// ===== 登录弹窗 =====
+const showLoginDialog = ref(false)
+const loginLoading = ref(false)
+const loginError = ref('')
+const loginFormRef = ref(null)
+const loginForm = ref({
+  username: '',
+  password: ''
+})
+const loginRules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+
+// 检查登录状态
+onMounted(() => {
+  businessAuth.check()
+})
+
+async function handleLogin() {
+  if (!loginFormRef.value) return
+  try {
+    await loginFormRef.value.validate()
+  } catch {
+    return
+  }
+
+  loginLoading.value = true
+  loginError.value = ''
+  const result = await businessAuth.login(loginForm.value.username, loginForm.value.password)
+  loginLoading.value = false
+
+  if (result.success) {
+    showLoginDialog.value = false
+    loginForm.value = { username: '', password: '' }
+    ElMessage.success('登录成功')
+  } else {
+    loginError.value = result.message || '登录失败'
+  }
+}
+
+async function handleLogout() {
+  await businessAuth.logout()
+  ElMessage.success('已退出登录')
+  // 如果在需要登录的页面，跳回首页
+  if (route.meta.requiresBusinessAuth) {
+    router.push('/')
+  }
+}
 </script>
 
 <style scoped>
@@ -73,6 +161,13 @@ const navClass = computed(() => `nav-${props.variant}`)
 .nav-dropdown-trigger { display: inline-flex; align-items: center; gap: 2px; }
 .dropdown-arrow { font-size: 12px; transition: transform 0.2s; }
 
+/* 登录/用户相关 */
+.nav-login { cursor: pointer; }
+.nav-user { display: inline-flex; align-items: center; gap: 4px; cursor: default; }
+.nav-logout { cursor: pointer; }
+
+.login-error { color: #f56c6c; font-size: 13px; text-align: center; margin: 0; }
+
 /* ===== home 变体（深色透明→毛玻璃） ===== */
 .nav-home {
   position: fixed; z-index: 1000; height: 72px;
@@ -91,6 +186,11 @@ const navClass = computed(() => `nav-${props.variant}`)
 .nav-home .nav-item::after { bottom: 0; background: #fff; }
 .nav-home .nav-item:hover { color: #fff; }
 .nav-home .active-item { color: #fff; }
+.nav-home .nav-login,
+.nav-home .nav-logout { color: rgba(255,255,255,0.75); }
+.nav-home .nav-login:hover,
+.nav-home .nav-logout:hover { color: #fff; }
+.nav-home .nav-user { color: rgba(255,255,255,0.9); }
 
 /* ===== light 变体（粘性白色毛玻璃） ===== */
 .nav-light {
@@ -107,6 +207,11 @@ const navClass = computed(() => `nav-${props.variant}`)
 .nav-light .active-item { color: #1a3a5c; font-weight: 600; }
 .nav-light .is-active { color: #1a3a5c; font-weight: 600; }
 .nav-light .is-active::after { width: 100%; }
+.nav-light .nav-login,
+.nav-light .nav-logout { color: #4a5568; }
+.nav-light .nav-login:hover,
+.nav-light .nav-logout:hover { color: #1a3a5c; }
+.nav-light .nav-user { color: #1a3a5c; font-weight: 500; }
 
 /* ===== overlay 变体（绝对定位，透明叠加） ===== */
 .nav-overlay {
@@ -123,6 +228,11 @@ const navClass = computed(() => `nav-${props.variant}`)
 .nav-overlay .active-item { color: #1a3a5c; font-weight: 600; }
 .nav-overlay .is-active { color: #1a3a5c; font-weight: 600; }
 .nav-overlay .is-active::after { width: 100%; }
+.nav-overlay .nav-login,
+.nav-overlay .nav-logout { color: #4a5568; }
+.nav-overlay .nav-login:hover,
+.nav-overlay .nav-logout:hover { color: #1a3a5c; }
+.nav-overlay .nav-user { color: #1a3a5c; font-weight: 500; }
 
 /* ===== contact 变体（固定白色毛玻璃 72px） ===== */
 .nav-contact {
@@ -139,4 +249,9 @@ const navClass = computed(() => `nav-${props.variant}`)
 .nav-contact .active-item { color: #1a3a5c; font-weight: 600; }
 .nav-contact .is-active { color: #1a3a5c; font-weight: 600; }
 .nav-contact .is-active::after { width: 100%; }
+.nav-contact .nav-login,
+.nav-contact .nav-logout { color: #4a5568; }
+.nav-contact .nav-login:hover,
+.nav-contact .nav-logout:hover { color: #1a3a5c; }
+.nav-contact .nav-user { color: #1a3a5c; font-weight: 500; }
 </style>

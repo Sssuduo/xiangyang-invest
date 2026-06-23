@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
 from flask import request, jsonify
-from flask_login import login_required
 from models import InvestmentActivity, InvestmentProject
 from extensions import db
 from routes import admin_activity_bp
+from routes.business_auth import dual_login_required
 
 
 def _parse_datetime(val):
@@ -25,13 +25,15 @@ def _parse_datetime(val):
 # ============================================================
 
 @admin_activity_bp.route('/activity/activities', methods=['GET'])
-@login_required
+@dual_login_required
 def list_activities():
     """动态列表（含搜索/筛选）"""
     search = request.args.get('search', '').strip()
     project_id = request.args.get('project_id', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 20, type=int)
 
     q = InvestmentActivity.query.join(InvestmentProject)
 
@@ -49,13 +51,14 @@ def list_activities():
     if date_to:
         q = q.filter(InvestmentActivity.date <= date_to)
 
+    total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
-    activities = q.all()
-    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities]})
+    activities = q.offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities], 'total': total})
 
 
 @admin_activity_bp.route('/activity/activities', methods=['POST'])
-@login_required
+@dual_login_required
 def create_activity():
     """新建动态"""
     data = request.get_json()
@@ -81,7 +84,7 @@ def create_activity():
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['GET'])
-@login_required
+@dual_login_required
 def get_activity(activity_id):
     """获取动态详情（含项目名称）"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
@@ -89,7 +92,7 @@ def get_activity(activity_id):
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['PUT'])
-@login_required
+@dual_login_required
 def update_activity(activity_id):
     """更新动态"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
@@ -114,7 +117,7 @@ def update_activity(activity_id):
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['DELETE'])
-@login_required
+@dual_login_required
 def delete_activity(activity_id):
     """物理删除动态"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
@@ -124,7 +127,7 @@ def delete_activity(activity_id):
 
 
 @admin_activity_bp.route('/activity/activities/batch-delete', methods=['POST'])
-@login_required
+@dual_login_required
 def batch_delete_activities():
     """批量删除动态"""
     data = request.get_json()

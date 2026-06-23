@@ -1,10 +1,10 @@
 from datetime import date
 from flask import request, jsonify
-from flask_login import login_required
 from models import InvestmentProject, EnterpriseDemand
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
 from extensions import db
 from routes import admin_investment_bp
+from routes.business_auth import dual_login_required
 
 
 def _parse_date(val):
@@ -24,7 +24,7 @@ def _parse_date(val):
 # ============================================================
 
 @admin_investment_bp.route('/investment/dicts', methods=['GET'])
-@login_required
+@dual_login_required
 def get_dicts():
     """获取所有字典数据"""
     return jsonify({
@@ -40,7 +40,7 @@ def get_dicts():
 
 
 @admin_investment_bp.route('/investment/max-order-no', methods=['GET'])
-@login_required
+@dual_login_required
 def get_max_order_no():
     """获取当前最大的顺序号"""
     max_no = db.session.query(db.func.max(InvestmentProject.order_no))\
@@ -53,7 +53,7 @@ def get_max_order_no():
 # ============================================================
 
 @admin_investment_bp.route('/investment/projects', methods=['GET'])
-@login_required
+@dual_login_required
 def list_projects():
     """项目列表（含搜索/筛选）"""
     search = request.args.get('search', '').strip()
@@ -91,7 +91,7 @@ def list_projects():
 
 
 @admin_investment_bp.route('/investment/projects', methods=['POST'])
-@login_required
+@dual_login_required
 def create_project():
     """新建项目"""
     data = request.get_json()
@@ -100,7 +100,7 @@ def create_project():
 
     # 必填字段校验
     required = ['project_name', 'invest_enterprise', 'enterprise_info', 'project_content',
-                'invest_amount', 'follow_status_code', 'responsible_unit_code', 'project_type_code']
+                'follow_status_code', 'responsible_unit_code', 'project_type_code']
     for field in required:
         if not data.get(field):
             return jsonify({'code': 1, 'message': f'{field} 为必填字段'}), 400
@@ -119,6 +119,8 @@ def create_project():
         project_type_code=data['project_type_code'],
         person_in_charge=data.get('person_in_charge', ''),
         project_doc=data.get('project_doc', ''),
+        investment_plan=data.get('investment_plan', ''),
+        conclusion=data.get('conclusion', ''),
         first_contact_date=_parse_date(data.get('first_contact_date'))
     )
 
@@ -143,7 +145,7 @@ def create_project():
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>', methods=['GET'])
-@login_required
+@dual_login_required
 def get_project(project_id):
     """获取项目详情（含字典名称解析）"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
@@ -155,6 +157,7 @@ def get_project(project_id):
     org_map = {d.code: d for d in OrganizationDict.query.all()}
     type_map = {d.code: d for d in ProjectTypeDict.query.all()}
     demand_type_map = {d.code: d for d in DemandTypeDict.query.all()}
+    demand_display_map = DemandTypeDict.build_display_name_map()
 
     fu = follow_map.get(project.follow_status_code)
     data['follow_status_name'] = fu.name if fu else ''
@@ -169,10 +172,9 @@ def get_project(project_id):
     tu = type_map.get(project.project_type_code)
     data['project_type_name'] = tu.name if tu else ''
 
-    # 诉求字典名称
+    # 诉求字典名称（二级显示：一级：二级）
     for d in data.get('demands', []) or []:
-        dt = demand_type_map.get(d.get('demand_type_code'))
-        d['demand_type_name'] = dt.name if dt else ''
+        d['demand_type_name'] = demand_display_map.get(d.get('demand_type_code'), '')
         du = org_map.get(d.get('unit_code'))
         d['unit_name'] = du.name if du else ''
 
@@ -180,7 +182,7 @@ def get_project(project_id):
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>', methods=['PUT'])
-@login_required
+@dual_login_required
 def update_project(project_id):
     """更新项目"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
@@ -217,7 +219,7 @@ def update_project(project_id):
         'order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
         'project_content', 'invest_amount', 'follow_status_code',
         'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
-        'project_type_code', 'person_in_charge', 'project_doc', 'first_contact_date'
+        'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan', 'conclusion', 'first_contact_date'
     ]
     for field in updatable_fields:
         if field in data:
@@ -246,7 +248,7 @@ def update_project(project_id):
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>', methods=['DELETE'])
-@login_required
+@dual_login_required
 def delete_project(project_id):
     """逻辑删除项目"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
@@ -255,12 +257,33 @@ def delete_project(project_id):
     return jsonify({'code': 0, 'message': '项目已删除'})
 
 
+@admin_investment_bp.route('/investment/projects/batch-delete', methods=['POST'])
+@dual_login_required
+def batch_delete_projects():
+    """批量删除项目"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
+
+    ids = data.get('ids', [])
+    if not ids or not isinstance(ids, list):
+        return jsonify({'code': 1, 'message': '请提供要删除的项目ID列表'}), 400
+
+    deleted = InvestmentProject.query.filter(
+        InvestmentProject.id.in_(ids),
+        InvestmentProject.is_deleted == False
+    ).update({'is_deleted': True}, synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({'code': 0, 'message': f'成功删除 {deleted} 个项目', 'data': {'count': deleted}})
+
+
 # ============================================================
 # 企业诉求 CRUD（项目子表）
 # ============================================================
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands', methods=['GET'])
-@login_required
+@dual_login_required
 def list_demands(project_id):
     """获取项目的企业诉求列表"""
     demands = EnterpriseDemand.query.filter_by(project_id=project_id)\
@@ -269,7 +292,7 @@ def list_demands(project_id):
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands', methods=['POST'])
-@login_required
+@dual_login_required
 def create_demand(project_id):
     """新增企业诉求"""
     data = request.get_json()
@@ -293,7 +316,7 @@ def create_demand(project_id):
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands/<int:demand_id>', methods=['PUT'])
-@login_required
+@dual_login_required
 def update_demand(project_id, demand_id):
     """更新企业诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id, project_id=project_id).first_or_404()
@@ -310,7 +333,7 @@ def update_demand(project_id, demand_id):
 
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands/<int:demand_id>', methods=['DELETE'])
-@login_required
+@dual_login_required
 def delete_demand(project_id, demand_id):
     """删除企业诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id, project_id=project_id).first_or_404()

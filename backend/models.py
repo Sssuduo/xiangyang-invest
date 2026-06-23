@@ -31,6 +31,47 @@ class AdminUser(UserMixin, db.Model):
         }
 
 
+class BusinessUser(UserMixin, db.Model):
+    """业务用户（前台登录）— 由管理员在后台配置"""
+    __tablename__ = 'business_users'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(64), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    display_name = db.Column(db.String(128))
+    is_active = db.Column(db.Boolean, default=True)
+    permissions = db.Column(db.Text, default='{}')  # JSON: {"investment":{"edit":true,...},...}
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password, method='scrypt')
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def get_permissions(self):
+        """返回权限字典"""
+        try:
+            return json.loads(self.permissions) if self.permissions else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    def set_permissions(self, perms_dict):
+        """保存权限字典"""
+        self.permissions = json.dumps(perms_dict, ensure_ascii=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'display_name': self.display_name,
+            'is_active': self.is_active,
+            'permissions': self.get_permissions(),
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class HomepageConfig(db.Model):
     """首页配置（单行记录）"""
     __tablename__ = 'homepage_config'
@@ -250,7 +291,7 @@ class FollowStatusDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(64), nullable=False)
-    display_color = db.Column(db.String(7), default='#909399')
+    display_color = db.Column(db.String(32), default='#909399')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
@@ -269,7 +310,7 @@ class MeetingStatusDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(64), nullable=False)
-    display_color = db.Column(db.String(7), default='#909399')
+    display_color = db.Column(db.String(32), default='#909399')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
@@ -330,11 +371,13 @@ class InvestmentProject(db.Model):
     follow_status_code = db.Column(db.String(32), nullable=False)
     meeting_status_code = db.Column(db.String(32), nullable=False, default='not_meeting')
     recommend_unit_code = db.Column(db.String(32), default='')
-    responsible_unit_code = db.Column(db.String(32), nullable=False)
+    responsible_unit_code = db.Column(db.String(32), nullable=True, default='')
     project_type_code = db.Column(db.String(32), nullable=False)
 
     person_in_charge = db.Column(db.String(64), default='')
     project_doc = db.Column(db.Text, default='')
+    investment_plan = db.Column(db.Text, default='')
+    conclusion = db.Column(db.Text, default='')
     first_contact_date = db.Column(db.Date)
 
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
@@ -360,6 +403,8 @@ class InvestmentProject(db.Model):
             'project_type_code': self.project_type_code,
             'person_in_charge': self.person_in_charge or '',
             'project_doc': self.project_doc or '',
+            'investment_plan': self.investment_plan or '',
+            'conclusion': self.conclusion or '',
             'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
             'is_deleted': self.is_deleted,
             'demands': [d.to_dict() for d in self.demands.all()],
@@ -369,20 +414,35 @@ class InvestmentProject(db.Model):
 
 
 class DemandTypeDict(db.Model):
-    """诉求类型字典"""
+    """诉求类型字典（支持两级：parent_code 为空则为一级）"""
     __tablename__ = 'demand_type_dict'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
+    parent_code = db.Column(db.String(32), default='')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
+            'parent_code': self.parent_code or '',
             'sort_order': self.sort_order, 'is_active': self.is_active
         }
+
+    @staticmethod
+    def build_display_name_map():
+        """构建 code → display_name 映射（子级显示为 一级：二级）"""
+        all_items = DemandTypeDict.query.all()
+        name_map = {d.code: d.name for d in all_items}
+        result = {}
+        for d in all_items:
+            if d.parent_code and d.parent_code in name_map:
+                result[d.code] = f'{name_map[d.parent_code]}：{d.name}'
+            else:
+                result[d.code] = d.name
+        return result
 
 
 class EnterpriseDemand(db.Model):
@@ -440,14 +500,41 @@ class ContactInfo(db.Model):
         }
 
 
+class ExportTemplate(db.Model):
+    """导出模板（支持多模板命名）"""
+    __tablename__ = 'export_template'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(128), nullable=False)
+    entity_type = db.Column(db.String(32), default='investment')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    fields = db.relationship('ExportFieldConfig', backref='template', lazy='dynamic',
+                              cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'entity_type': self.entity_type,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class ExportFieldConfig(db.Model):
     """导出字段配置"""
     __tablename__ = 'export_field_config'
+    __table_args__ = (
+        db.UniqueConstraint('template_id', 'field_key', name='uq_template_field'),
+    )
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    template_id = db.Column(db.Integer, db.ForeignKey('export_template.id'), nullable=False, default=1)
+    field_key = db.Column(db.String(64), nullable=False)
     field_label = db.Column(db.String(128), nullable=False)
     is_visible = db.Column(db.Boolean, default=True)
+    is_custom = db.Column(db.Boolean, default=False)
     column_width = db.Column(db.Integer, default=120)
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -456,9 +543,11 @@ class ExportFieldConfig(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'template_id': self.template_id,
             'field_key': self.field_key,
             'field_label': self.field_label,
             'is_visible': self.is_visible,
+            'is_custom': self.is_custom,
             'column_width': self.column_width,
             'sort_order': self.sort_order
         }
@@ -542,6 +631,30 @@ class ExportFieldConfigActivity(db.Model):
 class ImportFieldConfigActivity(db.Model):
     """招商动态导入字段配置"""
     __tablename__ = 'import_field_config_activity'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_required = db.Column(db.Boolean, default=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_enabled': self.is_enabled,
+            'is_required': self.is_required,
+            'sort_order': self.sort_order
+        }
+
+
+class ImportFieldConfigDemand(db.Model):
+    """企业诉求导入字段配置"""
+    __tablename__ = 'import_field_config_demand'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     field_key = db.Column(db.String(64), unique=True, nullable=False)

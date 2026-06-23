@@ -61,6 +61,7 @@
       </template>
       <el-menu-item index="/admin/import-config">招商项目导入</el-menu-item>
       <el-menu-item index="/admin/activity-import-config">招商动态导入</el-menu-item>
+      <el-menu-item index="/admin/demand-import-config">企业诉求导入</el-menu-item>
     </el-sub-menu>
 
     <el-menu-item index="/admin/provinces">
@@ -88,6 +89,11 @@
       <span>提示词管理</span>
     </el-menu-item>
 
+    <el-menu-item index="/admin/business-users">
+      <el-icon><Avatar /></el-icon>
+      <span>用户管理</span>
+    </el-menu-item>
+
     <div class="sidebar-footer">
       <div class="debug-toggle">
         <el-button
@@ -112,7 +118,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

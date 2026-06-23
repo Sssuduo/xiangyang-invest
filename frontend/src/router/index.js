@@ -122,14 +122,28 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/investment-dashboard',
+    name: 'InvestmentDashboard',
+    component: () => import('@/views/DashboardView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
     path: '/investment',
     name: 'Investment',
-    component: () => import('@/views/InvestmentView.vue')
+    component: () => import('@/views/InvestmentView.vue'),
+    meta: { requiresBusinessAuth: true }
   },
   {
     path: '/investment-activity',
     name: 'InvestmentActivity',
-    component: () => import('@/views/ActivityView.vue')
+    component: () => import('@/views/ActivityView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
+    path: '/investment-demand',
+    name: 'InvestmentDemand',
+    component: () => import('@/views/DemandView.vue'),
+    meta: { requiresBusinessAuth: true }
   },
   {
     path: '/admin/investment',
@@ -141,6 +155,12 @@ const routes = [
     path: '/admin/activity',
     name: 'AdminActivity',
     component: () => import('@/views/admin/ActivityList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/demand',
+    name: 'AdminDemand',
+    component: () => import('@/views/admin/DemandList.vue'),
     meta: { requiresAuth: true }
   },
   {
@@ -162,6 +182,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/demand-import-config',
+    name: 'AdminDemandImportConfig',
+    component: () => import('@/views/admin/DemandImportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/dict',
     name: 'AdminDict',
     component: () => import('@/views/admin/DictConfig.vue'),
@@ -171,6 +197,12 @@ const routes = [
     path: '/admin/activity-export-config',
     name: 'AdminActivityExportConfig',
     component: () => import('@/views/admin/ActivityExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/business-users',
+    name: 'AdminBusinessUsers',
+    component: () => import('@/views/admin/BusinessUserList.vue'),
     meta: { requiresAuth: true }
   },
   {
@@ -185,7 +217,8 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫 - 后台页面需要登录
+// 路由守卫 - 后台页面需要登录（AdminUser）
+// 业务页面需要登录（BusinessUser）
 router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth) {
     try {
@@ -199,9 +232,26 @@ router.beforeEach(async (to, from, next) => {
     } catch {
       next('/admin/login')
     }
-  } else {
-    next()
+    return
   }
+
+  if (to.meta.requiresBusinessAuth) {
+    try {
+      const res = await fetch('/api/auth/check')
+      const data = await res.json()
+      if (data.code === 0) {
+        next()
+      } else {
+        // 未登录业务用户 → 回到首页，可通过导航栏登录
+        next('/')
+      }
+    } catch {
+      next('/')
+    }
+    return
+  }
+
+  next()
 })
 
 export default router

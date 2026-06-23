@@ -7,7 +7,7 @@
         <!-- 工具栏 -->
         <div class="toolbar">
           <el-input v-model="searchText" placeholder="搜索项目名称、动态内容..." :prefix-icon="Search" clearable class="search-input" @input="handleSearch" />
-          <el-select v-model="filterProjectId" placeholder="所属项目" clearable @change="fetchData" style="width: 180px;">
+          <el-select v-model="filterProjectId" placeholder="项目" clearable @change="currentPage = 1; fetchData()" style="width: 180px;">
             <el-option v-for="p in projectList" :key="p.id" :label="p.project_name" :value="p.id" />
           </el-select>
           <el-date-picker
@@ -23,7 +23,7 @@
           <el-button v-if="selectedIds.length > 0" type="success" @click="handleExport">
             <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
           </el-button>
-          <el-button v-if="selectedIds.length > 0" type="danger" @click="handleBatchDelete">
+          <el-button v-if="selectedIds.length > 0 && businessAuth.hasPermission('activity', 'batch_delete')" type="danger" @click="handleBatchDelete">
             <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
           </el-button>
           <el-dropdown trigger="click" @command="handleImportCmd">
@@ -42,7 +42,7 @@
             </template>
           </el-dropdown>
           <div class="toolbar-spacer" />
-          <el-button type="primary" @click="openCreate">
+          <el-button v-if="businessAuth.hasPermission('activity', 'edit')" type="primary" @click="openCreate">
             <el-icon><Plus /></el-icon> 添加动态
           </el-button>
         </div>
@@ -59,13 +59,19 @@
           style="width: 100%"
         >
           <el-table-column type="selection" width="45" />
-          <el-table-column label="所属项目" width="180">
+          <el-table-column label="项目" width="210">
             <template #default="{ row }">
-              <el-tag effect="plain" size="small" type="info">{{ row.project_name }}</el-tag>
+              <el-tag class="project-name-tag" @click="handleProjectClick(row)">
+                {{ row.project_name }}
+              </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="date" label="日期" width="170" />
-          <el-table-column label="动态内容" min-width="240">
+          <el-table-column label="日期" width="140" align="center">
+            <template #default="{ row }">
+              <span class="date-cell">{{ row.date || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="动态内容" min-width="210">
             <template #default="{ row }">
               <el-tooltip :content="row.content" placement="top" :show-after="300" popper-class="content-tooltip">
                 <span class="content-preview">{{ truncate(row.content, 50) }}</span>
@@ -81,16 +87,31 @@
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="handleView(row)">查看</el-button>
-              <el-button size="small" link type="success" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button v-if="businessAuth.hasPermission('activity', 'edit')" size="small" link type="success" @click="openEdit(row)">编辑</el-button>
+              <el-button v-if="businessAuth.hasPermission('activity', 'delete')" size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
+
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @current-change="handlePageChange"
+          @size-change="handlePageSizeChange"
+          style="margin-top: 20px; justify-content: flex-end;"
+        />
       </div>
     </div>
 
     <!-- 查看抽屉 -->
     <ActivityDrawer v-model="viewDrawerVisible" :activity="viewActivity" />
+
+    <!-- 项目详情抽屉 -->
+    <ProjectDrawer v-model="projectDrawerVisible" :project="projectDrawerProject" />
 
     <!-- 编辑抽屉（新建/编辑共用） -->
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
@@ -106,7 +127,7 @@
             <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
             <span class="section-title">基础信息</span>
           </div>
-          <el-form-item label="所属项目" prop="project_id">
+          <el-form-item label="项目" prop="project_id">
             <el-select v-model="form.project_id" placeholder="请选择项目" filterable style="width: 100%;">
               <el-option v-for="p in projectList" :key="p.id" :label="p.project_name" :value="p.id" />
             </el-select>
@@ -179,18 +200,19 @@
         <el-button type="primary" @click="loadTemplateProjects">
           <el-icon><Search /></el-icon> 查询
         </el-button>
-        <span class="template-count">共 {{ templateProjects.length }} 个项目</span>
+        <span class="template-count">已勾选 {{ templateSelectedCount }} / {{ templateProjects.length }} 个项目</span>
       </div>
 
       <!-- 项目表格 -->
       <el-table
+        ref="templateTableRef"
         :data="templateProjects"
-        stripe
         size="small"
         max-height="380"
         row-key="id"
         class="template-table"
         empty-text="暂无匹配的项目"
+        @selection-change="handleTemplateSelectionChange"
       >
         <el-table-column type="selection" width="45" />
         <el-table-column prop="project_name" label="项目名称" min-width="180" show-overflow-tooltip />
@@ -211,7 +233,7 @@
 
       <template #footer>
         <el-button @click="templateDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleDownloadTemplate">
+        <el-button type="primary" @click="handleDownloadTemplate" :disabled="templateSelectedCount === 0">
           <el-icon><Download /></el-icon> 下载导入模板 ({{ templateSelectedCount }} 个项目)
         </el-button>
       </template>
@@ -268,7 +290,7 @@
                 <span class="project-id-tag">{{ row.data.project_id || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="所属项目" width="150" show-overflow-tooltip>
+            <el-table-column label="项目" width="150" show-overflow-tooltip>
               <template #default="{ row }">{{ row.data.project_name }}</template>
             </el-table-column>
             <el-table-column label="年份" width="90" align="center">
@@ -336,17 +358,20 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
+import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getPublicActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
-import { getPublicProjects } from '@/api/investment'
+import { getPublicProjects, getProject } from '@/api/investment'
 import { downloadActivityExcel } from '@/api/activity_export'
 import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
 import { getDictItems } from '@/api/dict'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
 
+const businessAuth = useBusinessAuthStore()
 const tableRef = ref(null)
 const activities = ref([])
 const loading = ref(false)
@@ -358,6 +383,11 @@ const filterDateTo = ref('')
 const selectedIds = ref([])
 const projectList = ref([])
 
+// 分页
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
 // 字典数据
 const followStatusList = ref([])
 
@@ -366,6 +396,10 @@ let searchTimer = null
 // 查看抽屉
 const viewDrawerVisible = ref(false)
 const viewActivity = ref(null)
+
+// 项目详情抽屉
+const projectDrawerVisible = ref(false)
+const projectDrawerProject = ref(null)
 
 // 编辑抽屉
 const editDrawerVisible = ref(false)
@@ -383,10 +417,8 @@ const templateDialogVisible = ref(false)
 const templateFollowStatus = ref('')
 const templateProjects = ref([])
 const templateTableRef = ref(null)
-const templateSelectedCount = computed(() => {
-  // 表格中当前展示的项目数（即选中要下载的）
-  return templateProjects.value.length
-})
+const templateSelectedProjects = ref([])
+const templateSelectedCount = computed(() => templateSelectedProjects.value.length)
 
 // ---- 导入对话框 ----
 const importDialogVisible = ref(false)
@@ -412,7 +444,7 @@ const defaultForm = () => ({
 const form = reactive(defaultForm())
 
 const rules = {
-  project_id: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
+  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
   content: [{ required: true, message: '请输入动态内容', trigger: 'blur' }]
 }
 
@@ -439,18 +471,19 @@ async function loadProjects() {
 async function fetchData() {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: currentPage.value, page_size: pageSize.value }
     if (searchText.value) params.search = searchText.value
     if (filterProjectId.value) params.project_id = filterProjectId.value
     if (filterDateFrom.value) params.date_from = filterDateFrom.value
     if (filterDateTo.value) params.date_to = filterDateTo.value
     const res = await getPublicActivities(params)
     activities.value = res.data || []
+    total.value = res.total || 0
   } catch { activities.value = [] }
   finally { loading.value = false }
 }
 
-function handleSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(fetchData, 300) }
+function handleSearch() { currentPage.value = 1; clearTimeout(searchTimer); searchTimer = setTimeout(fetchData, 300) }
 
 function onDateRangeChange(vals) {
   if (vals && vals.length === 2) {
@@ -460,8 +493,12 @@ function onDateRangeChange(vals) {
     filterDateFrom.value = ''
     filterDateTo.value = ''
   }
+  currentPage.value = 1
   fetchData()
 }
+
+function handlePageChange(page) { currentPage.value = page; fetchData() }
+function handlePageSizeChange(size) { pageSize.value = size; currentPage.value = 1; fetchData() }
 
 function handleSelectionChange(selection) { selectedIds.value = selection.map(s => s.id) }
 
@@ -471,6 +508,18 @@ function truncate(text, max) { if (!text) return ''; return text.length > max ? 
 function handleView(row) {
   viewActivity.value = row
   viewDrawerVisible.value = true
+}
+
+async function handleProjectClick(row) {
+  try {
+    const res = await getProject(row.project_id)
+    if (res.code === 0) {
+      projectDrawerProject.value = res.data
+      projectDrawerVisible.value = true
+    }
+  } catch (err) {
+    ElMessage.error('获取项目详情失败')
+  }
 }
 
 // ---- 导出 ----
@@ -507,28 +556,45 @@ async function handleBatchDelete() {
 function resetTemplateDialog() {
   templateFollowStatus.value = ''
   templateProjects.value = []
+  templateSelectedProjects.value = []
 }
 
 async function loadTemplateProjects() {
   try {
     const res = await getTemplateProjects(templateFollowStatus.value)
-    if (res.code === 0) templateProjects.value = res.data || []
+    if (res.code === 0) {
+      templateProjects.value = res.data || []
+      // 默认全选
+      templateSelectedProjects.value = [...templateProjects.value]
+      nextTick(() => {
+        templateTableRef.value?.toggleAllSelection()
+      })
+    }
   } catch {
     templateProjects.value = []
+    templateSelectedProjects.value = []
   }
+}
+
+function handleTemplateSelectionChange(selection) {
+  templateSelectedProjects.value = selection
 }
 
 function removeTemplateProject(idx) {
+  const removed = templateProjects.value[idx]
   templateProjects.value.splice(idx, 1)
+  if (removed) {
+    templateSelectedProjects.value = templateSelectedProjects.value.filter(p => p.id !== removed.id)
+  }
 }
 
 async function handleDownloadTemplate() {
-  if (templateProjects.value.length === 0) {
-    ElMessage.warning('请至少保留一个项目')
+  if (templateSelectedProjects.value.length === 0) {
+    ElMessage.warning('请至少选择一个项目')
     return
   }
   try {
-    const ids = templateProjects.value.map(p => p.id)
+    const ids = templateSelectedProjects.value.map(p => p.id)
     await downloadActivityImportTemplate(ids)
     ElMessage.success('模板下载成功')
     templateDialogVisible.value = false
@@ -715,6 +781,25 @@ async function handleDelete(row) {
 .search-input { width: 320px; }
 
 .content-preview { cursor: default; color: #606266; }
+.date-cell { color: #606266; font-size: 13px; white-space: nowrap; }
+.project-name-tag {
+  cursor: pointer;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a3a5c;
+  background: #e0ecf6;
+  border: 1px solid #b8d4ec;
+  border-radius: 6px;
+  transition: all 0.2s;
+  vertical-align: middle;
+}
+.project-name-tag:hover { background: #d0e0f0; border-color: #90bcd8; }
 .content-tooltip { max-width: 480px !important; white-space: pre-wrap !important; }
 .no-data { color: #909399; }
 

@@ -1,6 +1,7 @@
-from models import AdminUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ExportFieldConfig, ImportFieldConfig
+from models import AdminUser, BusinessUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ExportTemplate, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
+from models import ImportFieldConfigDemand
 from extensions import db
 
 
@@ -48,7 +49,24 @@ def init_database(app):
         # V3.1: 企业诉求新增字段
         "ALTER TABLE enterprise_demands ADD COLUMN demand_type_code VARCHAR(32) DEFAULT ''",
         "ALTER TABLE enterprise_demands ADD COLUMN unit_code VARCHAR(32) DEFAULT ''",
+        # V4: 项目投资计划书
+        "ALTER TABLE investment_projects ADD COLUMN investment_plan TEXT DEFAULT ''",
+        # V5: 导出多模板支持 — 新增 template_id 列，移除旧 field_key 唯一约束
+        "ALTER TABLE export_field_config ADD COLUMN template_id INTEGER DEFAULT 1",
+        # V5.1: 自定义列 + 投资金额(亿元)
+        "ALTER TABLE export_field_config ADD COLUMN is_custom BOOLEAN DEFAULT 0",
     ]
+    # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
+    drop_index_sqls = [
+        "DROP INDEX IF EXISTS ix_export_field_config_field_key",
+        "DROP INDEX IF EXISTS uq_export_field_config_field_key",
+    ]
+    for sql in drop_index_sqls:
+        try:
+            db.session.execute(db.text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     for sql in migrations:
         try:
             db.session.execute(db.text(sql))
@@ -71,6 +89,22 @@ def init_database(app):
         admin.set_password('changeme123')
         db.session.add(admin)
         print('[种子数据] 管理员账号已创建: admin / changeme123')
+
+    # 创建默认业务用户
+    if not BusinessUser.query.filter_by(username='demo').first():
+        demo = BusinessUser(
+            username='demo',
+            display_name='演示用户',
+            is_active=True
+        )
+        demo.set_password('demo123')
+        demo.set_permissions({
+            'investment': {'edit': True, 'delete': True, 'batch_delete': True},
+            'activity': {'edit': True, 'delete': True, 'batch_delete': True},
+            'demand': {'edit': True, 'delete': True, 'batch_delete': True}
+        })
+        db.session.add(demo)
+        print('[种子数据] 业务用户账号已创建: demo / demo123')
 
     # 创建默认首页配置
     if not HomepageConfig.query.first():
@@ -132,6 +166,9 @@ def init_database(app):
 
     # ---- 招商动态 - 导入字段配置 ----
     _seed_activity_import_fields()
+
+    # ---- 企业诉求 - 导入字段配置 ----
+    _seed_demand_import_fields()
 
 
 def _seed_investment_dicts():
@@ -228,7 +265,14 @@ def _seed_investment_dicts():
 
 
 def _seed_export_fields():
-    """初始化导出字段配置"""
+    """初始化导出字段配置（默认模板 + 字段）"""
+    # 先确保默认模板存在
+    template = ExportTemplate.query.filter_by(entity_type='investment').first()
+    if not template:
+        template = ExportTemplate(name='默认导出模板', entity_type='investment')
+        db.session.add(template)
+        db.session.flush()  # 获取 template.id
+
     fields = [
         ('order_no', '序号', 60, 1),
         ('project_name', '项目名称', 180, 2),
@@ -237,17 +281,23 @@ def _seed_export_fields():
         ('enterprise_info', '企业简介', 300, 5),
         ('project_content', '项目内容', 300, 6),
         ('invest_amount', '投资金额(万元)', 120, 7),
-        ('follow_status_code', '跟进状态', 100, 8),
-        ('meeting_status_code', '上会状态', 100, 9),
-        ('recommend_unit_code', '推介单位', 140, 10),
-        ('responsible_unit_code', '责任单位', 140, 11),
-        ('person_in_charge', '责任人', 80, 12),
-        ('project_doc', '项目文档', 200, 13),
-        ('first_contact_date', '首次对接时间', 120, 14),
+        ('invest_amount_yi', '投资金额(亿元)', 120, 8),
+        ('follow_status_code', '跟进状态', 100, 9),
+        ('meeting_status_code', '上会状态', 100, 10),
+        ('recommend_unit_code', '推介单位', 140, 11),
+        ('responsible_unit_code', '责任单位', 140, 12),
+        ('person_in_charge', '责任人', 80, 13),
+        ('project_doc', '项目文档', 200, 14),
+        ('first_contact_date', '首次对接时间', 120, 15),
+        # 聚合字段
+        ('activities', '招商动态', 500, 16),
+        ('demands', '企业诉求', 500, 17),
+        ('resolution', '解决措施', 500, 18),
     ]
     for field_key, field_label, column_width, sort_order in fields:
-        if not ExportFieldConfig.query.filter_by(field_key=field_key).first():
+        if not ExportFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first():
             db.session.add(ExportFieldConfig(
+                template_id=template.id,
                 field_key=field_key,
                 field_label=field_label,
                 is_visible=True,
@@ -329,3 +379,26 @@ def _seed_activity_import_fields():
             ))
     db.session.commit()
     print('[种子数据] 招商动态导入字段配置已初始化')
+
+
+def _seed_demand_import_fields():
+    """初始化企业诉求导入字段配置"""
+    fields = [
+        ('project_id', '项目ID', True, True, 0),
+        ('project_name', '所属项目', True, False, 1),
+        ('demand_type_code', '诉求类型', True, False, 2),
+        ('demand_content', '诉求内容', True, True, 3),
+        ('unit_code', '对接单位', True, False, 4),
+        ('status', '状态', True, False, 5),
+    ]
+    for field_key, field_label, is_enabled, is_required, sort_order in fields:
+        if not ImportFieldConfigDemand.query.filter_by(field_key=field_key).first():
+            db.session.add(ImportFieldConfigDemand(
+                field_key=field_key,
+                field_label=field_label,
+                is_enabled=is_enabled,
+                is_required=is_required,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 企业诉求导入字段配置已初始化')

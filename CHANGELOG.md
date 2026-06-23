@@ -1,5 +1,170 @@
 # 更新日志
 
+## V7.0 (2026-06-23) — 数据看板 + 登录管理系统
+
+### 用户登录管理
+
+- **BusinessUser 模型**：新建业务用户表，JSON 格式存储按钮级权限
+- **双认证体系**：AdminUser（Flask-Login）与 BusinessUser（Session 认证）共存，`@dual_login_required` 装饰器
+- **前台登录**：导航栏右上角登录弹窗，访客模式仅 3 个公开菜单
+- **后台用户管理**：Admin 可创建/编辑/删除业务用户，配置 3 模块 × 3 操作的按钮权限
+- **权限控制**：InvestmentView / ActivityView / DemandView 按钮按权限显隐
+
+### 数据看板 (`/investment-dashboard`)
+
+- **6 个统计卡片**：总诉求、待处理、处理中、已解决、涉及项目、解决率
+- **诉求类型分布**（柱状图）：
+  - 默认一级字典聚合 + 点击下钻到二级分类
+  - 处理状态下拉筛选 + 项目类型下拉筛选
+  - 按类型名独立着色（HSL 黄金角度算法）
+  - 悬停显示二级明细 + 关联项目列表
+- **对接单位分布**（横向柱状图）：
+  - 点击单位下钻到该单位的二级分类分布
+  - 单位悬停：一级分组 + 二级圆点缩进 + 关联项目
+  - 下钻悬停：展示该类型关联的项目名称
+- **后端统计 API** `GET /api/admin/demand-stats`：
+  - 6 组聚合统计（概览/按类型/按状态/按单位/按项目/月度趋势）
+  - 支持 `project_type` 筛选参数
+  - 每个类型/单位含关联项目列表（用于悬停提示）
+
+### 关键文件
+
+| 文件 | 操作 |
+|------|------|
+| `backend/models.py` | 新增 BusinessUser |
+| `backend/routes/business_auth.py` | 新建 — 前台登录/登出/状态检查 |
+| `backend/routes/admin_business_users.py` | 新建 — 后台用户 CRUD |
+| `backend/routes/admin_demand.py` | 追加 `demand-stats` 统计 API |
+| `frontend/src/stores/businessAuth.js` | 新建 — Pinia 登录状态管理 |
+| `frontend/src/api/auth.js` | 新建 — 认证 API |
+| `frontend/src/api/businessUsers.js` | 新建 — 用户管理 API |
+| `frontend/src/api/dashboard.js` | 新建 — 数据看板 API |
+| `frontend/src/views/DashboardView.vue` | 新建 — ECharts 数据看板 |
+| `frontend/src/views/admin/BusinessUserList.vue` | 新建 — 用户权限配置页 |
+| `frontend/src/components/common/BusinessNavbar.vue` | 登录入口 + 菜单显隐 |
+| `frontend/src/router/index.js` | 新增登录守卫 + 看板路由 |
+
+## V6.1 (2026-06-23) — 诉求类型 el-cascader 级联 + 字典数据配置 + 筛选增强
+
+### 诉求类型级联选择器
+
+- **编辑抽屉**：诉求类型从两个独立 `el-select` 联动改为 Element Plus 原生 `<el-cascader>`（`expandTrigger: 'click'`），点击一级项后右侧滑出二级子面板
+- **筛选栏**：诉求类型筛选同样改为 cascader，支持选中一级时自动匹配父级 + 所有子级数据
+- **后端支持**：`demand_type` 参数改为逗号分隔多 code，`IN` 查询匹配
+
+### 诉求类型字典数据配置
+
+- 用地保障 → 工业用地、设施农用地、涉及使用林地
+- 生产要素保障 → 供热供汽、生产污水处理、厂房场地租赁、原材料保供
+- 政府政策支持（原"政策支持"改名）→ 产品销售支持、风电绿电指标、设备购置补贴、落地全流程服务、科研人才支持、农业类政策支持、科技类政策支持
+- 平台公司对接 → 产业基金投资、入股参与、项目贷款、金融账期服务
+
+### 表单布局 + 表格列宽
+
+- 编辑抽屉：诉求类型 `span=12→16`，对接单位 `span=12→8`
+- 表格：诉求类型 `110px→240px`，项目 `170px→200px`
+
+### 项目类型筛选
+
+- 诉求管理页筛选栏新增「项目类型」下拉框
+- 后端 `list_demands` API 支持 `project_type` 参数
+- `demand-dicts` 公共 API 新增 `project_types` 返回
+
+## V6.0 (2026-06-23) — 导出增强 + 专班研判结论 + 诉求类型二级字典 + 展开卡片折叠
+
+### 导出系统增强
+
+- **模板名称作为文件名**：Excel 文件名使用模板名；前端 `fetch` 下载方式从 `Content-Disposition` 响应头提取文件名（优先 RFC 5987 `filename*=UTF-8''`）
+- **首行标题行**：Excel 第 1 行合并单元格，居中加粗显示模板名称，浅灰底色；表头移至第 2 行，数据从第 3 行开始；冻结窗格 `A3`
+- **招商动态去日期前缀**：聚合导出不再拼接 `日期：`，只保留序号 + 原始内容（`1、内容`）
+- **企业诉求导出模式**：新增「聚合导出」/「按行导出」选项
+  - 聚合导出：诉求合并为一个单元格，`[类型] 内容` 换行
+  - 按行导出：诉求拆为独立行，「诉求类型」「对接部门」「诉求内容」「解决措施」分列，项目信息列纵向合并单元格
+- **导出字段列表固定宽度**：`.admin-main` 加 `min-width: 0` 阻止 flex 子项被预览表格撑宽
+- **字段上移/下移**：导出字段列表每行新增 ↑ ↓ 按钮，交换数组元素实现排序
+
+### 专班研判结论
+
+- `investment_projects` 表新增 `conclusion TEXT` 列
+- 新建/编辑项目抽屉加宽至 **780px**，新增「专班研判结论」分区（位于项目投资计划书之后、对接信息之前），4 行文本框
+- 查看项目抽屉展示结论（`v-if` 有内容时显示）
+- 展开卡片中结论高亮显示（金色渐变背景 + 金色左边框）
+- 导出字段新增 `conclusion`、`investment_plan` 映射
+
+### 诉求类型二级字典
+
+- `demand_type_dict` 表新增 `parent_code VARCHAR(32)` 列
+- 字典配置页：新增/编辑对话框支持选择父级（一级节点）
+- 表格展示：子级显示为 `一级：二级`，蓝色缩进
+- 项目表单选择器：`<el-option-group>` 分组下拉，一级为组标签，二级 `└ 名称` 缩进
+- 全系统诉求类型显示统一为 `一级名称：二级名称`（后端 `build_display_name_map()` 方法）
+
+### 展开卡片交互重构
+
+- **默认折叠**：展开行默认只显示专班研判结论（高亮置顶）、项目文档、企业诉求摘要
+- **顶部切换**：「展开/收起基础信息」按钮位于卡片顶部
+- **企业诉求摘要卡片**：「企业诉求共 X 条，涉及 Y 个部门，已解决 Z 条，处理中 W 条，待处理 V 条」，彩色数字
+- **独立折叠**：诉求明细独立展开/收起，与基础信息互不影响
+
+### Bug 修复
+
+- **导出模板创建失败**：`export_field_config` 表实际 schema 为 `UNIQUE(field_key)` 单列约束，与模型 `UNIQUE(template_id,field_key)` 复合约束不一致，导致新模板复制字段时 IntegrityError。已重建表修复。
+- **创建模板后端**：`default_template` 查询排除自身 + 加 `order_by`
+- **创建模板前端**：完善错误处理，`loadTemplates` 不再覆盖当前选中模板
+- **导出弹窗模板列表**：校验选中模板是否存在，不存在则自动回退
+
+### 数据库变更
+
+| 表 | 变更 |
+|---|---|
+| `export_field_config` | 约束改为 `UNIQUE(template_id, field_key)`（重建） |
+| `investment_projects` | +conclusion TEXT |
+| `demand_type_dict` | +parent_code VARCHAR(32) |
+
+## V5.0 (2026-06-23) — 导出模板多配置 + 聚合字段 + 分页 + 诉求导入增强
+
+### 导出系统重构：多模板 + 聚合字段 + 自定列
+
+- **多模板支持**：新增 `ExportTemplate` 模型，`ExportFieldConfig` 通过 `template_id` 关联模板，不同模板独立配置
+- **模板管理**：后台导出配置页支持新建/重命名/删除模板，新建时自动复制默认模板字段
+- **聚合导出字段**：新增 4 个导出字段
+  - `投资金额(亿元)` — invest_amount / 10000
+  - `招商动态` — 项目动态按日期倒序聚合，序号分段换行（1、日期：内容）
+  - `企业诉求` — 诉求按 sort_order 聚合，含类型标签（1、[类型] 内容）
+  - `解决措施` — 非空 resolution 聚合（1、措施内容）
+- **自定义列**：支持添加数据库不存在的占位列（`custom_N`），用于对齐报表格式
+- **导出弹窗**：业务系统导出时弹出选择框：选择模板 + 导出动态范围（全部/最近5条/1个月/3个月），范围过滤仅影响动态聚合列
+
+### 企业诉求导入增强
+
+- **诉求导入配置**：新增 `DemandImportConfig.vue` 后台配置页（导入配置 → 企业诉求导入），路由 `/admin/demand-import-config`
+- **按项目ID导入**：模板新增 `项目ID` 列，导入时优先按 ID 匹配项目，`项目名称` 作为回退
+- **模板项目预加载**：下载模板时弹出项目选择对话框，默认全选、支持筛选跟进状态、删除/取消勾选，底部显示"已勾选 N/M 个项目"
+- **字典下拉校验**：模板中诉求类型、对接单位、状态列添加下拉数据验证
+
+### 分页管理
+
+- **后台分页**：招商动态管理 / 企业诉求管理 — 后端支持 `page`/`page_size` 参数返回 `total`，前端 `el-pagination`（10/20/50/100）
+- **业务系统分页**：招商动态 / 企业诉求列表 — 同步添加分页
+- 筛选/搜索时自动回到第 1 页
+
+### 样式与交互优化
+
+- 移除全部表格 `stripe` 隔行变色效果，保留 hover 聚焦加深
+- `row-focus`（重点跟进行）hover 时显示黄色背景（`#fef7e8` / `#fdf0d5`）
+- 移除展开图标右侧多余小点
+- 责任单位字段改为非必填（前端验证 + 后端 nullable）
+
+### 数据库变更
+
+| 表 | 变更 |
+|---|---|
+| `export_template` | 新建 |
+| `export_field_config` | +template_id, +is_custom，移除 field_key 唯一约束 |
+| `import_field_config_demand` | +project_id 字段 |
+| `investment_projects` | responsible_unit_code nullable |
+| `demand-dicts` API | 新增返回 follow_statuses |
+
 ## V4.0 (2026-06-22) — 招商动态导入智能拆分 + 批量管理
 
 ### 动态导入：智能文本拆分

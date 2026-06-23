@@ -346,12 +346,14 @@ class ProjectTypeDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.String(512), default='')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
+            'description': self.description or '',
             'sort_order': self.sort_order, 'is_active': self.is_active
         }
 
@@ -363,12 +365,14 @@ class ProjectTagDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.String(512), default='')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
+            'description': self.description or '',
             'sort_order': self.sort_order, 'is_active': self.is_active
         }
 
@@ -380,12 +384,14 @@ class ActivityTagDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.String(512), default='')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
+            'description': self.description or '',
             'sort_order': self.sort_order, 'is_active': self.is_active
         }
 
@@ -456,6 +462,7 @@ class DemandTypeDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.String(512), default='')
     parent_code = db.Column(db.String(32), default='')
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
@@ -463,6 +470,7 @@ class DemandTypeDict(db.Model):
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
+            'description': self.description or '',
             'parent_code': self.parent_code or '',
             'sort_order': self.sort_order, 'is_active': self.is_active
         }

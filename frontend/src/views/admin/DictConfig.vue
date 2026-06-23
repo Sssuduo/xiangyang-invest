@@ -66,6 +66,12 @@
             </template>
           </el-table-column>
 
+          <el-table-column v-if="currentTabHasDesc" label="标准描述" min-width="180">
+            <template #default="{ row }">
+              <span class="desc-text">{{ row.description || '-' }}</span>
+            </template>
+          </el-table-column>
+
           <el-table-column label="启用" width="80" align="center">
             <template #default="{ row }">
               <el-switch
@@ -100,6 +106,9 @@
         </el-form-item>
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="显示名称" />
+        </el-form-item>
+        <el-form-item v-if="currentTabHasDesc" label="标准描述">
+          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="该标签/类型的标准含义说明" />
         </el-form-item>
         <el-form-item v-if="activeTab === 'demand_types'" label="父级">
           <el-select v-model="form.parent_code" placeholder="无（作为一级）" clearable style="width: 100%;">
@@ -142,9 +151,11 @@ const tabs = [
   { key: 'activity_tags', label: '动态标签' },
 ]
 const tabsWithColor = ['follow_statuses', 'meeting_statuses']
+const tabsWithDesc = ['project_types', 'demand_types', 'project_tags', 'activity_tags']
 
 const activeTab = ref('follow_statuses')
 const currentTabHasColor = computed(() => tabsWithColor.includes(activeTab.value))
+const currentTabHasDesc = computed(() => tabsWithDesc.includes(activeTab.value))
 
 // ---- 数据 ----
 const items = ref([])
@@ -211,6 +222,7 @@ const saving = ref(false)
 const defaultForm = () => ({
   code: '',
   name: '',
+  description: '',
   parent_code: '',
   display_color: '#909399',
   is_active: true
@@ -234,6 +246,7 @@ function openEdit(row) {
   editingId.value = row.id
   form.code = row.code
   form.name = row.name
+  form.description = row.description || ''
   form.parent_code = row.parent_code || ''
   form.display_color = row.display_color || '#909399'
   form.is_active = row.is_active
@@ -255,6 +268,7 @@ async function handleSave() {
       name: form.name,
       is_active: form.is_active
     }
+    if (currentTabHasDesc.value) data.description = form.description
     if (activeTab.value === 'demand_types') data.parent_code = form.parent_code
     if (currentTabHasColor.value) data.display_color = form.display_color
 
@@ -334,5 +348,6 @@ onMounted(loadItems)
   margin-right: 6px;
 }
 .color-code { font-size: 12px; color: #909399; vertical-align: middle; }
+.desc-text { font-size: 12px; color: #606266; line-height: 1.5; }
 .child-name { color: #409eff; padding-left: 16px; }
 </style>

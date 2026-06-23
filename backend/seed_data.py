@@ -59,11 +59,6 @@ def init_database(app):
         # V8: 项目标签 + 动态标签
         "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
         "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
-        # V8.1: 标签/类型字典新增标准描述字段
-        "ALTER TABLE project_type_dict ADD COLUMN description VARCHAR(512) DEFAULT ''",
-        "ALTER TABLE project_tag_dict ADD COLUMN description VARCHAR(512) DEFAULT ''",
-        "ALTER TABLE activity_tag_dict ADD COLUMN description VARCHAR(512) DEFAULT ''",
-        "ALTER TABLE demand_type_dict ADD COLUMN description VARCHAR(512) DEFAULT ''",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [

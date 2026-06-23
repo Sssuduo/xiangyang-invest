@@ -13,10 +13,10 @@ DICT_REGISTRY = {
     'follow_statuses': (FollowStatusDict, ['code', 'name', 'display_color', 'sort_order', 'is_active'], True),
     'meeting_statuses': (MeetingStatusDict, ['code', 'name', 'display_color', 'sort_order', 'is_active'], True),
     'organizations': (OrganizationDict, ['code', 'name', 'sort_order', 'is_active'], False),
-    'project_types': (ProjectTypeDict, ['code', 'name', 'description', 'sort_order', 'is_active'], False),
-    'demand_types': (DemandTypeDict, ['code', 'name', 'description', 'parent_code', 'sort_order', 'is_active'], False),
-    'project_tags': (ProjectTagDict, ['code', 'name', 'description', 'sort_order', 'is_active'], False),
-    'activity_tags': (ActivityTagDict, ['code', 'name', 'description', 'sort_order', 'is_active'], False),
+    'project_types': (ProjectTypeDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'demand_types': (DemandTypeDict, ['code', 'name', 'parent_code', 'sort_order', 'is_active'], False),
+    'project_tags': (ProjectTagDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'activity_tags': (ActivityTagDict, ['code', 'name', 'sort_order', 'is_active'], False),
 }
 
 
@@ -89,8 +89,6 @@ def create_dict(dict_type):
     fields = _get_fields(dict_type)
     if 'display_color' in fields:
         kwargs['display_color'] = data.get('display_color', '#909399')
-    if 'description' in fields:
-        kwargs['description'] = data.get('description', '')
     if 'parent_code' in fields:
         kwargs['parent_code'] = data.get('parent_code', '')
 

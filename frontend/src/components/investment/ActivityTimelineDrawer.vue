@@ -62,7 +62,7 @@
               <el-button size="small" link type="primary" title="编辑动态" @click="openEditDialog(act)">
                 <el-icon><Edit /></el-icon>
               </el-button>
-              <el-button size="small" link type="danger" title="删除动态" @click="handleDeleteAct(act)">
+              <el-button v-if="businessAuth.hasPermission('activity', 'delete')" size="small" link type="danger" title="删除动态" @click="handleDeleteAct(act)">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </div>
@@ -137,7 +137,7 @@
               <el-button size="small" link type="primary" title="编辑动态" @click="openEditDialog(act)">
                 <el-icon><Edit /></el-icon>
               </el-button>
-              <el-button size="small" link type="danger" title="删除动态" @click="handleDeleteAct(act)">
+              <el-button v-if="businessAuth.hasPermission('activity', 'delete')" size="small" link type="danger" title="删除动态" @click="handleDeleteAct(act)">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </div>
@@ -247,6 +247,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, Plus, UploadFilled } from '@element-plus/icons-vue'
 import { getPublicActivities, createActivity, updateActivity, deleteActivity } from '@/api/activity'
 import { getDictItems } from '@/api/dict'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
+
+const businessAuth = useBusinessAuthStore()
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

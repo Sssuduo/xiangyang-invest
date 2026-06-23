@@ -1,7 +1,7 @@
 import json
 from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
-from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict
+from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from models import InvestmentActivity, EnterpriseDemand
 from extensions import db
 from routes import api_bp
@@ -369,7 +369,7 @@ def list_public_demands():
 # ============================================================
 @api_bp.route('/investment/demand-dicts', methods=['GET'])
 def get_demand_dicts():
-    """获取企业诉求相关字典（需求类型 + 对接单位 + 跟进状态 + 项目类型）"""
+    """获取企业诉求相关字典（需求类型 + 对接单位 + 跟进状态 + 项目类型 + 项目标签 + 动态标签）"""
     demand_types = DemandTypeDict.query.filter_by(is_active=True)\
         .order_by(DemandTypeDict.sort_order).all()
     organizations = OrganizationDict.query.filter_by(is_active=True)\
@@ -378,12 +378,18 @@ def get_demand_dicts():
         .order_by(FollowStatusDict.sort_order).all()
     project_types = ProjectTypeDict.query.filter_by(is_active=True)\
         .order_by(ProjectTypeDict.sort_order).all()
+    project_tags = ProjectTagDict.query.filter_by(is_active=True)\
+        .order_by(ProjectTagDict.sort_order).all()
+    activity_tags = ActivityTagDict.query.filter_by(is_active=True)\
+        .order_by(ActivityTagDict.sort_order).all()
     return jsonify({
         'code': 0,
         'data': {
             'demand_types': [d.to_dict() for d in demand_types],
             'organizations': [o.to_dict() for o in organizations],
             'follow_statuses': [f.to_dict() for f in follow_statuses],
-            'project_types': [p.to_dict() for p in project_types]
+            'project_types': [p.to_dict() for p in project_types],
+            'project_tags': [t.to_dict() for t in project_tags],
+            'activity_tags': [t.to_dict() for t in activity_tags]
         }
     })

@@ -5,6 +5,11 @@ export function getPublicProjects(params = {}) {
   return api.get('/investment/projects', { params })
 }
 
+// 获取公开字典（含动态标签、项目标签）
+export function getPublicDemandDicts() {
+  return api.get('/investment/demand-dicts')
+}
+
 // 后台字典
 export function getDicts() {
   return api.get('/admin/investment/dicts')

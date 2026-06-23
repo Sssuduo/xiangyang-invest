@@ -27,12 +27,15 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getHomepageConfig } from '@/api/homepage'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
+import { toWebpUrl } from '@/utils/webp'
 
 const config = ref({
   background_image: '',
   title_text: '襄阳农高区',
   subtitle_text: '招商服务一站式平台'
 })
+
+const bgImageUrl = ref('')
 
 const isScrolled = ref(false)
 
@@ -41,9 +44,10 @@ function onScroll() {
 }
 
 const bgStyle = computed(() => {
-  if (config.value.background_image) {
+  const imgUrl = bgImageUrl.value || config.value.background_image
+  if (imgUrl) {
     return {
-      backgroundImage: `url(${config.value.background_image})`,
+      backgroundImage: `url(${imgUrl})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat'
@@ -60,6 +64,8 @@ onMounted(async () => {
     const res = await getHomepageConfig()
     if (res.code === 0 && res.data) {
       config.value = res.data
+      // 异步转换 WebP URL（不阻塞渲染）
+      toWebpUrl(res.data.background_image).then(url => { bgImageUrl.value = url })
     }
   } catch { /* 使用默认配置 */ }
 })

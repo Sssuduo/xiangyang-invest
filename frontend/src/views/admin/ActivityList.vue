@@ -186,7 +186,7 @@ import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
-import { getPublicProjects, getProject } from '@/api/investment'
+import { getPublicProjects, getProject, getPublicDemandDicts } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 
 const activities = ref([])
@@ -246,9 +246,18 @@ onMounted(async () => { await loadProjects(); loadActivityTags(); fetchData() })
 
 async function loadActivityTags() {
   try {
-    const res = await getDictItems('activity_tags')
-    if (res.code === 0) activityTagDicts.value = res.data || []
-  } catch { /* ignore */ }
+    // 优先使用公开 API（无需额外鉴权，更可靠）
+    const res = await getPublicDemandDicts()
+    if (res.code === 0 && res.data) {
+      activityTagDicts.value = res.data.activity_tags || []
+    }
+  } catch {
+    // 降级：尝试 admin dict API
+    try {
+      const res = await getDictItems('activity_tags')
+      if (res.code === 0) activityTagDicts.value = res.data || []
+    } catch { /* ignore */ }
+  }
 }
 
 function getTagName(code) {

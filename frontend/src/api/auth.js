@@ -11,3 +11,11 @@ export function logout() {
 export function checkAuth() {
   return api.get('/auth/check')
 }
+
+export function updateProfile(data) {
+  return api.put('/auth/profile', data)
+}
+
+export function changePassword(data) {
+  return api.put('/auth/password', data)
+}

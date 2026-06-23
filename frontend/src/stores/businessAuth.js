@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, logout as apiLogout, checkAuth } from '@/api/auth'
+import { login as apiLogin, logout as apiLogout, checkAuth, updateProfile as apiUpdateProfile, changePassword as apiChangePassword } from '@/api/auth'
 
 export const useBusinessAuthStore = defineStore('businessAuth', () => {
   const user = ref(null)
@@ -60,5 +60,31 @@ export const useBusinessAuthStore = defineStore('businessAuth', () => {
     return permissions.value?.[module]?.[action] === true
   }
 
-  return { user, isLoggedIn, permissions, loading, check, login, logout, hasPermission }
+  async function updateProfile(displayName) {
+    try {
+      const res = await apiUpdateProfile({ display_name: displayName })
+      if (res.code === 0) {
+        user.value = res.data
+        return { success: true }
+      }
+      return { success: false, message: res.message || '更新失败' }
+    } catch (err) {
+      return { success: false, message: err.message || '更新失败' }
+    }
+  }
+
+  async function changePassword(oldPassword, newPassword) {
+    try {
+      const res = await apiChangePassword({ old_password: oldPassword, new_password: newPassword })
+      if (res.code === 0) {
+        clear()
+        return { success: true, message: res.message }
+      }
+      return { success: false, message: res.message || '修改失败' }
+    } catch (err) {
+      return { success: false, message: err.message || '修改失败' }
+    }
+  }
+
+  return { user, isLoggedIn, permissions, loading, check, login, logout, hasPermission, updateProfile, changePassword }
 })

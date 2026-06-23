@@ -5,6 +5,7 @@ from models import InvestmentActivity, InvestmentProject
 from extensions import db
 from routes import admin_activity_bp
 from routes.business_auth import dual_login_required
+from utils import get_current_user_info, log_changes
 
 
 def _parse_datetime(val):
@@ -86,6 +87,20 @@ def create_activity():
     )
 
     db.session.add(activity)
+    db.session.flush()
+
+    # 审计日志
+    user_info = get_current_user_info()
+    if user_info:
+        changes = {
+            'project_id': (None, activity.project_id),
+            'date': (None, activity.date.isoformat() if activity.date else None),
+            'content': (None, activity.content),
+            'files': (None, activity.files),
+            'tags': (None, activity.tags)
+        }
+        log_changes('investment_activities', activity.id, changes, 'create', user_info)
+
     db.session.commit()
     return jsonify({'code': 0, 'data': activity.to_dict(), 'message': '动态创建成功'})
 
@@ -108,6 +123,19 @@ def update_activity(activity_id):
         return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
 
     updatable_fields = ['project_id', 'date', 'content', 'files', 'tags']
+
+    # 审计日志：保存旧值
+    user_info = get_current_user_info()
+    old_values = {}
+    if user_info:
+        for field in updatable_fields:
+            old_val = getattr(activity, field)
+            if field == 'date':
+                old_val = old_val.isoformat() if old_val else None
+            elif field in ('files', 'tags'):
+                old_val = old_val if old_val else '[]'
+            old_values[field] = old_val
+
     for field in updatable_fields:
         if field in data:
             val = data[field]
@@ -118,6 +146,20 @@ def update_activity(activity_id):
             elif field in ('files', 'tags'):
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(activity, field, val)
+
+    # 审计日志：对比变更
+    if user_info:
+        changes = {}
+        for field in updatable_fields:
+            old_val = old_values.get(field)
+            new_val = getattr(activity, field)
+            if field == 'date':
+                new_val = new_val.isoformat() if new_val else None
+            elif field in ('files', 'tags'):
+                new_val = new_val if new_val else '[]'
+            if str(old_val) != str(new_val):
+                changes[field] = (old_val, new_val)
+        log_changes('investment_activities', activity_id, changes, 'update', user_info)
 
     db.session.commit()
     return jsonify({'code': 0, 'data': activity.to_dict(), 'message': '更新成功'})

@@ -6,6 +6,7 @@ from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, Projec
 from extensions import db
 from routes import admin_investment_bp
 from routes.business_auth import dual_login_required
+from utils import get_current_user_info, log_changes
 
 
 def _parse_date(val):
@@ -144,6 +145,20 @@ def create_project():
                 sort_order=i + 1
             ))
 
+    # 审计日志：项目创建
+    user_info = get_current_user_info()
+    if user_info:
+        changes = {}
+        for field in ['order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
+                      'project_content', 'invest_amount', 'follow_status_code',
+                      'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
+                      'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan',
+                      'conclusion']:
+            changes[field] = (None, getattr(project, field))
+        changes['first_contact_date'] = (None, project.first_contact_date.isoformat() if project.first_contact_date else None)
+        changes['tags'] = (None, json.dumps(data.get('tags', []), ensure_ascii=False))
+        log_changes('investment_projects', project.id, changes, 'create', user_info)
+
     db.session.commit()
     return jsonify({'code': 0, 'data': project.to_dict(), 'message': '项目创建成功'})
 
@@ -225,6 +240,19 @@ def update_project(project_id):
         'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
         'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'first_contact_date'
     ]
+
+    # 审计日志：保存旧值
+    user_info = get_current_user_info()
+    old_values = {}
+    if user_info:
+        for field in updatable_fields:
+            old_val = getattr(project, field)
+            if field == 'first_contact_date':
+                old_val = old_val.isoformat() if old_val else None
+            elif field == 'tags':
+                old_val = json.dumps(json.loads(old_val) if old_val else [], ensure_ascii=False) if old_val else '[]'
+            old_values[field] = old_val
+
     for field in updatable_fields:
         if field in data:
             val = data[field]
@@ -233,6 +261,20 @@ def update_project(project_id):
             elif field == 'tags':
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(project, field, val)
+
+    # 审计日志：对比新旧值
+    if user_info:
+        changes = {}
+        for field in updatable_fields:
+            old_val = old_values.get(field)
+            new_val = getattr(project, field)
+            if field == 'first_contact_date':
+                new_val = new_val.isoformat() if new_val else None
+            elif field == 'tags':
+                new_val = json.dumps(json.loads(new_val) if new_val else [], ensure_ascii=False) if new_val else '[]'
+            if str(old_val) != str(new_val):
+                changes[field] = (old_val, new_val)
+        log_changes('investment_projects', project_id, changes, 'update', user_info)
 
     # 同步企业诉求：先删后建
     if 'demands' in data:
@@ -317,6 +359,20 @@ def create_demand(project_id):
         sort_order=max_order + 1
     )
     db.session.add(demand)
+    db.session.flush()
+
+    # 审计日志
+    user_info = get_current_user_info()
+    if user_info:
+        changes = {
+            'project_id': (None, demand.project_id),
+            'demand_content': (None, demand.demand_content),
+            'resolution': (None, demand.resolution or ''),
+            'status': (None, demand.status),
+            'sort_order': (None, demand.sort_order)
+        }
+        log_changes('enterprise_demands', demand.id, changes, 'create', user_info)
+
     db.session.commit()
     return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '诉求已添加'})
 
@@ -330,9 +386,26 @@ def update_demand(project_id, demand_id):
     if not data:
         return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
 
+    # 审计日志：保存旧值
+    user_info = get_current_user_info()
+    old_values = {}
+    if user_info:
+        for field in ['demand_content', 'resolution', 'status', 'sort_order']:
+            old_values[field] = getattr(demand, field)
+
     for field in ['demand_content', 'resolution', 'status', 'sort_order']:
         if field in data:
             setattr(demand, field, data[field])
+
+    # 审计日志：对比变更
+    if user_info:
+        changes = {}
+        for field in ['demand_content', 'resolution', 'status', 'sort_order']:
+            old_val = old_values.get(field)
+            new_val = getattr(demand, field)
+            if str(old_val) != str(new_val):
+                changes[field] = (old_val, new_val)
+        log_changes('enterprise_demands', demand_id, changes, 'update', user_info)
 
     db.session.commit()
     return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '更新成功'})

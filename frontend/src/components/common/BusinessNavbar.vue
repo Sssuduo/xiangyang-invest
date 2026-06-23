@@ -25,7 +25,7 @@
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
-          <span class="nav-item nav-user">
+          <span class="nav-item nav-user nav-user-clickable" @click="showProfileDialog = true">
             <el-icon><UserFilled /></el-icon>
             {{ businessAuth.user?.display_name || businessAuth.user?.username }}
           </span>
@@ -58,6 +58,47 @@
       </el-form-item>
       <p v-if="loginError" class="login-error">{{ loginError }}</p>
     </el-form>
+  </el-dialog>
+
+  <!-- 个人资料弹窗 -->
+  <el-dialog
+    v-model="showProfileDialog"
+    title="个人资料"
+    width="450px"
+    :close-on-click-modal="false"
+    append-to-body
+  >
+    <el-tabs v-model="profileTab">
+      <el-tab-pane label="修改显示名称" name="display">
+        <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-position="top">
+          <el-form-item label="显示名称" prop="display_name">
+            <el-input v-model="profileForm.display_name" placeholder="请输入新的显示名称" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="profileLoading" @click="handleUpdateProfile">保存</el-button>
+          </el-form-item>
+          <p v-if="profileError" class="login-error">{{ profileError }}</p>
+          <p v-if="profileSuccess" class="profile-success">{{ profileSuccess }}</p>
+        </el-form>
+      </el-tab-pane>
+      <el-tab-pane label="修改密码" name="password">
+        <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-position="top">
+          <el-form-item label="原密码" prop="old_password">
+            <el-input v-model="passwordForm.old_password" type="password" placeholder="请输入原密码" show-password />
+          </el-form-item>
+          <el-form-item label="新密码" prop="new_password">
+            <el-input v-model="passwordForm.new_password" type="password" placeholder="请输入新密码（至少6位）" show-password />
+          </el-form-item>
+          <el-form-item label="确认新密码" prop="confirm_password">
+            <el-input v-model="passwordForm.confirm_password" type="password" placeholder="请再次输入新密码" show-password />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="passwordLoading" @click="handleChangePassword">修改密码</el-button>
+          </el-form-item>
+          <p v-if="passwordError" class="login-error">{{ passwordError }}</p>
+        </el-form>
+      </el-tab-pane>
+    </el-tabs>
   </el-dialog>
 </template>
 
@@ -136,6 +177,91 @@ async function handleLogout() {
     router.push('/')
   }
 }
+
+// ===== 个人资料弹窗 =====
+const showProfileDialog = ref(false)
+const profileTab = ref('display')
+const profileLoading = ref(false)
+const passwordLoading = ref(false)
+const profileError = ref('')
+const profileSuccess = ref('')
+const passwordError = ref('')
+const profileFormRef = ref(null)
+const passwordFormRef = ref(null)
+const profileForm = ref({ display_name: '' })
+const passwordForm = ref({ old_password: '', new_password: '', confirm_password: '' })
+
+const profileRules = {
+  display_name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }]
+}
+
+const validateConfirmPassword = (rule, value, callback) => {
+  if (value !== passwordForm.value.new_password) {
+    callback(new Error('两次输入的新密码不一致'))
+  } else {
+    callback()
+  }
+}
+
+const passwordRules = {
+  old_password: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+  new_password: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '新密码至少6位', trigger: 'blur' }
+  ],
+  confirm_password: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { validator: validateConfirmPassword, trigger: 'blur' }
+  ]
+}
+
+watch(showProfileDialog, (val) => {
+  if (val) {
+    profileForm.value.display_name = businessAuth.user?.display_name || ''
+    profileError.value = ''
+    profileSuccess.value = ''
+    passwordError.value = ''
+    passwordForm.value = { old_password: '', new_password: '', confirm_password: '' }
+    profileTab.value = 'display'
+  }
+})
+
+async function handleUpdateProfile() {
+  if (!profileFormRef.value) return
+  try { await profileFormRef.value.validate() } catch { return }
+  profileLoading.value = true
+  profileError.value = ''
+  profileSuccess.value = ''
+  const result = await businessAuth.updateProfile(profileForm.value.display_name)
+  profileLoading.value = false
+  if (result.success) {
+    profileSuccess.value = '显示名称已更新'
+    ElMessage.success('显示名称已更新')
+  } else {
+    profileError.value = result.message || '更新失败'
+  }
+}
+
+async function handleChangePassword() {
+  if (!passwordFormRef.value) return
+  try { await passwordFormRef.value.validate() } catch { return }
+  passwordLoading.value = true
+  passwordError.value = ''
+  const result = await businessAuth.changePassword(
+    passwordForm.value.old_password,
+    passwordForm.value.new_password
+  )
+  passwordLoading.value = false
+  if (result.success) {
+    ElMessage.success('密码已修改，请重新登录')
+    showProfileDialog.value = false
+    if (route.meta.requiresBusinessAuth) {
+      router.push('/')
+    }
+  } else {
+    passwordError.value = result.message || '修改失败'
+  }
+}
 </script>
 
 <style scoped>
@@ -167,6 +293,8 @@ async function handleLogout() {
 .nav-logout { cursor: pointer; }
 
 .login-error { color: #f56c6c; font-size: 13px; text-align: center; margin: 0; }
+.profile-success { color: #67c23a; font-size: 13px; text-align: center; margin: 0; }
+.nav-user-clickable { cursor: pointer !important; }
 
 /* ===== home 变体（深色透明→毛玻璃） ===== */
 .nav-home {

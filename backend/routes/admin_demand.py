@@ -11,6 +11,7 @@ from models import ImportFieldConfigDemand
 from extensions import db
 from routes import admin_demand_bp
 from routes.business_auth import dual_login_required
+from utils import get_current_user_info, log_changes
 
 
 # ============================================================
@@ -96,6 +97,22 @@ def create_demand():
         sort_order=max_order + 1
     )
     db.session.add(demand)
+    db.session.flush()
+
+    # 审计日志
+    user_info = get_current_user_info()
+    if user_info:
+        changes = {
+            'project_id': (None, demand.project_id),
+            'demand_type_code': (None, demand.demand_type_code or ''),
+            'demand_content': (None, demand.demand_content),
+            'resolution': (None, demand.resolution or ''),
+            'unit_code': (None, demand.unit_code or ''),
+            'status': (None, demand.status),
+            'sort_order': (None, demand.sort_order)
+        }
+        log_changes('enterprise_demands', demand.id, changes, 'create', user_info)
+
     db.session.commit()
     return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '诉求已创建'})
 
@@ -120,9 +137,27 @@ def update_demand(demand_id):
         return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
 
     updatable = ['project_id', 'demand_type_code', 'demand_content', 'resolution', 'unit_code', 'status', 'sort_order']
+
+    # 审计日志：保存旧值
+    user_info = get_current_user_info()
+    old_values = {}
+    if user_info:
+        for field in updatable:
+            old_values[field] = getattr(demand, field) or ''
+
     for field in updatable:
         if field in data:
             setattr(demand, field, data[field])
+
+    # 审计日志：对比变更
+    if user_info:
+        changes = {}
+        for field in updatable:
+            old_val = old_values.get(field, '')
+            new_val = getattr(demand, field) or ''
+            if str(old_val) != str(new_val):
+                changes[field] = (old_val, new_val)
+        log_changes('enterprise_demands', demand_id, changes, 'update', user_info)
 
     db.session.commit()
     return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '诉求已更新'})

@@ -1,6 +1,7 @@
 from functools import wraps
 from flask import request, jsonify, session
 from models import BusinessUser
+from extensions import db
 from routes import business_auth_bp
 
 
@@ -88,3 +89,48 @@ def check_login():
             return jsonify({'code': 0, 'data': user.to_dict()})
         session.pop('business_user_id', None)
     return jsonify({'code': 1, 'message': '未登录'}), 401
+
+
+@business_auth_bp.route('/profile', methods=['PUT'])
+@business_login_required
+def update_profile():
+    """修改显示名称"""
+    user_id = session.get('business_user_id')
+    user = BusinessUser.query.get(int(user_id))
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
+
+    display_name = (data.get('display_name', '') or '').strip()
+    if not display_name:
+        return jsonify({'code': 1, 'message': '显示名称不能为空'}), 400
+
+    user.display_name = display_name
+    db.session.commit()
+    return jsonify({'code': 0, 'data': user.to_dict(), 'message': '显示名称已更新'})
+
+
+@business_auth_bp.route('/password', methods=['PUT'])
+@business_login_required
+def change_password():
+    """修改密码（修改后强制重新登录）"""
+    user_id = session.get('business_user_id')
+    user = BusinessUser.query.get(int(user_id))
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
+
+    old_password = data.get('old_password', '')
+    new_password = data.get('new_password', '')
+
+    if not old_password or not new_password:
+        return jsonify({'code': 1, 'message': '请填写原密码和新密码'}), 400
+    if len(new_password) < 6:
+        return jsonify({'code': 1, 'message': '新密码至少6位'}), 400
+    if not user.check_password(old_password):
+        return jsonify({'code': 1, 'message': '原密码错误'}), 400
+
+    user.set_password(new_password)
+    db.session.commit()
+    session.pop('business_user_id', None)
+    return jsonify({'code': 0, 'message': '密码已修改，请重新登录'})

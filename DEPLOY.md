@@ -110,14 +110,37 @@ DATABASE_URL=sqlite:////www/wwwroot/invest-app/instance/app.db
 
 ---
 
+## 分支策略
+
+| 分支 | 用途 | 部署环境 |
+|------|------|----------|
+| `master` | 生产分支，稳定版本 | 生产服务器 (123.56.9.243) |
+| `dev` | 测试分支，日常开发 | 本地开发环境 |
+
+**工作流程：**
+1. 所有代码修改在 `dev` 分支上进行
+2. 本地验证通过后，提交到 `dev` 分支并 push 到 GitHub
+3. 确认功能稳定后，将 `dev` 合并到 `master`
+4. 生产服务器从 `master` 分支拉取部署
+
 ## 更新部署流程
 
 代码在 GitHub：`https://github.com/Sssuduo/xiangyang-invest.git`
 
+### 测试环境（本地）
+```bash
+git checkout dev
+# ... 开发修改 ...
+git add . && git commit -m "描述修改内容"
+git push origin dev
+```
+
+### 生产环境（服务器）
 ```bash
 # SSH 连接服务器后
 cd /www/wwwroot/invest-app
-git pull
+git checkout master
+git pull origin master
 
 # 后端依赖更新
 pip3.11 install -r backend/requirements.txt

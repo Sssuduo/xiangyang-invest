@@ -187,7 +187,7 @@
               <div class="action-cell">
                 <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" link type="success" @click="openEdit(row)">编辑</el-button>
                 <el-button size="small" link type="warning" @click="handleAddActivity(row)">动态</el-button>
-                <el-button size="small" link type="primary" @click="handleAI(row)">AI助手</el-button>
+                <!-- <el-button size="small" link type="primary" @click="handleAI(row)">AI助手</el-button> -->
                 <el-dropdown v-if="businessAuth.hasPermission('investment', 'delete')" trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
                   <el-button size="small" link class="action-more">
                     <el-icon><MoreFilled /></el-icon>

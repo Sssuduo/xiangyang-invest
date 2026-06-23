@@ -254,4 +254,13 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
+// 设置浏览器标题
+router.afterEach((to) => {
+  if (to.path.startsWith('/admin')) {
+    document.title = '招商平台后台管理'
+  } else {
+    document.title = '襄阳国家农高区招商平台'
+  }
+})
+
 export default router

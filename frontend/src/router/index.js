@@ -145,6 +145,26 @@ const routes = [
     component: () => import('@/views/DemandView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  // ---- 在建项目库 ----
+  {
+    path: '/construction',
+    name: 'Construction',
+    component: () => import('@/views/ConstructionView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
+    path: '/construction-progress',
+    name: 'ConstructionProgress',
+    component: () => import('@/views/ConstructionPlaceholder.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
+    path: '/construction-issues',
+    name: 'ConstructionIssues',
+    component: () => import('@/views/ConstructionPlaceholder.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  // ---- 管理后台 ----
   {
     path: '/admin/investment',
     name: 'AdminInvestment',

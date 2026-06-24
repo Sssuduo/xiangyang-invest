@@ -22,6 +22,20 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- 在建项目库 下拉菜单 — 仅登录后可见 -->
+        <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
+          <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isConstructionRoute }">
+            在建项目库
+            <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="/construction">在建项目管理</el-dropdown-item>
+              <el-dropdown-item command="/construction-progress">工作进展管理</el-dropdown-item>
+              <el-dropdown-item command="/construction-issues">调度问题管理</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
@@ -119,6 +133,7 @@ const router = useRouter()
 const businessAuth = useBusinessAuthStore()
 
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
+const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 
 function handleCommand(path) {
   if (route.path !== path) {

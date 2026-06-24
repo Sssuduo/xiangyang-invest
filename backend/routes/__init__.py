@@ -29,6 +29,9 @@ admin_activity_import_bp = Blueprint('admin_activity_import', __name__, url_pref
 # 企业诉求
 admin_demand_bp = Blueprint('admin_demand', __name__, url_prefix='/api/admin')
 
+# 在建项目库
+admin_construction_bp = Blueprint('admin_construction', __name__, url_prefix='/api/admin')
+
 # 业务用户管理（后台）
 admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix='/api/admin')
 
@@ -51,6 +54,7 @@ def register_routes(app):
     from routes import admin_activity_export as _admin_activity_export
     from routes import admin_activity_import as _admin_activity_import
     from routes import admin_demand as _admin_demand
+    from routes import admin_construction as _admin_construction
     from routes import business_auth as _business_auth
     from routes import admin_business_users as _admin_business_users
     from routes import admin_debug as _admin_debug
@@ -71,6 +75,7 @@ def register_routes(app):
     app.register_blueprint(admin_activity_export.admin_activity_export_bp)
     app.register_blueprint(admin_activity_import.admin_activity_import_bp)
     app.register_blueprint(admin_demand.admin_demand_bp)
+    app.register_blueprint(admin_construction.admin_construction_bp)
 
     # 注册业务用户认证和管理蓝图
     app.register_blueprint(business_auth.business_auth_bp)

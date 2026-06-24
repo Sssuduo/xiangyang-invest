@@ -30,9 +30,11 @@
                 <template v-for="mod in modules" :key="mod.key">
                   <span v-if="row.permissions?.[mod.key]" class="perm-module">
                     <span class="perm-module-name">{{ mod.label }}</span>
+                    <span v-if="row.permissions[mod.key].add !== false" class="perm-tag">添加</span>
                     <span v-if="row.permissions[mod.key].edit" class="perm-tag">编辑</span>
                     <span v-if="row.permissions[mod.key].delete" class="perm-tag">删除</span>
                     <span v-if="row.permissions[mod.key].batch_delete" class="perm-tag">批量删</span>
+                    <span v-if="row.permissions[mod.key].import !== false" class="perm-tag">导入</span>
                     <span v-if="!row.permissions[mod.key].edit && !row.permissions[mod.key].delete && !row.permissions[mod.key].batch_delete" class="perm-tag perm-none">无</span>
                   </span>
                 </template>
@@ -94,6 +96,10 @@
           <div v-for="mod in modules" :key="mod.key" class="perm-module-row">
             <span class="perm-module-label">{{ mod.label }}</span>
             <el-checkbox
+              v-model="form.permissions[mod.key].add"
+              :disabled="!form.permissions[mod.key]"
+            >添加</el-checkbox>
+            <el-checkbox
               v-model="form.permissions[mod.key].edit"
               :disabled="!form.permissions[mod.key]"
             >编辑</el-checkbox>
@@ -105,6 +111,10 @@
               v-model="form.permissions[mod.key].batch_delete"
               :disabled="!form.permissions[mod.key]"
             >批量删除</el-checkbox>
+            <el-checkbox
+              v-model="form.permissions[mod.key].import"
+              :disabled="!form.permissions[mod.key]"
+            >导入</el-checkbox>
           </div>
         </div>
       </el-form>
@@ -129,7 +139,8 @@ import { getBusinessUsers, createBusinessUser, updateBusinessUser, deleteBusines
 const modules = [
   { key: 'investment', label: '招商项目管理' },
   { key: 'activity', label: '招商动态管理' },
-  { key: 'demand', label: '企业诉求管理' }
+  { key: 'demand', label: '企业诉求管理' },
+  { key: 'construction', label: '在建项目管理' }
 ]
 
 const users = ref([])
@@ -143,7 +154,7 @@ const formRef = ref(null)
 const defaultPermissions = () => {
   const p = {}
   modules.forEach(m => {
-    p[m.key] = { edit: true, delete: true, batch_delete: true }
+    p[m.key] = { add: true, edit: true, delete: true, batch_delete: true, import: true }
   })
   return p
 }

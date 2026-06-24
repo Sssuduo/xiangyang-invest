@@ -30,7 +30,7 @@
           <el-button v-if="selectedIds.length > 0 && businessAuth.hasPermission('demand', 'batch_delete')" type="danger" @click="handleBatchDelete">
             <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
           </el-button>
-          <el-dropdown trigger="click" @command="handleImportCmd">
+          <el-dropdown v-if="businessAuth.hasPermission('demand', 'import')" trigger="click" @command="handleImportCmd">
             <el-button type="default">
               <el-icon><Upload /></el-icon> 诉求导入 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
@@ -46,7 +46,7 @@
             </template>
           </el-dropdown>
           <div class="toolbar-spacer" />
-          <el-button v-if="businessAuth.hasPermission('demand', 'edit')" type="primary" @click="openCreate">
+          <el-button v-if="businessAuth.hasPermission('demand', 'add')" type="primary" @click="openCreate">
             <el-icon><Plus /></el-icon> 添加诉求
           </el-button>
         </div>

@@ -65,7 +65,7 @@
           </el-select>
           <div class="toolbar-spacer" />
           <el-button
-            v-if="businessAuth.hasPermission('construction', 'edit')"
+            v-if="businessAuth.hasPermission('construction', 'add')"
             type="primary"
             @click="openCreate"
           >

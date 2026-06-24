@@ -29,7 +29,7 @@
           <el-button v-if="selectedIds.length > 0 && businessAuth.hasPermission('activity', 'batch_delete')" type="danger" @click="handleBatchDelete">
             <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
           </el-button>
-          <el-dropdown trigger="click" @command="handleImportCmd">
+          <el-dropdown v-if="businessAuth.hasPermission('activity', 'import')" trigger="click" @command="handleImportCmd">
             <el-button type="default">
               <el-icon><Upload /></el-icon> 动态导入 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
@@ -45,7 +45,7 @@
             </template>
           </el-dropdown>
           <div class="toolbar-spacer" />
-          <el-button v-if="businessAuth.hasPermission('activity', 'edit')" type="primary" @click="openCreate">
+          <el-button v-if="businessAuth.hasPermission('activity', 'add')" type="primary" @click="openCreate">
             <el-icon><Plus /></el-icon> 添加动态
           </el-button>
         </div>

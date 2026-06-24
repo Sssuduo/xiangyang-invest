@@ -105,9 +105,10 @@ def init_database(app):
         )
         demo.set_password('demo123')
         demo.set_permissions({
-            'investment': {'edit': True, 'delete': True, 'batch_delete': True},
-            'activity': {'edit': True, 'delete': True, 'batch_delete': True},
-            'demand': {'edit': True, 'delete': True, 'batch_delete': True}
+            'investment': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
+            'activity': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
+            'demand': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
+            'construction': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True}
         })
         db.session.add(demo)
         print('[种子数据] 业务用户账号已创建: demo / demo123')

@@ -714,6 +714,175 @@ class ImportFieldConfigDemand(db.Model):
         }
 
 
+# ============================================================
+# 在建项目库
+# ============================================================
+
+class ConstructionProjectTypeDict(db.Model):
+    """在建项目类型字典"""
+    __tablename__ = 'construction_project_type_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class DispatchStatusDict(db.Model):
+    """调度状态字典"""
+    __tablename__ = 'dispatch_status_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class IssueTypeDict(db.Model):
+    """存在问题类型字典"""
+    __tablename__ = 'issue_type_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'sort_order': self.sort_order, 'is_active': self.is_active
+        }
+
+
+class ResolutionStatusDict(db.Model):
+    """解决状态字典"""
+    __tablename__ = 'resolution_status_dict'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    display_color = db.Column(db.String(32), default='#909399')
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'code': self.code, 'name': self.name,
+            'display_color': self.display_color, 'sort_order': self.sort_order,
+            'is_active': self.is_active
+        }
+
+
+class ConstructionProject(db.Model):
+    """在建项目"""
+    __tablename__ = 'construction_projects'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    order_no = db.Column(db.Integer, nullable=False, default=0)
+    project_name = db.Column(db.String(255), nullable=False)
+    project_type_code = db.Column(db.String(32), nullable=False)
+    dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
+    construction_content = db.Column(db.Text, default='')
+    work_roadmap = db.Column(db.Text, default='')
+    construction_unit = db.Column(db.String(255), default='')
+    responsible_unit_code = db.Column(db.String(32), default='')
+    responsible_person = db.Column(db.String(64), default='')
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    work_progresses = db.relationship('WorkProgress', backref='project', lazy='dynamic',
+                                       order_by='WorkProgress.start_date.desc()')
+    issues = db.relationship('ProjectIssue', backref='project', lazy='dynamic',
+                              order_by='ProjectIssue.created_at.desc()')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'order_no': self.order_no,
+            'project_name': self.project_name,
+            'project_type_code': self.project_type_code,
+            'dispatch_status_code': self.dispatch_status_code,
+            'construction_content': self.construction_content or '',
+            'work_roadmap': self.work_roadmap or '',
+            'construction_unit': self.construction_unit or '',
+            'responsible_unit_code': self.responsible_unit_code or '',
+            'responsible_person': self.responsible_person or '',
+            'is_deleted': self.is_deleted,
+            'work_progresses': [wp.to_dict() for wp in self.work_progresses.all()],
+            'issues': [iss.to_dict() for iss in self.issues.all()],
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class WorkProgress(db.Model):
+    """工作进展"""
+    __tablename__ = 'work_progress'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('construction_projects.id'), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'start_date': self.start_date.isoformat() if self.start_date else None,
+            'end_date': self.end_date.isoformat() if self.end_date else None,
+            'content': self.content,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class ProjectIssue(db.Model):
+    """存在问题"""
+    __tablename__ = 'project_issues'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('construction_projects.id'), nullable=False)
+    issue_type_code = db.Column(db.String(32), default='')
+    issue_description = db.Column(db.Text, default='')
+    resolution_status_code = db.Column(db.String(32), nullable=False, default='pending')
+    resolution_note = db.Column(db.Text, default='')
+    main_department_code = db.Column(db.String(32), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'issue_type_code': self.issue_type_code or '',
+            'issue_description': self.issue_description or '',
+            'resolution_status_code': self.resolution_status_code,
+            'resolution_note': self.resolution_note or '',
+            'main_department_code': self.main_department_code or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 class ChangeHistory(db.Model):
     """变更历史 / 审计日志"""
     __tablename__ = 'change_history'

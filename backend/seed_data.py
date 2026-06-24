@@ -3,6 +3,8 @@ from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, Projec
 from models import ExportTemplate, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
 from models import ImportFieldConfigDemand
+from models import ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict
+from models import ConstructionProject, WorkProgress, ProjectIssue
 from extensions import db
 
 
@@ -173,6 +175,9 @@ def init_database(app):
 
     # ---- 企业诉求 - 导入字段配置 ----
     _seed_demand_import_fields()
+
+    # ---- 在建项目库 - 字典种子数据 ----
+    _seed_construction_dicts()
 
 
 def _seed_investment_dicts():
@@ -433,3 +438,48 @@ def _seed_demand_import_fields():
             ))
     db.session.commit()
     print('[种子数据] 企业诉求导入字段配置已初始化')
+
+
+def _seed_construction_dicts():
+    """初始化在建项目库的字典表"""
+    # 在建项目类型
+    project_types = [
+        ('type_kechuang', '科创类', 1),
+        ('type_zhongyang', '现代种养类', 2),
+        ('type_chanye', '产业类', 3),
+        ('type_jichusheshi', '基础设施类', 4),
+        ('type_shifan', '示范类', 5),
+    ]
+    for code, name, order in project_types:
+        if not ConstructionProjectTypeDict.query.filter_by(code=code).first():
+            db.session.add(ConstructionProjectTypeDict(code=code, name=name, sort_order=order))
+
+    # 调度状态
+    dispatch_statuses = [
+        ('dispatching', '调度中', 1),
+        ('no_dispatch', '不予调度', 2),
+    ]
+    for code, name, order in dispatch_statuses:
+        if not DispatchStatusDict.query.filter_by(code=code).first():
+            db.session.add(DispatchStatusDict(code=code, name=name, sort_order=order))
+
+    # 问题类型
+    issue_types = [
+        ('issue_fund', '资金问题', 1),
+    ]
+    for code, name, order in issue_types:
+        if not IssueTypeDict.query.filter_by(code=code).first():
+            db.session.add(IssueTypeDict(code=code, name=name, sort_order=order))
+
+    # 解决状态
+    resolution_statuses = [
+        ('pending', '待处理', '#f56c6c', 1),
+        ('processing', '处理中', '#e6a23c', 2),
+        ('resolved', '已解决', '#67c23a', 3),
+    ]
+    for code, name, color, order in resolution_statuses:
+        if not ResolutionStatusDict.query.filter_by(code=code).first():
+            db.session.add(ResolutionStatusDict(code=code, name=name, display_color=color, sort_order=order))
+
+    db.session.commit()
+    print('[种子数据] 在建项目库字典已初始化')

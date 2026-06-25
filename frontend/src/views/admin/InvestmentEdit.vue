@@ -85,9 +85,18 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="负责人">
-            <el-input v-model="form.person_in_charge" placeholder="负责人姓名" maxlength="64" style="width: 200px;" />
-          </el-form-item>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="负责人">
+                <el-input v-model="form.person_in_charge" placeholder="负责人姓名" maxlength="64" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="联系电话">
+                <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
+              </el-form-item>
+            </el-col>
+          </el-row>
 
           <!-- 项目标签 -->
           <el-divider content-position="left">项目标签</el-divider>
@@ -145,6 +154,7 @@ const form = reactive({
   recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
+  person_in_charge_phone: '',
   first_contact_date: '',
   tags: []
 })

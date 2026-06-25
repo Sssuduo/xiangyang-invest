@@ -122,6 +122,7 @@ def create_project():
         responsible_unit_code=data.get('responsible_unit_code', ''),
         project_type_code=data['project_type_code'],
         person_in_charge=data.get('person_in_charge', ''),
+        person_in_charge_phone=data.get('person_in_charge_phone', ''),
         project_doc=data.get('project_doc', ''),
         investment_plan=data.get('investment_plan', ''),
         conclusion=data.get('conclusion', ''),
@@ -152,7 +153,7 @@ def create_project():
         for field in ['order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
                       'project_content', 'invest_amount', 'follow_status_code',
                       'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
-                      'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan',
+                      'project_type_code', 'person_in_charge', 'person_in_charge_phone', 'project_doc', 'investment_plan',
                       'conclusion']:
             changes[field] = (None, getattr(project, field))
         changes['first_contact_date'] = (None, project.first_contact_date.isoformat() if project.first_contact_date else None)
@@ -193,7 +194,8 @@ def get_project(project_id):
 
     # 诉求字典名称（二级显示：一级：二级）
     for d in data.get('demands', []) or []:
-        d['demand_type_name'] = demand_display_map.get(d.get('demand_type_code'), '')
+        codes = [c.strip() for c in (d.get('demand_type_code') or '').split(',') if c.strip()]
+        d['demand_type_name'] = '、'.join([demand_display_map.get(c, c) for c in codes]) if codes else ''
         du = org_map.get(d.get('unit_code'))
         d['unit_name'] = du.name if du else ''
 
@@ -238,7 +240,7 @@ def update_project(project_id):
         'order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
         'project_content', 'invest_amount', 'follow_status_code',
         'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
-        'project_type_code', 'person_in_charge', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'first_contact_date'
+        'project_type_code', 'person_in_charge', 'person_in_charge_phone', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'first_contact_date'
     ]
 
     # 审计日志：保存旧值

@@ -260,7 +260,8 @@ def list_public_projects():
         d['tag_names'] = [tag_map.get(tc, tc) for tc in (json.loads(p.tags) if p.tags else [])]
         # 诉求字典名称（二级显示：一级：二级）
         for dd in d.get('demands', []) or []:
-            dd['demand_type_name'] = demand_display_map.get(dd.get('demand_type_code'), '')
+            codes = [c.strip() for c in (dd.get('demand_type_code') or '').split(',') if c.strip()]
+            dd['demand_type_name'] = '、'.join([demand_display_map.get(c, c) for c in codes]) if codes else ''
             du = org_map.get(dd.get('unit_code'))
             dd['unit_name'] = du.name if du else ''
         result.append(d)
@@ -357,7 +358,9 @@ def list_public_demands():
     for d in demands:
         item = d.to_dict()
         item['project_name'] = d.project.project_name if d.project else ''
-        item['demand_type_name'] = type_map.get(d.demand_type_code, '')
+        # 支持逗号分隔的多值编码
+        codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
+        item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
         result.append(item)
 

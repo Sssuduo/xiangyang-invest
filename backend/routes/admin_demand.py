@@ -64,7 +64,9 @@ def list_demands():
     for d in demands:
         item = d.to_dict()
         item['project_name'] = d.project.project_name if d.project else ''
-        item['demand_type_name'] = type_map.get(d.demand_type_code, '')
+        # 支持逗号分隔的多值编码
+        codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
+        item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
         result.append(item)
 

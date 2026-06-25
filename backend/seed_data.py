@@ -2,9 +2,9 @@ from models import AdminUser, BusinessUser, HomepageConfig, ContactInfo, Provinc
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from models import ExportTemplate, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
-from models import ImportFieldConfigDemand
+from models import ImportFieldConfigDemand, ImportFieldConfigConstruction, ImportFieldConfigWorkProgress
 from models import ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict
-from models import ConstructionProject, WorkProgress, ProjectIssue
+from models import ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem
 from extensions import db
 
 
@@ -52,6 +52,8 @@ def init_database(app):
         # V3.1: 企业诉求新增字段
         "ALTER TABLE enterprise_demands ADD COLUMN demand_type_code VARCHAR(32) DEFAULT ''",
         "ALTER TABLE enterprise_demands ADD COLUMN unit_code VARCHAR(32) DEFAULT ''",
+        # V10.1: 诉求类型支持多选，扩展列宽
+        "ALTER TABLE enterprise_demands MODIFY COLUMN demand_type_code VARCHAR(255) DEFAULT ''",
         # V4: 项目投资计划书
         "ALTER TABLE investment_projects ADD COLUMN investment_plan TEXT DEFAULT ''",
         # V5: 导出多模板支持 — 新增 template_id 列，移除旧 field_key 唯一约束
@@ -61,6 +63,11 @@ def init_database(app):
         # V8: 项目标签 + 动态标签
         "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
         "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
+        # 工作进展附件
+        "ALTER TABLE work_progress ADD COLUMN files TEXT DEFAULT '[]'",
+        # V11: 联系电话
+        "ALTER TABLE investment_projects ADD COLUMN person_in_charge_phone VARCHAR(32) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN responsible_person_phone VARCHAR(32) DEFAULT ''",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [
@@ -180,6 +187,12 @@ def init_database(app):
     # ---- 在建项目库 - 字典种子数据 ----
     _seed_construction_dicts()
 
+    # ---- 在建项目 - 导入字段配置 ----
+    _seed_construction_import_fields()
+
+    # ---- 工作进展 - 导入字段配置 ----
+    _seed_construction_progress_import_fields()
+
 
 def _seed_investment_dicts():
     """初始化招商对接项目库的字典表"""
@@ -225,6 +238,12 @@ def _seed_investment_dicts():
         ('org_xiangbeijianyu', '襄北监狱'),
         ('org_zhaoshang', '区招商服务中心'),
         ('org_nonggaoqu', '农高区创建专班'),
+        ('org_rensheju', '区人社局'),
+        ('org_zhujianju', '区住建局'),
+        ('org_shuanggouzhen', '双沟镇'),
+        ('org_jiaotongju', '区交通运输局'),
+        ('org_yushanzhen', '峪山镇'),
+        ('org_shichangjianduju', '区市场监督局'),
     ]
     for i, (code, name) in enumerate(organizations):
         existing = OrganizationDict.query.filter_by(code=code).first()
@@ -484,3 +503,52 @@ def _seed_construction_dicts():
 
     db.session.commit()
     print('[种子数据] 在建项目库字典已初始化')
+
+
+def _seed_construction_import_fields():
+    """初始化在建项目导入字段配置"""
+    fields = [
+        ('project_name', '项目名称', True, True, 1),
+        ('project_type_code', '项目类型', True, True, 2),
+        ('dispatch_status_code', '调度状态', True, True, 3),
+        ('construction_content', '建设内容', True, False, 4),
+        ('construction_unit', '建设单位', True, False, 5),
+        ('responsible_unit_code', '责任单位', True, False, 6),
+        ('responsible_person', '责任人', True, False, 7),
+        ('responsible_person_phone', '联系电话', True, False, 8),
+        ('roadmap_text', '工作路径', True, False, 9),
+        ('progress_text', '工作进展', True, False, 10),
+        ('issue_text', '调度问题', True, False, 11),
+    ]
+    for field_key, field_label, is_enabled, is_required, sort_order in fields:
+        if not ImportFieldConfigConstruction.query.filter_by(field_key=field_key).first():
+            db.session.add(ImportFieldConfigConstruction(
+                field_key=field_key,
+                field_label=field_label,
+                is_enabled=is_enabled,
+                is_required=is_required,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 在建项目导入字段配置已初始化')
+
+
+def _seed_construction_progress_import_fields():
+    """初始化工作进展导入字段配置"""
+    fields = [
+        ('project_name', '所属项目', True, True, 1),
+        ('start_date', '开始日期', True, True, 2),
+        ('end_date', '结束日期', True, True, 3),
+        ('content', '进展内容', True, True, 4),
+    ]
+    for field_key, field_label, is_enabled, is_required, sort_order in fields:
+        if not ImportFieldConfigWorkProgress.query.filter_by(field_key=field_key).first():
+            db.session.add(ImportFieldConfigWorkProgress(
+                field_key=field_key,
+                field_label=field_label,
+                is_enabled=is_enabled,
+                is_required=is_required,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 工作进展导入字段配置已初始化')

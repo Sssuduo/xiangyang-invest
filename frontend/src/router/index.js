@@ -155,13 +155,13 @@ const routes = [
   {
     path: '/construction-progress',
     name: 'ConstructionProgress',
-    component: () => import('@/views/ConstructionPlaceholder.vue'),
+    component: () => import('@/views/ConstructionProgressView.vue'),
     meta: { requiresBusinessAuth: true }
   },
   {
     path: '/construction-issues',
     name: 'ConstructionIssues',
-    component: () => import('@/views/ConstructionPlaceholder.vue'),
+    component: () => import('@/views/ConstructionIssuesView.vue'),
     meta: { requiresBusinessAuth: true }
   },
   // ---- 管理后台 ----

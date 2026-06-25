@@ -230,9 +230,11 @@
                 <el-cascader
                   v-model="demandTypeCascaderValue"
                   :options="demandTypeTree"
-                  :props="{ expandTrigger: 'click', checkStrictly: true }"
-                  placeholder="请选择诉求类型"
+                  :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
+                  placeholder="请选择诉求类型（可多选）"
                   clearable
+                  collapse-tags
+                  collapse-tags-tooltip
                   style="width: 100%;"
                 />
               </el-form-item>
@@ -523,10 +525,14 @@ function fmtDt(d) {
 function resolveDemandTypePath(code) {
   if (!code) return []
   const types = demandTypes.value || []
-  const type = types.find(t => t.code === code)
-  if (!type) return []
-  if (type.parent_code) return [type.parent_code, code]
-  return [code]
+  // 支持逗号分隔的多值编码
+  const codes = code.split(',').map(c => c.trim()).filter(Boolean)
+  return codes.map(c => {
+    const type = types.find(t => t.code === c)
+    if (!type) return null
+    if (type.parent_code) return [type.parent_code, c]
+    return [c]
+  }).filter(Boolean)
 }
 
 // ---- 查看 ----
@@ -591,7 +597,13 @@ async function handleSave() {
   saving.value = true
   try {
     const cv = demandTypeCascaderValue.value
-    form.demand_type_code = Array.isArray(cv) && cv.length > 0 ? cv[cv.length - 1] : ''
+    if (Array.isArray(cv) && cv.length > 0) {
+      // multiple:true 时 cv 是路径数组的数组 [[parent, child], [parent], ...]
+      const codes = cv.map(path => Array.isArray(path) ? path[path.length - 1] : path)
+      form.demand_type_code = codes.join(',')
+    } else {
+      form.demand_type_code = ''
+    }
     const data = { ...form }
     if (editMode.value === 'create') {
       await createDemand(data)

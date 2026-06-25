@@ -33,3 +33,37 @@ export function batchDeleteProjects(ids) {
 export function getMaxOrderNo() {
   return api.get('/admin/construction/max-order-no')
 }
+
+// 工作进展 CRUD
+export function getProgressList(params = {}) {
+  return api.get('/admin/construction/progress', { params })
+}
+
+export function createProgress(data) {
+  return api.post('/admin/construction/progress', data)
+}
+
+export function updateProgress(id, data) {
+  return api.put(`/admin/construction/progress/${id}`, data)
+}
+
+export function deleteProgress(id) {
+  return api.delete(`/admin/construction/progress/${id}`)
+}
+
+// 调度问题 CRUD
+export function getIssueList(params = {}) {
+  return api.get('/admin/construction/issues', { params })
+}
+
+export function createIssue(data) {
+  return api.post('/admin/construction/issues', data)
+}
+
+export function updateIssue(id, data) {
+  return api.put(`/admin/construction/issues/${id}`, data)
+}
+
+export function deleteIssue(id) {
+  return api.delete(`/admin/construction/issues/${id}`)
+}

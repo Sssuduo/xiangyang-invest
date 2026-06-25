@@ -206,9 +206,18 @@
                   </el-form-item>
                 </el-col>
               </el-row>
-              <el-form-item label="责任人">
-                <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" style="width: 48%;" />
-              </el-form-item>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="责任人">
+                    <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="联系电话">
+                    <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
 
               <!-- 项目标签 -->
               <div class="section-header">
@@ -303,6 +312,7 @@ const defaultForm = () => ({
   recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
+  person_in_charge_phone: '',
   first_contact_date: '',
   tags: [],
   demands: []
@@ -397,6 +407,7 @@ async function openEdit(row) {
       form.recommend_unit_code = d.recommend_unit_code || ''
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
+      form.person_in_charge_phone = d.person_in_charge_phone || ''
       form.first_contact_date = d.first_contact_date || ''
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form.demands = (d.demands || []).map(dd => ({ ...dd }))
@@ -459,6 +470,7 @@ async function handleSave() {
       recommend_unit_code: form.recommend_unit_code,
       responsible_unit_code: form.responsible_unit_code,
       person_in_charge: form.person_in_charge,
+      person_in_charge_phone: form.person_in_charge_phone,
       first_contact_date: form.first_contact_date || null,
       tags: form.tags,
       demands: form.demands

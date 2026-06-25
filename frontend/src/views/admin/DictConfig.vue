@@ -140,8 +140,12 @@ const tabs = [
   { key: 'demand_types', label: '诉求类型' },
   { key: 'project_tags', label: '项目标签' },
   { key: 'activity_tags', label: '动态标签' },
+  { key: 'construction_project_types', label: '在建项目类型' },
+  { key: 'dispatch_statuses', label: '调度状态' },
+  { key: 'issue_types', label: '问题类型' },
+  { key: 'resolution_statuses', label: '解决状态' },
 ]
-const tabsWithColor = ['follow_statuses', 'meeting_statuses']
+const tabsWithColor = ['follow_statuses', 'meeting_statuses', 'resolution_statuses']
 
 const activeTab = ref('follow_statuses')
 const currentTabHasColor = computed(() => tabsWithColor.includes(activeTab.value))

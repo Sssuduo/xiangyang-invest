@@ -3,7 +3,9 @@ from flask import request, jsonify
 from flask_login import login_required
 from models import (
     FollowStatusDict, MeetingStatusDict, OrganizationDict,
-    ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
+    ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict,
+    ConstructionProjectTypeDict, DispatchStatusDict,
+    IssueTypeDict, ResolutionStatusDict
 )
 from extensions import db
 from routes import admin_dict_bp
@@ -17,6 +19,10 @@ DICT_REGISTRY = {
     'demand_types': (DemandTypeDict, ['code', 'name', 'parent_code', 'sort_order', 'is_active'], False),
     'project_tags': (ProjectTagDict, ['code', 'name', 'sort_order', 'is_active'], False),
     'activity_tags': (ActivityTagDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'construction_project_types': (ConstructionProjectTypeDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'dispatch_statuses': (DispatchStatusDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'issue_types': (IssueTypeDict, ['code', 'name', 'sort_order', 'is_active'], False),
+    'resolution_statuses': (ResolutionStatusDict, ['code', 'name', 'display_color', 'sort_order', 'is_active'], True),
 }
 
 

@@ -405,9 +405,18 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="责任人">
-            <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" style="width: 48%;" />
-          </el-form-item>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="责任人">
+                <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="联系电话">
+                <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
+              </el-form-item>
+            </el-col>
+          </el-row>
 
           <!-- 项目标签 -->
           <div class="section-header">
@@ -436,9 +445,11 @@
                   <el-cascader
                     v-model="d._cascader"
                     :options="demandTypeTree"
-                    :props="{ expandTrigger: 'click', checkStrictly: true }"
-                    placeholder="诉求类型"
+                    :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
+                    placeholder="诉求类型（可多选）"
                     clearable
+                    collapse-tags
+                    collapse-tags-tooltip
                     size="small"
                     style="width: 100%;"
                   />
@@ -770,6 +781,7 @@ const defaultForm = () => ({
   recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
+  person_in_charge_phone: '',
   first_contact_date: '',
   tags: [],
   demands: []
@@ -1030,14 +1042,20 @@ async function openEdit(row) {
       form.recommend_unit_code = d.recommend_unit_code || ''
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
+      form.person_in_charge_phone = d.person_in_charge_phone || ''
       form.first_contact_date = d.first_contact_date || ''
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form.demands = (d.demands || []).map(dd => {
         const code = dd.demand_type_code || ''
         let cascader = []
         if (code) {
-          const type = (dicts.demand_types || []).find(t => t.code === code)
-          if (type) cascader = type.parent_code ? [type.parent_code, code] : [code]
+          // 支持逗号分隔的多值编码
+          const codes = code.split(',').map(c => c.trim()).filter(Boolean)
+          cascader = codes.map(c => {
+            const type = (dicts.demand_types || []).find(t => t.code === c)
+            if (!type) return null
+            return type.parent_code ? [type.parent_code, c] : [c]
+          }).filter(Boolean)
         }
         return {
           ...dd,
@@ -1099,7 +1117,13 @@ async function handleSave() {
     // 同步 cascader 值到 demand_type_code
     form.demands.forEach(d => {
       const cv = d._cascader || []
-      d.demand_type_code = Array.isArray(cv) && cv.length > 0 ? cv[cv.length - 1] : ''
+      if (Array.isArray(cv) && cv.length > 0) {
+        // multiple:true 时 cv 是路径数组的数组
+        const codes = cv.map(path => Array.isArray(path) ? path[path.length - 1] : path)
+        d.demand_type_code = codes.join(',')
+      } else {
+        d.demand_type_code = ''
+      }
     })
     // 构建 project_doc JSON 数组
     const docUrls = fileList.value
@@ -1127,6 +1151,7 @@ async function handleSave() {
       recommend_unit_code: form.recommend_unit_code,
       responsible_unit_code: form.responsible_unit_code,
       person_in_charge: form.person_in_charge,
+      person_in_charge_phone: form.person_in_charge_phone,
       first_contact_date: form.first_contact_date || null,
       tags: form.tags,
       demands: form.demands

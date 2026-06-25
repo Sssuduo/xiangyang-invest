@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from flask import request, jsonify
 from models import (
-    ConstructionProject, WorkProgress, ProjectIssue,
+    ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem,
     ConstructionProjectTypeDict, DispatchStatusDict,
     IssueTypeDict, ResolutionStatusDict, OrganizationDict
 )
@@ -20,6 +20,18 @@ def _parse_date(val):
         return date.fromisoformat(val)
     except (ValueError, TypeError):
         return None
+
+
+def _renumber_projects():
+    """将未删除项目的 order_no 从 1 开始连续编号（按当前 order_no 排序）"""
+    projects = ConstructionProject.query \
+        .filter_by(is_deleted=False) \
+        .order_by(ConstructionProject.order_no.asc(),
+                  ConstructionProject.id.asc()) \
+        .all()
+    for i, p in enumerate(projects, 1):
+        p.order_no = i
+    db.session.flush()
 
 
 # ============================================================
@@ -97,7 +109,19 @@ def _build_project_dict(p):
         'dispatch_status_code': p.dispatch_status_code,
         'dispatch_status_name': getattr(p, '_dispatch_status_name', p.dispatch_status_code),
         'construction_content': p.construction_content or '',
-        'work_roadmap': p.work_roadmap or '',
+        'work_roadmap_items': [
+            {
+                'id': wri.id,
+                'sort_order': wri.sort_order,
+                'content': wri.content,
+                'planned_date': wri.planned_date.isoformat() if wri.planned_date else None,
+                'actual_date': wri.actual_date.isoformat() if wri.actual_date else None,
+                'status': wri.status,
+                'is_delayed': wri.is_delayed,
+                'delay_reason': wri.delay_reason or '',
+                'cancel_reason': wri.cancel_reason or '',
+            } for wri in (p.work_roadmap_items.all() if hasattr(p, 'work_roadmap_items') else [])
+        ],
         'construction_unit': p.construction_unit or '',
         'responsible_unit_code': p.responsible_unit_code or '',
         'responsible_unit_name': getattr(p, '_responsible_unit_name', p.responsible_unit_code or ''),
@@ -210,16 +234,23 @@ def create_project():
     if not project_type_code:
         return jsonify({'code': 1, 'message': '请选择项目类型'}), 400
 
+    # 自动分配序号（如果前端未指定或为 0）
+    req_order_no = data.get('order_no', 0)
+    if not req_order_no or req_order_no <= 0:
+        max_no = db.session.query(db.func.max(ConstructionProject.order_no)) \
+            .filter(ConstructionProject.is_deleted == False).scalar() or 0
+        req_order_no = max_no + 1
+
     project = ConstructionProject(
-        order_no=data.get('order_no', 0),
+        order_no=req_order_no,
         project_name=project_name,
         project_type_code=project_type_code,
         dispatch_status_code=(data.get('dispatch_status_code') or 'dispatching').strip(),
         construction_content=(data.get('construction_content') or '').strip(),
-        work_roadmap=(data.get('work_roadmap') or '').strip(),
         construction_unit=(data.get('construction_unit') or '').strip(),
         responsible_unit_code=(data.get('responsible_unit_code') or '').strip(),
         responsible_person=(data.get('responsible_person') or '').strip(),
+        responsible_person_phone=(data.get('responsible_person_phone') or '').strip(),
     )
     db.session.add(project)
     db.session.flush()  # 获取 project.id
@@ -230,11 +261,14 @@ def create_project():
         end_date = _parse_date(wp_data.get('end_date'))
         content = (wp_data.get('content') or '').strip()
         if content and start_date and end_date:
+            import json
+            wp_files = wp_data.get('files') or []
             db.session.add(WorkProgress(
                 project_id=project.id,
                 start_date=start_date,
                 end_date=end_date,
-                content=content
+                content=content,
+                files=json.dumps(wp_files, ensure_ascii=False)
             ))
 
     # 子表：存在问题
@@ -250,6 +284,22 @@ def create_project():
                 main_department_code=(iss_data.get('main_department_code') or '').strip()
             ))
 
+    # 子表：工作路径图
+    for wri_data in data.get('work_roadmap_items') or []:
+        content = (wri_data.get('content') or '').strip()
+        if content:
+            db.session.add(WorkRoadmapItem(
+                project_id=project.id,
+                sort_order=wri_data.get('sort_order', 0),
+                content=content,
+                planned_date=_parse_date(wri_data.get('planned_date')),
+                actual_date=_parse_date(wri_data.get('actual_date')),
+                status=(wri_data.get('status') or 'pending').strip(),
+                is_delayed=wri_data.get('is_delayed', False),
+                delay_reason=(wri_data.get('delay_reason') or '').strip(),
+                cancel_reason=(wri_data.get('cancel_reason') or '').strip(),
+            ))
+
     # 审计日志
     user_info = get_current_user_info()
     if user_info:
@@ -259,10 +309,10 @@ def create_project():
             'project_type_code': (None, project.project_type_code),
             'dispatch_status_code': (None, project.dispatch_status_code),
             'construction_content': (None, project.construction_content or ''),
-            'work_roadmap': (None, project.work_roadmap or ''),
             'construction_unit': (None, project.construction_unit or ''),
             'responsible_unit_code': (None, project.responsible_unit_code or ''),
             'responsible_person': (None, project.responsible_person or ''),
+            'responsible_person_phone': (None, project.responsible_person_phone or ''),
         }
         log_changes('construction_projects', project.id, changes, 'create', user_info)
 
@@ -340,10 +390,10 @@ def update_project(project_id):
         'project_type_code': project.project_type_code,
         'dispatch_status_code': project.dispatch_status_code,
         'construction_content': project.construction_content or '',
-        'work_roadmap': project.work_roadmap or '',
         'construction_unit': project.construction_unit or '',
         'responsible_unit_code': project.responsible_unit_code or '',
         'responsible_person': project.responsible_person or '',
+        'responsible_person_phone': project.responsible_person_phone or '',
     }
 
     # 更新字段
@@ -352,27 +402,32 @@ def update_project(project_id):
     project.project_type_code = project_type_code
     project.dispatch_status_code = (data.get('dispatch_status_code') or project.dispatch_status_code).strip()
     project.construction_content = (data.get('construction_content') or '').strip()
-    project.work_roadmap = (data.get('work_roadmap') or '').strip()
     project.construction_unit = (data.get('construction_unit') or '').strip()
     project.responsible_unit_code = (data.get('responsible_unit_code') or '').strip()
     project.responsible_person = (data.get('responsible_person') or '').strip()
+    project.responsible_person_phone = (data.get('responsible_person_phone') or '').strip()
 
     # 同步子表：先删后建
     for wp in WorkProgress.query.filter_by(project_id=project.id).all():
         db.session.delete(wp)
     for iss in ProjectIssue.query.filter_by(project_id=project.id).all():
         db.session.delete(iss)
+    for wri in WorkRoadmapItem.query.filter_by(project_id=project.id).all():
+        db.session.delete(wri)
 
     for wp_data in data.get('work_progresses') or []:
         start_date = _parse_date(wp_data.get('start_date'))
         end_date = _parse_date(wp_data.get('end_date'))
         content = (wp_data.get('content') or '').strip()
         if content and start_date and end_date:
+            import json
+            wp_files = wp_data.get('files') or []
             db.session.add(WorkProgress(
                 project_id=project.id,
                 start_date=start_date,
                 end_date=end_date,
-                content=content
+                content=content,
+                files=json.dumps(wp_files, ensure_ascii=False)
             ))
 
     for iss_data in data.get('issues') or []:
@@ -387,6 +442,22 @@ def update_project(project_id):
                 main_department_code=(iss_data.get('main_department_code') or '').strip()
             ))
 
+    # 子表：工作路径图
+    for wri_data in data.get('work_roadmap_items') or []:
+        content = (wri_data.get('content') or '').strip()
+        if content:
+            db.session.add(WorkRoadmapItem(
+                project_id=project.id,
+                sort_order=wri_data.get('sort_order', 0),
+                content=content,
+                planned_date=_parse_date(wri_data.get('planned_date')),
+                actual_date=_parse_date(wri_data.get('actual_date')),
+                status=(wri_data.get('status') or 'pending').strip(),
+                is_delayed=wri_data.get('is_delayed', False),
+                delay_reason=(wri_data.get('delay_reason') or '').strip(),
+                cancel_reason=(wri_data.get('cancel_reason') or '').strip(),
+            ))
+
     # 审计日志
     user_info = get_current_user_info()
     if user_info:
@@ -396,10 +467,10 @@ def update_project(project_id):
             'project_type_code': project.project_type_code,
             'dispatch_status_code': project.dispatch_status_code,
             'construction_content': project.construction_content or '',
-            'work_roadmap': project.work_roadmap or '',
             'construction_unit': project.construction_unit or '',
             'responsible_unit_code': project.responsible_unit_code or '',
             'responsible_person': project.responsible_person or '',
+            'responsible_person_phone': project.responsible_person_phone or '',
         }
         changes = {}
         for k in old_values:
@@ -408,6 +479,7 @@ def update_project(project_id):
         if changes:
             log_changes('construction_projects', project.id, changes, 'update', user_info)
 
+    _renumber_projects()
     db.session.commit()
 
     _resolve_project_names([project])
@@ -427,6 +499,7 @@ def delete_project(project_id):
         .filter_by(id=project_id, is_deleted=False) \
         .first_or_404()
     project.is_deleted = True
+    _renumber_projects()
     db.session.commit()
 
     user_info = get_current_user_info()
@@ -455,7 +528,303 @@ def batch_delete_projects():
         .filter(ConstructionProject.id.in_(ids),
                 ConstructionProject.is_deleted == False) \
         .update({'is_deleted': True}, synchronize_session=False)
+    _renumber_projects()
     db.session.commit()
 
     return jsonify({'code': 0, 'message': f'已删除 {deleted} 个项目',
                     'data': {'count': deleted}})
+
+
+# ============================================================
+# 工作进展 CRUD
+# ============================================================
+
+def _build_progress_dict(wp):
+    """构建工作进展字典（含项目名称）"""
+    import json
+    _files = []
+    try:
+        _files = json.loads(wp.files or '[]')
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return {
+        'id': wp.id,
+        'project_id': wp.project_id,
+        'project_name': getattr(wp, '_project_name', ''),
+        'start_date': wp.start_date.isoformat() if wp.start_date else None,
+        'end_date': wp.end_date.isoformat() if wp.end_date else None,
+        'content': wp.content,
+        'files': _files,
+        'created_at': wp.created_at.isoformat() if wp.created_at else None,
+        'updated_at': wp.updated_at.isoformat() if wp.updated_at else None,
+    }
+
+
+@admin_construction_bp.route('/construction/progress', methods=['GET'])
+@dual_login_required
+def list_progress():
+    """查询工作进展列表"""
+    q = WorkProgress.query.join(
+        ConstructionProject,
+        WorkProgress.project_id == ConstructionProject.id
+    ).filter(ConstructionProject.is_deleted == False)
+
+    project_id = request.args.get('project_id', '').strip()
+    if project_id:
+        q = q.filter(WorkProgress.project_id == int(project_id))
+
+    search = request.args.get('search', '').strip()
+    if search:
+        from models import ConstructionProject as CP
+        q = q.filter(db.or_(
+            WorkProgress.content.ilike(f'%{search}%'),
+            CP.project_name.ilike(f'%{search}%')
+        ))
+
+    q = q.order_by(WorkProgress.start_date.desc())
+    items = q.all()
+
+    # 批量解析项目名称
+    project_ids = list(set(wp.project_id for wp in items))
+    project_map = {}
+    if project_ids:
+        projects = ConstructionProject.query.filter(
+            ConstructionProject.id.in_(project_ids)
+        ).all()
+        project_map = {p.id: p.project_name for p in projects}
+
+    for wp in items:
+        wp._project_name = project_map.get(wp.project_id, '')
+
+    return jsonify({'code': 0, 'data': [_build_progress_dict(wp) for wp in items]})
+
+
+@admin_construction_bp.route('/construction/progress', methods=['POST'])
+@dual_login_required
+def create_progress():
+    """创建工作进展"""
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id')
+    start_date = _parse_date(data.get('start_date'))
+    end_date = _parse_date(data.get('end_date'))
+    content = (data.get('content') or '').strip()
+
+    if not project_id:
+        return jsonify({'code': 1, 'message': '请选择所属项目'}), 400
+    if not content:
+        return jsonify({'code': 1, 'message': '请输入工作进展内容'}), 400
+    if not start_date or not end_date:
+        return jsonify({'code': 1, 'message': '请选择起止日期'}), 400
+
+    import json
+    files = data.get('files') or []
+    wp = WorkProgress(
+        project_id=project_id,
+        start_date=start_date,
+        end_date=end_date,
+        content=content,
+        files=json.dumps(files, ensure_ascii=False)
+    )
+    db.session.add(wp)
+    db.session.commit()
+
+    project = ConstructionProject.query.get(project_id)
+    wp._project_name = project.project_name if project else ''
+    return jsonify({'code': 0, 'data': _build_progress_dict(wp),
+                    'message': '工作进展已创建'})
+
+
+@admin_construction_bp.route('/construction/progress/<int:progress_id>', methods=['PUT'])
+@dual_login_required
+def update_progress(progress_id):
+    """更新工作进展"""
+    wp = WorkProgress.query.get_or_404(progress_id)
+    data = request.get_json(silent=True) or {}
+
+    start_date = _parse_date(data.get('start_date'))
+    end_date = _parse_date(data.get('end_date'))
+    content = (data.get('content') or '').strip()
+
+    if not content:
+        return jsonify({'code': 1, 'message': '请输入工作进展内容'}), 400
+
+    if start_date:
+        wp.start_date = start_date
+    if end_date:
+        wp.end_date = end_date
+    wp.content = content
+
+    import json
+    if 'files' in data:
+        wp.files = json.dumps(data.get('files') or [], ensure_ascii=False)
+
+    # 支持修改所属项目
+    new_project_id = data.get('project_id')
+    if new_project_id and new_project_id != wp.project_id:
+        wp.project_id = new_project_id
+
+    db.session.commit()
+
+    project = ConstructionProject.query.get(wp.project_id)
+    wp._project_name = project.project_name if project else ''
+    return jsonify({'code': 0, 'data': _build_progress_dict(wp),
+                    'message': '工作进展已更新'})
+
+
+@admin_construction_bp.route('/construction/progress/<int:progress_id>', methods=['DELETE'])
+@dual_login_required
+def delete_progress(progress_id):
+    """删除工作进展"""
+    wp = WorkProgress.query.get_or_404(progress_id)
+    db.session.delete(wp)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '工作进展已删除'})
+
+
+# ============================================================
+# 调度问题 CRUD
+# ============================================================
+
+def _build_issue_dict(iss):
+    """构建问题字典（含名称解析）"""
+    issue_type_name = getattr(iss, '_issue_type_name', iss.issue_type_code or '')
+    res_status_name = getattr(iss, '_resolution_status_name', iss.resolution_status_code)
+    main_dept_name = getattr(iss, '_main_department_name', iss.main_department_code or '')
+    return {
+        'id': iss.id,
+        'project_id': iss.project_id,
+        'project_name': getattr(iss, '_project_name', ''),
+        'issue_type_code': iss.issue_type_code or '',
+        'issue_type_name': issue_type_name,
+        'issue_description': iss.issue_description or '',
+        'resolution_status_code': iss.resolution_status_code,
+        'resolution_status_name': res_status_name,
+        'resolution_note': iss.resolution_note or '',
+        'main_department_code': iss.main_department_code or '',
+        'main_department_name': main_dept_name,
+        'created_at': iss.created_at.isoformat() if iss.created_at else None,
+        'updated_at': iss.updated_at.isoformat() if iss.updated_at else None,
+    }
+
+
+@admin_construction_bp.route('/construction/issues', methods=['GET'])
+@dual_login_required
+def list_issues():
+    """查询存在问题列表"""
+    q = ProjectIssue.query.join(
+        ConstructionProject,
+        ProjectIssue.project_id == ConstructionProject.id
+    ).filter(ConstructionProject.is_deleted == False)
+
+    project_id = request.args.get('project_id', '').strip()
+    if project_id:
+        q = q.filter(ProjectIssue.project_id == int(project_id))
+
+    issue_type = request.args.get('issue_type', '').strip()
+    if issue_type:
+        q = q.filter(ProjectIssue.issue_type_code == issue_type)
+
+    res_status = request.args.get('resolution_status', '').strip()
+    if res_status:
+        q = q.filter(ProjectIssue.resolution_status_code == res_status)
+
+    search = request.args.get('search', '').strip()
+    if search:
+        from models import ConstructionProject as CP
+        q = q.filter(db.or_(
+            ProjectIssue.issue_description.ilike(f'%{search}%'),
+            CP.project_name.ilike(f'%{search}%')
+        ))
+
+    q = q.order_by(ProjectIssue.created_at.desc())
+    items = q.all()
+
+    # 批量解析
+    project_ids = list(set(iss.project_id for iss in items))
+    project_map = {}
+    if project_ids:
+        projects = ConstructionProject.query.filter(
+            ConstructionProject.id.in_(project_ids)
+        ).all()
+        project_map = {p.id: p.project_name for p in projects}
+
+    issue_type_map = {d.code: d.name for d in IssueTypeDict.query.all()}
+    res_status_map = {d.code: d.name for d in ResolutionStatusDict.query.all()}
+    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+
+    for iss in items:
+        iss._project_name = project_map.get(iss.project_id, '')
+        iss._issue_type_name = issue_type_map.get(iss.issue_type_code, iss.issue_type_code or '')
+        iss._resolution_status_name = res_status_map.get(iss.resolution_status_code, iss.resolution_status_code)
+        iss._main_department_name = org_map.get(iss.main_department_code, iss.main_department_code or '')
+
+    return jsonify({'code': 0, 'data': [_build_issue_dict(iss) for iss in items]})
+
+
+@admin_construction_bp.route('/construction/issues', methods=['POST'])
+@dual_login_required
+def create_issue():
+    """创建存在问题"""
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id')
+    iss_desc = (data.get('issue_description') or '').strip()
+
+    if not project_id:
+        return jsonify({'code': 1, 'message': '请选择所属项目'}), 400
+    if not iss_desc:
+        return jsonify({'code': 1, 'message': '请输入问题描述'}), 400
+
+    iss = ProjectIssue(
+        project_id=project_id,
+        issue_type_code=(data.get('issue_type_code') or '').strip(),
+        issue_description=iss_desc,
+        resolution_status_code=(data.get('resolution_status_code') or 'pending').strip(),
+        resolution_note=(data.get('resolution_note') or '').strip(),
+        main_department_code=(data.get('main_department_code') or '').strip()
+    )
+    db.session.add(iss)
+    db.session.commit()
+
+    project = ConstructionProject.query.get(project_id)
+    iss._project_name = project.project_name if project else ''
+    return jsonify({'code': 0, 'data': _build_issue_dict(iss),
+                    'message': '问题已创建'})
+
+
+@admin_construction_bp.route('/construction/issues/<int:issue_id>', methods=['PUT'])
+@dual_login_required
+def update_issue(issue_id):
+    """更新存在问题"""
+    iss = ProjectIssue.query.get_or_404(issue_id)
+    data = request.get_json(silent=True) or {}
+
+    iss_desc = (data.get('issue_description') or '').strip()
+    if not iss_desc:
+        return jsonify({'code': 1, 'message': '请输入问题描述'}), 400
+
+    iss.issue_type_code = (data.get('issue_type_code') or iss.issue_type_code).strip()
+    iss.issue_description = iss_desc
+    iss.resolution_status_code = (data.get('resolution_status_code') or iss.resolution_status_code).strip()
+    iss.resolution_note = (data.get('resolution_note') or '').strip()
+    iss.main_department_code = (data.get('main_department_code') or '').strip()
+
+    new_project_id = data.get('project_id')
+    if new_project_id and new_project_id != iss.project_id:
+        iss.project_id = new_project_id
+
+    db.session.commit()
+
+    project = ConstructionProject.query.get(iss.project_id)
+    iss._project_name = project.project_name if project else ''
+    return jsonify({'code': 0, 'data': _build_issue_dict(iss),
+                    'message': '问题已更新'})
+
+
+@admin_construction_bp.route('/construction/issues/<int:issue_id>', methods=['DELETE'])
+@dual_login_required
+def delete_issue(issue_id):
+    """删除存在问题"""
+    iss = ProjectIssue.query.get_or_404(issue_id)
+    db.session.delete(iss)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '问题已删除'})

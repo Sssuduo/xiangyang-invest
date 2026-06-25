@@ -366,6 +366,7 @@ def import_execute():
             responsible_unit_code=row_data.get('responsible_unit_code', ''),
             project_type_code=row_data.get('project_type_code', ''),
             person_in_charge=row_data.get('person_in_charge', ''),
+            person_in_charge_phone=row_data.get('person_in_charge_phone', ''),
             project_doc=row_data.get('project_doc', ''),
             first_contact_date=_parse_date(row_data.get('first_contact_date'))
         )

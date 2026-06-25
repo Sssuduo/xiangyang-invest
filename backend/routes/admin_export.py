@@ -205,7 +205,8 @@ def _aggregate_demands(project):
     type_map = DemandTypeDict.build_display_name_map()
     lines = []
     for i, d in enumerate(demands, 1):
-        type_name = type_map.get(d.demand_type_code, d.demand_type_code or '诉求')
+        codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
+        type_name = '、'.join([type_map.get(c, c) for c in codes]) if codes else (d.demand_type_code or '诉求')
         content = d.demand_content or ''
         lines.append(f'{i}、[{type_name}] {content}')
     return '\n'.join(lines)
@@ -401,8 +402,9 @@ def export_download():
                         cell.alignment = cell_align
                         cell.border = thin_border
                     # 诉求字段
+                    dt_codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
                     demand_data = {
-                        'demand_type': demand_type_map.get(d.demand_type_code, d.demand_type_code or ''),
+                        'demand_type': '、'.join([demand_type_map.get(c, c) for c in dt_codes]) if dt_codes else '',
                         'demand_unit': org_map.get(d.unit_code, d.unit_code or ''),
                         'demand_content': d.demand_content or '',
                         'demand_resolution': d.resolution or '',

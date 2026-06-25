@@ -39,15 +39,28 @@
           <el-select v-model="filterProjectType" placeholder="项目类型" clearable @change="currentPage = 1; fetchData()" style="width: 140px;">
             <el-option v-for="t in projectTypes" :key="t.code" :label="t.name" :value="t.code" />
           </el-select>
-          <el-cascader
-            v-model="filterDemandTypeCascader"
-            :options="demandTypeTree"
-            :props="{ expandTrigger: 'click', checkStrictly: true }"
-            placeholder="诉求类型"
+          <el-select
+            v-model="filterDemandTypes"
+            multiple
+            filterable
+            placeholder="诉求类型（可多选）"
             clearable
-            style="width: 200px;"
-            @change="onFilterDemandTypeChange"
-          />
+            style="width: 260px;"
+            @change="currentPage = 1; fetchData()"
+          >
+            <el-option-group
+              v-for="group in demandTypeGroups"
+              :key="group.label"
+              :label="group.label"
+            >
+              <el-option
+                v-for="t in group.children"
+                :key="t.code"
+                :label="t.name"
+                :value="t.code"
+              />
+            </el-option-group>
+          </el-select>
           <el-select v-model="filterStatus" placeholder="状态" clearable @change="currentPage = 1; fetchData()" style="width: 120px;">
             <el-option label="待处理" value="pending" />
             <el-option label="处理中" value="processing" />
@@ -166,9 +179,11 @@
                 <el-cascader
                   v-model="demandTypeCascaderValue"
                   :options="demandTypeTree"
-                  :props="{ expandTrigger: 'click', checkStrictly: true }"
-                  placeholder="请选择诉求类型"
+                  :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
+                  placeholder="请选择诉求类型（可多选）"
                   clearable
+                  collapse-tags
+                  collapse-tags-tooltip
                   style="width: 100%;"
                 />
               </el-form-item>
@@ -294,22 +309,20 @@ const demands = ref([])
 const loading = ref(false)
 const searchText = ref('')
 const filterProjectId = ref('')
-const filterDemandType = ref('')
-const filterDemandTypeCascader = ref([])
+const filterDemandTypes = ref([])
 
-function onFilterDemandTypeChange(val) {
-  currentPage.value = 1
-  if (!val || val.length === 0) {
-    filterDemandType.value = ''
-  } else if (val.length === 1) {
-    const parent = val[0]
-    const children = (demandTypes.value || []).filter(t => t.parent_code === parent).map(t => t.code)
-    filterDemandType.value = [parent, ...children].join(',')
-  } else {
-    filterDemandType.value = val[val.length - 1]
-  }
-  fetchData()
-}
+// 诉求类型分组（一级为组标签，二级为可选项；无二级时一级本身可选）
+const demandTypeGroups = computed(() => {
+  const types = demandTypes.value || []
+  const parents = types.filter(t => !t.parent_code)
+  return parents.map(p => {
+    const children = types.filter(t => t.parent_code === p.code)
+    return {
+      label: p.name,
+      children: children.length > 0 ? children : [{ code: p.code, name: p.name }]
+    }
+  })
+})
 const filterStatus = ref('')
 const filterProjectType = ref('')
 const selectedIds = ref([])
@@ -410,7 +423,7 @@ async function fetchData() {
     const params = { page: currentPage.value, page_size: pageSize.value }
     if (searchText.value) params.search = searchText.value
     if (filterProjectId.value) params.project_id = filterProjectId.value
-    if (filterDemandType.value) params.demand_type = filterDemandType.value
+    if (filterDemandTypes.value && filterDemandTypes.value.length > 0) params.demand_type = filterDemandTypes.value.join(',')
     if (filterProjectType.value) params.project_type = filterProjectType.value
     if (filterStatus.value) params.status = filterStatus.value
     const res = await getDemands(params)
@@ -444,10 +457,14 @@ function fmtDt(d) {
 function resolveDemandTypePath(code) {
   if (!code) return []
   const types = demandTypes.value || []
-  const type = types.find(t => t.code === code)
-  if (!type) return []
-  if (type.parent_code) return [type.parent_code, code]
-  return [code]
+  // 支持逗号分隔的多值编码
+  const codes = code.split(',').map(c => c.trim()).filter(Boolean)
+  return codes.map(c => {
+    const type = types.find(t => t.code === c)
+    if (!type) return null
+    if (type.parent_code) return [type.parent_code, c]
+    return [c]
+  }).filter(Boolean)
 }
 
 // 查看
@@ -512,7 +529,13 @@ async function handleSave() {
   saving.value = true
   try {
     const cv = demandTypeCascaderValue.value
-    form.demand_type_code = Array.isArray(cv) && cv.length > 0 ? cv[cv.length - 1] : ''
+    if (Array.isArray(cv) && cv.length > 0) {
+      // multiple:true 时 cv 是路径数组的数组 [[parent, child], [parent], ...]
+      const codes = cv.map(path => Array.isArray(path) ? path[path.length - 1] : path)
+      form.demand_type_code = codes.join(',')
+    } else {
+      form.demand_type_code = ''
+    }
     const data = { ...form }
     if (editMode.value === 'create') {
       await createDemand(data)

@@ -64,6 +64,25 @@
             />
           </el-select>
           <div class="toolbar-spacer" />
+          <el-dropdown
+            v-if="businessAuth.hasPermission('construction', 'import')"
+            trigger="click"
+            @command="handleImportCmd"
+          >
+            <el-button type="success" plain>
+              <el-icon><Upload /></el-icon> 导入项目
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="download-template">
+                  <el-icon><Download /></el-icon> 下载模板
+                </el-dropdown-item>
+                <el-dropdown-item command="import-data">
+                  <el-icon><Upload /></el-icon> 导入数据
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button
             v-if="businessAuth.hasPermission('construction', 'add')"
             type="primary"
@@ -86,7 +105,7 @@
         >
           <el-table-column type="selection" width="45" />
           <el-table-column prop="order_no" label="序号" width="60" align="center" />
-          <el-table-column prop="project_name" label="在建项目名称" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="project_name" label="在建项目名称" min-width="220" show-overflow-tooltip />
           <el-table-column label="项目类型" width="110">
             <template #default="{ row }">
               <span class="project-type-tag">{{ row.project_type_name || row.project_type_code }}</span>
@@ -125,7 +144,7 @@
                   v-if="businessAuth.hasPermission('construction', 'edit')"
                   size="small"
                   link
-                  type="primary"
+                  type="success"
                   @click="openEdit(row)"
                 >编辑</el-button>
                 <el-button
@@ -188,6 +207,7 @@
       <template #header>
         <div class="drawer-title-bar">
           <span class="drawer-title">
+            <el-icon><Edit /></el-icon>
             {{ editMode === 'create' ? '新建在建项目' : '编辑在建项目' }}
           </span>
         </div>
@@ -260,14 +280,101 @@
             <span class="section-title">工作路径图</span>
           </div>
           <el-form-item label="工作路径图">
-            <el-input
-              v-model="form.work_roadmap"
-              type="textarea"
-              :rows="4"
-              placeholder="请输入工作路径图..."
-              maxlength="3000"
-              show-word-limit
-            />
+            <div class="roadmap-list">
+              <div
+                v-for="(item, idx) in form.work_roadmap_items"
+                :key="idx"
+                class="roadmap-card"
+                :class="{ 'roadmap-completed': item.status === 'completed', 'roadmap-cancelled': item.status === 'cancelled' }"
+              >
+                <div class="roadmap-row">
+                  <div class="roadmap-main">
+                    <div class="roadmap-content">
+                      <span class="roadmap-index">{{ idx + 1 }}</span>
+                      <el-input
+                        v-model="item.content"
+                        placeholder="请输入工作路径内容，如：项目签约2025年07月"
+                        maxlength="500"
+                        style="flex:1;"
+                      />
+                    </div>
+                    <div class="roadmap-dates">
+                      <div class="date-group">
+                        <label>预计完成日期</label>
+                        <el-date-picker
+                          v-model="item.planned_date"
+                          type="date"
+                          placeholder="选择日期（暂未明确）"
+                          value-format="YYYY-MM-DD"
+                          style="width:170px;"
+                        />
+                      </div>
+                      <div class="date-group" v-if="item.status === 'completed'">
+                        <label>实际完成日期</label>
+                        <el-date-picker
+                          v-model="item.actual_date"
+                          type="date"
+                          placeholder="实际完成日"
+                          value-format="YYYY-MM-DD"
+                          style="width:170px;"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="roadmap-meta">
+                    <el-tag
+                      v-if="item.status === 'completed'"
+                      type="success"
+                      size="small"
+                      effect="dark"
+                    >已完成</el-tag>
+                    <el-tag
+                      v-else-if="item.status === 'cancelled'"
+                      type="info"
+                      size="small"
+                      effect="dark"
+                    >已作废</el-tag>
+                    <el-tag
+                      v-else
+                      :type="item.is_delayed ? 'warning' : ''"
+                      size="small"
+                      effect="dark"
+                    >
+                      待完成<template v-if="item.is_delayed">（已延期）</template>
+                    </el-tag>
+                    <span v-if="item.delay_reason" class="roadmap-reason">延期原因：{{ item.delay_reason }}</span>
+                    <span v-if="item.cancel_reason" class="roadmap-reason cancel">作废原因：{{ item.cancel_reason }}</span>
+                  </div>
+                  <div class="roadmap-actions" v-if="item.status === 'pending'">
+                    <el-button size="small" type="success" plain @click="handleRoadmapComplete(item)">
+                      <el-icon><Check /></el-icon> 完成
+                    </el-button>
+                    <el-button size="small" type="warning" plain @click="handleRoadmapDelay(item)">
+                      <el-icon><Clock /></el-icon> 延期
+                    </el-button>
+                    <el-button size="small" type="danger" plain @click="handleRoadmapCancel(item)">
+                      <el-icon><Close /></el-icon> 作废
+                    </el-button>
+                  </div>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    circle
+                    :icon="Delete"
+                    class="roadmap-delete-btn"
+                    @click="removeRoadmapItem(idx)"
+                  />
+                </div>
+              </div>
+              <el-button
+                type="primary"
+                plain
+                style="width: 100%; margin-top: 4px;"
+                @click="addRoadmapItem"
+              >
+                <el-icon><Plus /></el-icon> 添加工作路径节点
+              </el-button>
+            </div>
           </el-form-item>
 
           <!-- 单位信息 -->
@@ -288,9 +395,18 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="责任人">
-            <el-input v-model="form.responsible_person" placeholder="请输入责任人" maxlength="64" style="width: 48%;" />
-          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="责任人">
+                <el-input v-model="form.responsible_person" placeholder="请输入责任人" maxlength="64" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="联系电话">
+                <el-input v-model="form.responsible_person_phone" placeholder="联系电话" maxlength="32" />
+              </el-form-item>
+            </el-col>
+          </el-row>
 
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
@@ -302,29 +418,77 @@
       </div>
     </el-drawer>
 
-    <!-- 详情弹窗 -->
-    <el-dialog
+    <!-- 详情抽屉 -->
+    <el-drawer
       v-model="detailVisible"
-      :title="detailProject?.project_name || '项目详情'"
-      width="700px"
-      :close-on-click-modal="false"
+      direction="rtl"
+      size="780px"
+      @closed="detailProject = null"
     >
-      <template v-if="detailProject">
-        <div class="detail-grid">
-          <div class="detail-item"><span class="detail-label">序号</span><span>{{ detailProject.order_no }}</span></div>
-          <div class="detail-item"><span class="detail-label">项目类型</span><span class="project-type-tag">{{ detailProject.project_type_name || detailProject.project_type_code }}</span></div>
-          <div class="detail-item"><span class="detail-label">调度状态</span><el-tag effect="dark" size="small" :color="dispatchStatusColor(detailProject.dispatch_status_code)">{{ detailProject.dispatch_status_name || detailProject.dispatch_status_code }}</el-tag></div>
-          <div class="detail-item"><span class="detail-label">建设单位</span><span>{{ detailProject.construction_unit || '-' }}</span></div>
-          <div class="detail-item"><span class="detail-label">责任单位</span><span>{{ detailProject.responsible_unit_name || detailProject.responsible_unit_code || '-' }}</span></div>
-          <div class="detail-item"><span class="detail-label">责任人</span><span>{{ detailProject.responsible_person || '-' }}</span></div>
+      <template #header>
+        <div class="drawer-title-bar">
+          <span class="drawer-title">
+            <el-icon><View /></el-icon>
+            {{ detailProject?.project_name || '项目详情' }}
+          </span>
         </div>
+      </template>
+      <template v-if="detailProject">
+        <el-descriptions :column="2" border size="small" class="detail-desc">
+          <el-descriptions-item label="序号">{{ detailProject.order_no }}</el-descriptions-item>
+          <el-descriptions-item label="项目类型">
+            <span class="project-type-tag">{{ detailProject.project_type_name || detailProject.project_type_code }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="调度状态">
+            <el-tag effect="dark" size="small" :color="dispatchStatusColor(detailProject.dispatch_status_code)" style="border:none;color:#fff;">{{ detailProject.dispatch_status_name || detailProject.dispatch_status_code }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="建设单位">{{ detailProject.construction_unit || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="责任单位">{{ detailProject.responsible_unit_name || detailProject.responsible_unit_code || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="责任人">{{ detailProject.responsible_person || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ detailProject.responsible_person_phone || '-' }}</el-descriptions-item>
+        </el-descriptions>
         <div class="detail-section" v-if="detailProject.construction_content">
           <h4>建设内容</h4>
           <p>{{ detailProject.construction_content }}</p>
         </div>
-        <div class="detail-section" v-if="detailProject.work_roadmap">
-          <h4>工作路径图</h4>
-          <p>{{ detailProject.work_roadmap }}</p>
+        <div class="detail-section" v-if="detailProject.work_roadmap_items && detailProject.work_roadmap_items.length > 0">
+          <h4>工作路径图 ({{ detailProject.work_roadmap_items.length }}条)</h4>
+          <div v-for="(wri, i) in detailProject.work_roadmap_items" :key="i" class="detail-sub-item">
+            <div class="roadmap-detail-header">
+              <span class="sub-index">{{ i + 1 }}.</span>
+              <span class="sub-text">{{ wri.content }}</span>
+              <el-tag
+                v-if="wri.status === 'completed'"
+                type="success"
+                size="small"
+                effect="dark"
+                style="margin-left:8px;"
+              >已完成</el-tag>
+              <el-tag
+                v-else-if="wri.status === 'cancelled'"
+                type="info"
+                size="small"
+                effect="dark"
+                style="margin-left:8px;"
+              >已作废</el-tag>
+              <el-tag
+                v-else
+                :type="wri.is_delayed ? 'warning' : ''"
+                size="small"
+                effect="dark"
+                style="margin-left:8px;"
+              >
+                待完成<template v-if="wri.is_delayed">（已延期）</template>
+              </el-tag>
+            </div>
+            <div class="roadmap-detail-dates" v-if="wri.planned_date || wri.actual_date">
+              <span v-if="wri.planned_date">预计：{{ wri.planned_date }}</span>
+              <span v-if="wri.actual_date" style="margin-left:12px;">实际：{{ wri.actual_date }}</span>
+              <span v-if="!wri.planned_date" style="color:#909399;">预计：暂未明确</span>
+            </div>
+            <p v-if="wri.delay_reason" style="color:#e6a23c;">延期原因：{{ wri.delay_reason }}</p>
+            <p v-if="wri.cancel_reason" style="color:#f56c6c;">作废原因：{{ wri.cancel_reason }}</p>
+          </div>
         </div>
         <!-- 工作进展 -->
         <div class="detail-section" v-if="detailProject.work_progresses && detailProject.work_progresses.length > 0">
@@ -345,7 +509,129 @@
           </div>
         </div>
       </template>
+    </el-drawer>
+
+    <!-- 导入对话框 -->
+    <el-dialog
+      v-model="importDialogVisible"
+      title="导入在建项目"
+      width="900px"
+      :close-on-click-modal="false"
+      @close="resetImport"
+    >
+      <!-- Step 1: 选择文件 -->
+      <div v-if="importStep === 'select'">
+        <el-alert
+          title="操作说明"
+          type="info"
+          :closable="false"
+          style="margin-bottom: 16px;"
+        >
+          <p style="margin: 2px 0; font-size: 13px;">
+            1. 首次使用请先<strong>下载模板</strong>，按模板格式填写数据<br />
+            2. 工作路径、工作进展、调度问题列使用<strong>分号（;）分隔</strong>多条记录，<strong>竖线（|）分隔</strong>字段<br />
+            3. 上传填写好的 Excel 文件，预览无误后执行导入
+          </p>
+        </el-alert>
+        <el-upload
+          ref="importUploadRef"
+          :auto-upload="false"
+          :on-change="handleImportFile"
+          :file-list="importFileList"
+          :limit="1"
+          accept=".xlsx"
+          drag
+        >
+          <el-icon style="font-size: 48px; color: #c0c4cc;"><UploadFilled /></el-icon>
+          <div style="margin-top: 8px; color: #606266;">
+            将 Excel 文件拖到此处，或<em style="color: #409eff;">点击上传</em>
+          </div>
+          <template #tip>
+            <div style="margin-top: 6px; font-size: 12px; color: #909399;">
+              仅支持 .xlsx 格式，请使用下载的模板填写数据
+            </div>
+          </template>
+        </el-upload>
+      </div>
+
+      <!-- Step 2: 预览 -->
+      <div v-else>
+        <div class="import-summary">
+          <el-tag type="success" effect="plain">有效：{{ importValidCount }} 行</el-tag>
+          <el-tag v-if="importErrorCount > 0" type="danger" effect="plain" style="margin-left: 8px;">错误：{{ importErrorCount }} 行</el-tag>
+          <span style="margin-left: 12px; font-size: 12px; color: #909399;">共 {{ importRows.length }} 行</span>
+        </div>
+        <el-table
+          :data="importRows"
+          stripe
+          max-height="400"
+          :row-class-name="importRowClass"
+          style="margin-top: 12px;"
+        >
+          <el-table-column type="index" label="#" width="40" />
+          <el-table-column prop="data.project_name" label="项目名称" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="data.project_type_code" label="项目类型" width="100" />
+          <el-table-column prop="data.dispatch_status_code" label="调度状态" width="90" />
+          <el-table-column label="工作路径" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.parsed.roadmap_count > 0 ? 'success' : 'info'" size="small" effect="plain">
+                {{ row.parsed.roadmap_count }} 条
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="工作进展" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.parsed.progress_count > 0 ? '' : 'info'" size="small" effect="plain">
+                {{ row.parsed.progress_count }} 条
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="调度问题" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.parsed.issue_count > 0 ? 'warning' : 'info'" size="small" effect="plain">
+                {{ row.parsed.issue_count }} 条
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="错误" min-width="180">
+            <template #default="{ row }">
+              <div v-if="row.errors && row.errors.length > 0" class="import-errors">
+                <span v-for="(e, i) in row.errors" :key="i" class="import-error-item">{{ e }}</span>
+              </div>
+              <span v-else style="color: #67c23a;">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="60" align="center">
+            <template #default="{ $index }">
+              <el-button size="small" type="danger" link @click="removeImportRow($index)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button v-if="importStep === 'preview'" @click="importStep = 'select'; importFileList = []; importRows = []; importHeaders = []">返回</el-button>
+        <el-button
+          v-if="importStep === 'preview'"
+          type="primary"
+          :loading="importing"
+          :disabled="importValidCount === 0"
+          @click="handleImportExecute"
+        >
+          执行导入（{{ importValidCount }} 行）
+        </el-button>
+      </template>
     </el-dialog>
+
+    <!-- 进展抽屉 -->
+    <ProgressTimelineDrawer
+      v-model="progressDrawerVisible"
+      :project-id="progressProjectId"
+      :project-name="progressProjectName"
+    />
   </div>
 </template>
 
@@ -354,13 +640,19 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Plus, MoreFilled, View, Delete,
-  InfoFilled, Document, OfficeBuilding, Guide
+  InfoFilled, Document, OfficeBuilding, Guide,
+  Check, Clock, Close, Edit,
+  Upload, UploadFilled, Download
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
+import ProgressTimelineDrawer from '@/components/investment/ProgressTimelineDrawer.vue'
 import {
   getDicts, getProjects, createProject, updateProject,
   getProject, deleteProject, getMaxOrderNo
 } from '@/api/construction'
+import {
+  downloadTemplate, previewImport, executeImport
+} from '@/api/construction_import'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 
 const businessAuth = useBusinessAuthStore()
@@ -406,10 +698,11 @@ const defaultForm = () => ({
   project_type_code: '',
   dispatch_status_code: 'dispatching',
   construction_content: '',
-  work_roadmap: '',
+  work_roadmap_items: [],
   construction_unit: '',
   responsible_unit_code: '',
-  responsible_person: ''
+  responsible_person: '',
+  responsible_person_phone: ''
 })
 const form = reactive(defaultForm())
 
@@ -418,9 +711,25 @@ const rules = {
   project_type_code: [{ required: true, message: '请选择项目类型', trigger: 'change' }]
 }
 
-// 详情弹窗
+// 详情抽屉
 const detailVisible = ref(false)
 const detailProject = ref(null)
+
+// 进展抽屉
+const progressDrawerVisible = ref(false)
+const progressProjectId = ref(null)
+const progressProjectName = ref('')
+
+// 导入
+const importDialogVisible = ref(false)
+const importStep = ref('select')
+const importFileList = ref([])
+const importUploadRef = ref(null)
+const importHeaders = ref([])
+const importRows = ref([])
+const importing = ref(false)
+const importValidCount = ref(0)
+const importErrorCount = ref(0)
 
 let searchTimer = null
 
@@ -512,10 +821,20 @@ async function openEdit(row) {
       form.project_type_code = d.project_type_code || ''
       form.dispatch_status_code = d.dispatch_status_code || 'dispatching'
       form.construction_content = d.construction_content || ''
-      form.work_roadmap = d.work_roadmap || ''
+      form.work_roadmap_items = (d.work_roadmap_items || []).map(item => ({
+        sort_order: item.sort_order ?? 0,
+        content: item.content || '',
+        planned_date: item.planned_date || null,
+        actual_date: item.actual_date || null,
+        status: item.status || 'pending',
+        is_delayed: item.is_delayed || false,
+        delay_reason: item.delay_reason || '',
+        cancel_reason: item.cancel_reason || ''
+      }))
       form.construction_unit = d.construction_unit || ''
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.responsible_person = d.responsible_person || ''
+      form.responsible_person_phone = d.responsible_person_phone || ''
     }
     editDrawerVisible.value = true
   } catch (err) {
@@ -590,9 +909,208 @@ async function handleDelete(row) {
   } catch { /* cancelled */ }
 }
 
-// ---- 进展（占位） ----
+// ---- 进展 ----
 function handleProgress(row) {
-  ElMessage.info(`项目「${row.project_name}」的工作进展功能即将上线`)
+  progressProjectId.value = row.id
+  progressProjectName.value = row.project_name
+  progressDrawerVisible.value = true
+}
+
+// ---- 工作路径图操作 ----
+function newRoadmapItem(order) {
+  return {
+    sort_order: order ?? 0,
+    content: '',
+    planned_date: null,
+    actual_date: null,
+    status: 'pending',
+    is_delayed: false,
+    delay_reason: '',
+    cancel_reason: ''
+  }
+}
+
+function addRoadmapItem() {
+  form.work_roadmap_items.push(newRoadmapItem(form.work_roadmap_items.length))
+}
+
+function removeRoadmapItem(idx) {
+  form.work_roadmap_items.splice(idx, 1)
+  form.work_roadmap_items.forEach((item, i) => { item.sort_order = i })
+}
+
+async function handleRoadmapComplete(item) {
+  try {
+    await ElMessageBox.confirm(
+      '是否确认这条工作已完成？',
+      '确认完成',
+      { confirmButtonText: '确认完成', cancelButtonText: '取消', type: 'success' }
+    )
+  } catch {
+    return
+  }
+  // 第二步：选择实际完成日期
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请选择实际完成日期：',
+      '实际完成日期',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputType: 'date',
+        inputValue: item.planned_date || '',
+        inputPlaceholder: '选择日期',
+        inputValidator: (val) => {
+          if (!val) return '请选择实际完成日期'
+          return true
+        }
+      }
+    )
+    item.status = 'completed'
+    item.actual_date = value || item.planned_date
+    ElMessage.success('该工作路径节点已完成')
+  } catch {
+    /* 取消日期选择 */
+  }
+}
+
+async function handleRoadmapDelay(item) {
+  // 第一步：选择新的预计完成日期
+  let newDate
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请选择新的预计完成日期：',
+      '延期 — 新预计完成日期',
+      {
+        confirmButtonText: '下一步',
+        cancelButtonText: '取消',
+        inputType: 'date',
+        inputValue: item.planned_date || '',
+        inputPlaceholder: '选择新日期',
+        inputValidator: (val) => {
+          if (!val) return '请选择新的预计完成日期'
+          return true
+        }
+      }
+    )
+    newDate = value
+  } catch {
+    return
+  }
+  // 第二步：输入延期原因
+  try {
+    const { value: reason } = await ElMessageBox.prompt(
+      '请输入延期原因：',
+      '延期 — 延期原因',
+      {
+        confirmButtonText: '确认延期',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '请在此输入延期原因...',
+        inputValidator: (val) => {
+          if (!val || !val.trim()) return '请输入延期原因'
+          return true
+        }
+      }
+    )
+    item.is_delayed = true
+    item.planned_date = newDate
+    item.delay_reason = reason || ''
+    ElMessage.success('该工作路径节点已延期')
+  } catch {
+    /* 取消原因输入 */
+  }
+}
+
+async function handleRoadmapCancel(item) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '确认作废后，该工作路径节点将不再有效。\n请输入作废原因：',
+      '确认作废',
+      {
+        confirmButtonText: '确认作废',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '请在此输入作废原因...',
+        inputValidator: (val) => {
+          if (!val || !val.trim()) return '请输入作废原因'
+          return true
+        }
+      }
+    )
+    item.status = 'cancelled'
+    item.cancel_reason = value || ''
+    ElMessage.success('已作废该工作路径节点')
+  } catch {
+    /* 取消 */
+  }
+}
+
+// ---- 导入 ----
+function handleImportCmd(cmd) {
+  if (cmd === 'download-template') {
+    downloadTemplate().catch(err => ElMessage.error(err.message))
+  } else if (cmd === 'import-data') {
+    resetImport()
+    importDialogVisible.value = true
+  }
+}
+
+function resetImport() {
+  importStep.value = 'select'
+  importFileList.value = []
+  importHeaders.value = []
+  importRows.value = []
+  importValidCount.value = 0
+  importErrorCount.value = 0
+}
+
+async function handleImportFile(file) {
+  importFileList.value = [file]
+  try {
+    const res = await previewImport(file.raw)
+    importHeaders.value = res.data.headers
+    importRows.value = res.data.rows
+    importValidCount.value = res.data.valid_count
+    importErrorCount.value = res.data.error_count
+    importStep.value = 'preview'
+  } catch (err) {
+    ElMessage.error(err.message || '预览失败')
+    importFileList.value = []
+  }
+}
+
+function importRowClass({ row }) {
+  return !row._valid ? 'import-error-row' : ''
+}
+
+function removeImportRow(idx) {
+  importRows.value.splice(idx, 1)
+  importValidCount.value = importRows.value.filter(r => r._valid).length
+  importErrorCount.value = importRows.value.length - importValidCount.value
+}
+
+async function handleImportExecute() {
+  const validRows = importRows.value.filter(r => r._valid)
+  if (validRows.length === 0) {
+    ElMessage.warning('没有有效数据可导入')
+    return
+  }
+  importing.value = true
+  try {
+    const res = await executeImport(validRows)
+    if (res.code === 0) {
+      ElMessage.success(`成功导入 ${res.data?.count || validRows.length} 个项目`)
+      importDialogVisible.value = false
+      fetchData()
+    } else {
+      ElMessage.error(res.message || '导入失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '导入失败')
+  } finally {
+    importing.value = false
+  }
 }
 
 // ---- 操作下拉 ----
@@ -657,11 +1175,11 @@ async function handleViewDetail(row) {
 
 /* 抽屉 */
 .drawer-title-bar {
-  background: linear-gradient(135deg, #3a7abd 0%, #6ba3d6 100%);
-  margin: -20px -20px 0 -20px;
-  padding: 10px 20px;
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  margin: 0 -20px 0 -20px;
+  padding: 20px 20px 20px 40px;
 }
-.drawer-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+.drawer-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 .drawer-form { padding: 0 4px; }
 .drawer-form :deep(.el-form-item) { margin-bottom: 16px; }
 .drawer-form :deep(.el-input-number .el-input__inner) { text-align: left; }
@@ -677,6 +1195,9 @@ async function handleViewDetail(row) {
 .section-title { font-size: 14px; font-weight: 600; color: #303133; }
 
 .drawer-footer { display: flex; justify-content: center; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #ebeef5; }
+
+/* 详情抽屉 */
+.detail-desc :deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
 
 /* 详情弹窗 */
 .detail-grid {
@@ -728,12 +1249,113 @@ async function handleViewDetail(row) {
   margin: 4px 0 0;
 }
 
+/* 工作路径图子表 */
+.roadmap-list { display: flex; flex-direction: column; gap: 8px; }
+.roadmap-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafbfc;
+  transition: all 0.2s;
+}
+.roadmap-card:hover { border-color: #b8d4ec; background: #f5f8fc; }
+.roadmap-card.roadmap-completed { background: #f0f9eb; border-color: #c2e7b0; }
+.roadmap-card.roadmap-cancelled { background: #fef0f0; border-color: #fbc4c4; }
+.roadmap-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.roadmap-main { flex: 1; min-width: 0; }
+.roadmap-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.roadmap-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  background: #1a3a5c;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.roadmap-dates {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.date-group { display: flex; align-items: center; gap: 6px; }
+.date-group label {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+}
+.roadmap-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+  flex-shrink: 0;
+}
+.roadmap-reason {
+  font-size: 12px;
+  color: #e6a23c;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roadmap-reason.cancel { color: #f56c6c; }
+.roadmap-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.roadmap-delete-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* 详情弹窗 — 工作路径图 */
+.roadmap-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sub-index {
+  font-weight: 600;
+  color: #1a3a5c;
+  font-size: 13px;
+}
+.sub-text { flex: 1; font-size: 13px; color: #303133; }
+.roadmap-detail-dates {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+
 /* 表格行 hover */
 :deep(.el-table__body tr:hover > td) { background-color: #fef7e8 !important; }
 :deep(.el-table td.el-table__cell) { padding: 6px 2px; }
 </style>
 
-<!-- 非 scoped 样式：Element Plus teleported popper -->
+<!-- 非 scoped 样式 -->
 <style>
 .content-tooltip { max-width: 480px !important; white-space: pre-wrap !important; }
+.el-drawer__header { margin-bottom: 0 !important; padding: 0 !important; }
+.el-drawer__body { padding: 12px 20px 20px !important; }
+
+/* 导入预览 */
+.import-summary { display: flex; align-items: center; margin-bottom: 4px; }
+.import-error-row { background-color: #fef0f0 !important; }
+.import-errors { display: flex; flex-direction: column; gap: 2px; }
+.import-error-item { font-size: 12px; color: #f56c6c; }
 </style>

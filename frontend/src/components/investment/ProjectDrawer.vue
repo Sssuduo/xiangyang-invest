@@ -1,5 +1,5 @@
 <template>
-  <el-drawer v-model="visible" direction="rtl" size="560px" :before-close="handleClose">
+  <el-drawer v-model="visible" direction="rtl" size="780px" :before-close="handleClose">
     <template #header>
       <div class="drawer-title-bar">
         <span class="drawer-title">

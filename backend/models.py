@@ -409,6 +409,7 @@ class InvestmentProject(db.Model):
     project_type_code = db.Column(db.String(32), nullable=False)
 
     person_in_charge = db.Column(db.String(64), default='')
+    person_in_charge_phone = db.Column(db.String(32), default='')
     project_doc = db.Column(db.Text, default='')
     investment_plan = db.Column(db.Text, default='')
     conclusion = db.Column(db.Text, default='')
@@ -437,6 +438,7 @@ class InvestmentProject(db.Model):
             'responsible_unit_code': self.responsible_unit_code,
             'project_type_code': self.project_type_code,
             'person_in_charge': self.person_in_charge or '',
+            'person_in_charge_phone': self.person_in_charge_phone or '',
             'project_doc': self.project_doc or '',
             'investment_plan': self.investment_plan or '',
             'conclusion': self.conclusion or '',
@@ -480,6 +482,19 @@ class DemandTypeDict(db.Model):
                 result[d.code] = d.name
         return result
 
+    @staticmethod
+    def resolve_display_names(codes_str, separator='、'):
+        """将逗号分隔的编码字符串解析为显示名称（用于多选值）"""
+        if not codes_str:
+            return ''
+        name_map = DemandTypeDict.build_display_name_map()
+        names = []
+        for code in codes_str.split(','):
+            code = code.strip()
+            if code:
+                names.append(name_map.get(code, code))
+        return separator.join(names) if names else ''
+
 
 class EnterpriseDemand(db.Model):
     """企业诉求子表"""
@@ -487,7 +502,7 @@ class EnterpriseDemand(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
-    demand_type_code = db.Column(db.String(32), default='')
+    demand_type_code = db.Column(db.String(255), default='')
     demand_content = db.Column(db.Text, nullable=False)
     resolution = db.Column(db.Text, default='')
     unit_code = db.Column(db.String(32), default='')
@@ -714,6 +729,54 @@ class ImportFieldConfigDemand(db.Model):
         }
 
 
+class ImportFieldConfigConstruction(db.Model):
+    """在建项目导入字段配置"""
+    __tablename__ = 'import_field_config_construction'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_required = db.Column(db.Boolean, default=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_enabled': self.is_enabled,
+            'is_required': self.is_required,
+            'sort_order': self.sort_order
+        }
+
+
+class ImportFieldConfigWorkProgress(db.Model):
+    """工作进展导入字段配置"""
+    __tablename__ = 'import_field_config_work_progress'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    field_key = db.Column(db.String(64), unique=True, nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_required = db.Column(db.Boolean, default=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_enabled': self.is_enabled,
+            'is_required': self.is_required,
+            'sort_order': self.sort_order
+        }
+
+
 # ============================================================
 # 在建项目库
 # ============================================================
@@ -798,10 +861,10 @@ class ConstructionProject(db.Model):
     project_type_code = db.Column(db.String(32), nullable=False)
     dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
     construction_content = db.Column(db.Text, default='')
-    work_roadmap = db.Column(db.Text, default='')
     construction_unit = db.Column(db.String(255), default='')
     responsible_unit_code = db.Column(db.String(32), default='')
     responsible_person = db.Column(db.String(64), default='')
+    responsible_person_phone = db.Column(db.String(32), default='')
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -810,6 +873,8 @@ class ConstructionProject(db.Model):
                                        order_by='WorkProgress.start_date.desc()')
     issues = db.relationship('ProjectIssue', backref='project', lazy='dynamic',
                               order_by='ProjectIssue.created_at.desc()')
+    work_roadmap_items = db.relationship('WorkRoadmapItem', backref='project', lazy='dynamic',
+                                          order_by='WorkRoadmapItem.sort_order.asc()')
 
     def to_dict(self):
         return {
@@ -819,10 +884,11 @@ class ConstructionProject(db.Model):
             'project_type_code': self.project_type_code,
             'dispatch_status_code': self.dispatch_status_code,
             'construction_content': self.construction_content or '',
-            'work_roadmap': self.work_roadmap or '',
+            'work_roadmap_items': [wri.to_dict() for wri in self.work_roadmap_items.all()],
             'construction_unit': self.construction_unit or '',
             'responsible_unit_code': self.responsible_unit_code or '',
             'responsible_person': self.responsible_person or '',
+            'responsible_person_phone': self.responsible_person_phone or '',
             'is_deleted': self.is_deleted,
             'work_progresses': [wp.to_dict() for wp in self.work_progresses.all()],
             'issues': [iss.to_dict() for iss in self.issues.all()],
@@ -840,16 +906,24 @@ class WorkProgress(db.Model):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     content = db.Column(db.Text, nullable=False)
+    files = db.Column(db.Text, default='[]')  # JSON array of file URLs
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
+        import json
+        _files = []
+        try:
+            _files = json.loads(self.files or '[]')
+        except (json.JSONDecodeError, TypeError):
+            pass
         return {
             'id': self.id,
             'project_id': self.project_id,
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'content': self.content,
+            'files': _files,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -878,6 +952,40 @@ class ProjectIssue(db.Model):
             'resolution_status_code': self.resolution_status_code,
             'resolution_note': self.resolution_note or '',
             'main_department_code': self.main_department_code or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class WorkRoadmapItem(db.Model):
+    """工作路径图子项"""
+    __tablename__ = 'work_roadmap_items'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('construction_projects.id'), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    content = db.Column(db.Text, nullable=False)
+    planned_date = db.Column(db.Date, nullable=True)
+    actual_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default='pending')
+    is_delayed = db.Column(db.Boolean, nullable=False, default=False)
+    delay_reason = db.Column(db.Text, default='')
+    cancel_reason = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'sort_order': self.sort_order,
+            'content': self.content,
+            'planned_date': self.planned_date.isoformat() if self.planned_date else None,
+            'actual_date': self.actual_date.isoformat() if self.actual_date else None,
+            'status': self.status,
+            'is_delayed': self.is_delayed,
+            'delay_reason': self.delay_reason or '',
+            'cancel_reason': self.cancel_reason or '',
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

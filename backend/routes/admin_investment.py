@@ -421,3 +421,49 @@ def delete_demand(project_id, demand_id):
     db.session.delete(demand)
     db.session.commit()
     return jsonify({'code': 0, 'message': '诉求已删除'})
+
+
+# ============================================================
+# 数据看板 — 招商项目统计
+# ============================================================
+
+@admin_investment_bp.route('/investment-stats', methods=['GET'])
+@dual_login_required
+def investment_stats():
+    """招商项目统计数据（按项目类型分布）"""
+    from sqlalchemy import func
+
+    # 按 project_type_code 分组统计项目数量
+    rows = db.session.query(
+        InvestmentProject.project_type_code,
+        func.count(InvestmentProject.id)
+    ).filter_by(is_deleted=False).group_by(
+        InvestmentProject.project_type_code
+    ).all()
+
+    # 解析项目类型名称
+    type_dicts = {
+        d.code: d.name
+        for d in ProjectTypeDict.query.all()
+    }
+
+    by_project_type = []
+    for code, count in rows:
+        by_project_type.append({
+            'code': code,
+            'name': type_dicts.get(code, code),
+            'count': count,
+        })
+
+    # 按数量降序排列
+    by_project_type.sort(key=lambda x: x['count'], reverse=True)
+
+    total_projects = sum(item['count'] for item in by_project_type)
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'total_projects': total_projects,
+            'by_project_type': by_project_type,
+        }
+    })

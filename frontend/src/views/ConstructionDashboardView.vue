@@ -216,7 +216,7 @@ function renderTypeChart() {
         left: 'center',
         top: 0
       },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
       grid: { left: 12, right: 24, top: 40, bottom: 40, containLabel: true },
       xAxis: {
         type: 'category',
@@ -260,6 +260,7 @@ function renderTypeChart() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        confine: true,
         formatter: (params) => {
           const idx = params[0]?.dataIndex ?? 0
           const item = data[idx]
@@ -270,7 +271,7 @@ function renderTypeChart() {
           html += `</div>`
           const projects = projectLists[idx]
           if (projects && projects.length > 0) {
-            html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;max-height:180px;overflow-y:auto;font-size:12px;color:#666;">'
+            html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;font-size:12px;color:#666;">'
             html += '<strong>关联项目：</strong><br/>'
             projects.forEach(p => {
               html += `· ${p.name}<br/>`
@@ -325,6 +326,7 @@ function renderDispatchPie() {
   dispatchPieChart.setOption({
     tooltip: {
       trigger: 'item',
+      confine: true,
       formatter: (params) => {
         return `<strong>${params.name}</strong><br/>项目数量：${params.value}（${params.percent}%）`
       }
@@ -406,7 +408,7 @@ function renderUnitChart() {
         left: 'center',
         top: 0
       },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true },
       grid: { left: 120, right: 40, top: 36, bottom: 20 },
       xAxis: { type: 'value', minInterval: 1, name: '项目数量' },
       yAxis: { type: 'category', data: names, axisLabel: { fontSize: 11 }, inverse: false },
@@ -444,6 +446,7 @@ function renderUnitChart() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        confine: true,
         formatter: (params) => {
           const idx = params[0]?.dataIndex ?? 0
           const origIdx = data.length - 1 - idx

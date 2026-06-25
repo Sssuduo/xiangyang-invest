@@ -69,6 +69,49 @@
 
       <!-- 图表区域 -->
       <div class="charts-grid">
+        <!-- 招商项目按类型分布（饼状图） -->
+        <div class="chart-panel">
+          <div class="chart-panel-header">
+            <h3>招商项目类型分布</h3>
+            <div class="chart-panel-actions">
+              <el-select
+                v-model="pieFollowStatus"
+                placeholder="跟进状态"
+                clearable
+                multiple
+                collapse-tags
+                size="small"
+                style="width: 150px;"
+                @change="fetchInvestmentStats"
+              >
+                <el-option
+                  v-for="s in followStatuses"
+                  :key="s.code"
+                  :label="s.name"
+                  :value="s.code"
+                />
+              </el-select>
+              <el-select
+                v-model="pieMeetingStatus"
+                placeholder="上会状态"
+                clearable
+                size="small"
+                style="width: 130px;"
+                @change="fetchInvestmentStats"
+              >
+                <el-option label="全部上会" value="" />
+                <el-option
+                  v-for="s in meetingStatuses"
+                  :key="s.code"
+                  :label="s.name"
+                  :value="s.code"
+                />
+              </el-select>
+            </div>
+          </div>
+          <div ref="pieChartRef" class="chart-box"></div>
+        </div>
+
         <!-- 诉求类型分布（堆叠柱状图，支持一级/二级下钻 + 状态筛选 + 项目类型筛选） -->
         <div class="chart-panel">
           <div class="chart-panel-header">
@@ -140,7 +183,7 @@ import * as echarts from 'echarts'
 import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
-import { getDemandStats } from '@/api/dashboard'
+import { getDemandStats, getInvestmentStats } from '@/api/dashboard'
 import { getDicts } from '@/api/investment'
 
 const loading = ref(false)
@@ -155,12 +198,26 @@ const stats = reactive({
 })
 
 // 图表 refs
+const pieChartRef = ref(null)
 const typeChartRef = ref(null)
 const unitChartRef = ref(null)
 
 // 图表实例
+let pieChart = null
 let typeChart = null
 let unitChart = null
+
+// 招商项目统计数据
+const investmentStats = reactive({
+  total_projects: 0,
+  by_project_type: []
+})
+
+// 饼状图筛选
+const pieFollowStatus = ref([])
+const pieMeetingStatus = ref('')
+const followStatuses = ref([])
+const meetingStatuses = ref([])
 
 // 状态筛选（下拉框，''=全部）
 const filterStatus = ref('')
@@ -178,6 +235,110 @@ let resizeObserver = null
 // 颜色
 const statusColors = { pending: '#f56c6c', processing: '#e6a23c', resolved: '#67c23a' }
 const statusNames = { pending: '待处理', processing: '处理中', resolved: '已解决' }
+
+// ========== 渲染招商项目类型分布（饼状图）==========
+
+function renderPieChart() {
+  if (!pieChart) return
+
+  const data = investmentStats.by_project_type
+  if (!data || data.length === 0) {
+    pieChart.setOption({
+      title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 14 } }
+    })
+    return
+  }
+
+  // 颜色方案：与项目类型标签风格一致
+  const colors = [
+    '#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399',
+    '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
+    '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'
+  ]
+
+  const total = investmentStats.total_projects
+
+  pieChart.setOption({
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      extraCssText: 'max-width:420px;',
+      formatter: (params) => {
+        const pct = params.percent != null ? params.percent.toFixed(1) : '0.0'
+        const item = data[params.dataIndex]
+        const projects = item?.projects || []
+        let html = `<strong>${params.name}</strong><br/>
+          项目数量：${params.value} 个 &nbsp; 占比：${pct}%`
+        if (projects.length > 0) {
+          html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:12px;color:#606266;">'
+          html += '<strong>关联项目：</strong><br/>'
+          projects.forEach(p => {
+            const raw = parseFloat(p.invest_amount) || 0
+            let amt = ''
+            if (raw >= 10000) {
+              amt = (raw / 10000).toFixed(2) + ' 亿元'
+            } else if (raw > 0) {
+              amt = raw.toFixed(2) + ' 万元'
+            } else {
+              amt = '暂未明确'
+            }
+            html += `<div style="display:flex;justify-content:space-between;padding:1px 0;"><span>· ${p.name}</span><span style="text-align:right;min-width:100px;flex-shrink:0;color:#909399;">${amt}</span></div>`
+          })
+          html += '</div>'
+        }
+        return html
+      }
+    },
+    legend: {
+      type: 'scroll',
+      orient: 'vertical',
+      right: 10,
+      top: 'center',
+      itemWidth: 12,
+      itemHeight: 12,
+      textStyle: { fontSize: 12 },
+      formatter: (name) => {
+        const item = data.find(d => d.name === name)
+        const count = item ? item.count : 0
+        const pct = total > 0 ? (count / total * 100).toFixed(1) : '0'
+        return `${name}  ${count}个 (${pct}%)`
+      }
+    },
+    color: colors,
+    series: [{
+      type: 'pie',
+      radius: ['48%', '75%'],
+      center: ['40%', '50%'],
+      avoidLabelOverlap: false,
+      itemStyle: {
+        borderRadius: 3,
+        borderColor: '#fff',
+        borderWidth: 2
+      },
+      label: {
+        show: true,
+        position: 'inside',
+        formatter: '{c}',
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: '#fff'
+      },
+      emphasis: {
+        label: {
+          show: true,
+          fontSize: 18,
+          fontWeight: 'bold'
+        },
+        itemStyle: {
+          shadowBlur: 10,
+          shadowOffsetX: 0,
+          shadowColor: 'rgba(0, 0, 0, 0.3)'
+        }
+      },
+      data: data.map(d => ({ name: d.name, value: d.count }))
+    }]
+  }, true)
+}
 
 // ========== 渲染诉求类型分布（单系列柱状图 + 按类型着色 + 支持下钻）==========
 
@@ -459,6 +620,24 @@ function onProjectTypeChange() {
   fetchStats()
 }
 
+// 获取招商项目统计数据
+async function fetchInvestmentStats() {
+  try {
+    const params = {}
+    if (pieFollowStatus.value && pieFollowStatus.value.length > 0) {
+      params.follow_status = pieFollowStatus.value.join(',')
+    }
+    if (pieMeetingStatus.value) params.meeting_status = pieMeetingStatus.value
+    const res = await getInvestmentStats(params)
+    if (res?.code === 0) {
+      investmentStats.total_projects = res.data.total_projects || 0
+      investmentStats.by_project_type = res.data.by_project_type || []
+      await nextTick()
+      renderPieChart()
+    }
+  } catch { /* ignore */ }
+}
+
 // 监听下钻状态变化
 watch(drilldownParent, () => {
   renderTypeChart()
@@ -469,6 +648,9 @@ watch(drilldownUnit, () => {
 
 // 图表初始化
 function initCharts() {
+  if (pieChartRef.value && !pieChart) {
+    pieChart = echarts.init(pieChartRef.value)
+  }
   if (typeChartRef.value && !typeChart) {
     typeChart = echarts.init(typeChartRef.value)
   }
@@ -483,6 +665,7 @@ function setupResizeObserver() {
   if (!container) return
 
   resizeObserver = new ResizeObserver(() => {
+    pieChart?.resize()
     typeChart?.resize()
     unitChart?.resize()
   })
@@ -491,18 +674,22 @@ function setupResizeObserver() {
 
 // 销毁图表
 function disposeCharts() {
+  pieChart?.dispose()
   typeChart?.dispose()
   unitChart?.dispose()
+  pieChart = null
   typeChart = null
   unitChart = null
   resizeObserver?.disconnect()
 }
 
-async function fetchProjectTypes() {
+async function fetchDicts() {
   try {
     const res = await getDicts()
     if (res?.code === 0) {
       projectTypes.value = res.data?.project_types || []
+      followStatuses.value = res.data?.follow_statuses || []
+      meetingStatuses.value = res.data?.meeting_statuses || []
     }
   } catch { /* ignore */ }
 }
@@ -510,8 +697,9 @@ async function fetchProjectTypes() {
 onMounted(() => {
   initCharts()
   setupResizeObserver()
-  fetchProjectTypes()
+  fetchDicts()
   fetchStats()
+  fetchInvestmentStats()
 })
 
 onUnmounted(() => {
@@ -562,6 +750,7 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .stat-cards { grid-template-columns: repeat(2, 1fr); }
   .charts-grid { grid-template-columns: 1fr !important; }
+  .chart-panel-full { grid-column: auto; }
 }
 
 .stat-card {
@@ -616,7 +805,7 @@ onUnmounted(() => {
 /* 图表网格 */
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
 
@@ -626,6 +815,10 @@ onUnmounted(() => {
   padding: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   min-height: 380px;
+}
+
+.chart-panel-full {
+  grid-column: 1 / -1;
 }
 
 .chart-panel-header {

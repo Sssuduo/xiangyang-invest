@@ -1,0 +1,482 @@
+import io
+from datetime import date, datetime, timedelta
+from flask import request, jsonify, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.utils import get_column_letter
+from models import ExportTemplate, ExportFieldConfig, ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem
+from models import ConstructionProjectTypeDict, DispatchStatusDict, OrganizationDict, IssueTypeDict, ResolutionStatusDict
+from extensions import db
+from routes import admin_construction_export_bp
+from routes.business_auth import dual_login_required
+
+
+# ============================================================
+# 模板 CRUD
+# ============================================================
+
+@admin_construction_export_bp.route('/construction-export/templates', methods=['GET'])
+@dual_login_required
+def get_templates():
+    """列出所有导出模板"""
+    entity_type = request.args.get('entity_type', 'construction').strip()
+    templates = ExportTemplate.query.filter_by(entity_type=entity_type)\
+        .order_by(ExportTemplate.id.asc()).all()
+    return jsonify({'code': 0, 'data': [t.to_dict() for t in templates]})
+
+
+@admin_construction_export_bp.route('/construction-export/templates', methods=['POST'])
+@dual_login_required
+def create_template():
+    """新建导出模板"""
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'code': 1, 'message': '模板名称不能为空'}), 400
+    entity_type = data.get('entity_type', 'construction')
+    template = ExportTemplate(name=data['name'].strip(), entity_type=entity_type)
+    db.session.add(template)
+    db.session.flush()
+
+    # 从已有模板（排除自身）复制字段配置
+    default_template = ExportTemplate.query.filter_by(entity_type=entity_type)\
+        .filter(ExportTemplate.id != template.id)\
+        .order_by(ExportTemplate.id.asc()).first()
+    if default_template:
+        default_fields = ExportFieldConfig.query.filter_by(template_id=default_template.id)\
+            .order_by(ExportFieldConfig.sort_order).all()
+        for f in default_fields:
+            db.session.add(ExportFieldConfig(
+                template_id=template.id,
+                field_key=f.field_key,
+                field_label=f.field_label,
+                is_visible=True,
+                column_width=f.column_width,
+                sort_order=f.sort_order
+            ))
+
+    db.session.commit()
+    return jsonify({'code': 0, 'data': template.to_dict(), 'message': '模板已创建'})
+
+
+@admin_construction_export_bp.route('/construction-export/templates/<int:template_id>', methods=['PUT'])
+@dual_login_required
+def update_template(template_id):
+    """重命名模板"""
+    tpl = ExportTemplate.query.get(template_id)
+    if not tpl:
+        return jsonify({'code': 1, 'message': '模板不存在'}), 404
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'code': 1, 'message': '模板名称不能为空'}), 400
+    tpl.name = data['name'].strip()
+    db.session.commit()
+    return jsonify({'code': 0, 'data': tpl.to_dict(), 'message': '模板已更新'})
+
+
+@admin_construction_export_bp.route('/construction-export/templates/<int:template_id>', methods=['DELETE'])
+@dual_login_required
+def delete_template(template_id):
+    """删除模板及其字段配置"""
+    tpl = ExportTemplate.query.get(template_id)
+    if not tpl:
+        return jsonify({'code': 1, 'message': '模板不存在'}), 404
+    # 至少保留一个模板
+    remaining = ExportTemplate.query.filter_by(entity_type=tpl.entity_type).count()
+    if remaining <= 1:
+        return jsonify({'code': 1, 'message': '至少保留一个导出模板'}), 400
+    ExportFieldConfig.query.filter_by(template_id=template_id).delete()
+    db.session.delete(tpl)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '模板已删除'})
+
+
+# ============================================================
+# 导出字段配置 CRUD
+# ============================================================
+
+def _get_default_template_id():
+    """获取默认模板ID（entity_type='construction' 的第一个模板）"""
+    tpl = ExportTemplate.query.filter_by(entity_type='construction').order_by(ExportTemplate.id).first()
+    return tpl.id if tpl else 1
+
+
+@admin_construction_export_bp.route('/construction-export/fields', methods=['GET'])
+@dual_login_required
+def get_export_fields():
+    """获取指定模板的导出字段配置"""
+    template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
+    fields = ExportFieldConfig.query.filter_by(template_id=template_id)\
+        .order_by(ExportFieldConfig.sort_order).all()
+    return jsonify({'code': 0, 'data': [f.to_dict() for f in fields]})
+
+
+@admin_construction_export_bp.route('/construction-export/fields', methods=['PUT'])
+@dual_login_required
+def update_export_fields():
+    """批量更新导出字段配置"""
+    data = request.get_json()
+    if not data or not isinstance(data, list):
+        return jsonify({'code': 1, 'message': '请求数据格式错误'}), 400
+
+    template_id = None
+    saved_ids = set()
+    for item in data:
+        field_id = item.get('id')
+        if field_id and field_id > 0:
+            saved_ids.add(field_id)
+            field = ExportFieldConfig.query.get(field_id)
+            if field:
+                template_id = field.template_id
+        elif item.get('_new') and item.get('template_id'):
+            # 新建字段（自定义列）
+            template_id = int(item['template_id'])
+            field = ExportFieldConfig(
+                template_id=template_id,
+                field_key=item.get('field_key', ''),
+                field_label=item.get('field_label', ''),
+                is_visible=item.get('is_visible', True),
+                is_custom=item.get('is_custom', True),
+                column_width=item.get('column_width', 120),
+                sort_order=item.get('sort_order', 0)
+            )
+            db.session.add(field)
+            continue
+
+        if field:
+            if 'field_label' in item:
+                field.field_label = item['field_label']
+            if 'is_visible' in item:
+                field.is_visible = bool(item['is_visible'])
+            if 'column_width' in item:
+                field.column_width = int(item['column_width'])
+            if 'sort_order' in item:
+                field.sort_order = int(item['sort_order'])
+
+    # 删除在前端被移除的自定义字段
+    if template_id:
+        existing_ids = {f.id for f in ExportFieldConfig.query.filter_by(template_id=template_id).all()}
+        to_delete = existing_ids - saved_ids
+        if to_delete:
+            ExportFieldConfig.query.filter(ExportFieldConfig.id.in_(to_delete)).delete(synchronize_session=False)
+
+    db.session.commit()
+    fields = ExportFieldConfig.query.filter_by(template_id=template_id)\
+        .order_by(ExportFieldConfig.sort_order).all() if template_id else []
+    return jsonify({'code': 0, 'data': [f.to_dict() for f in fields], 'message': '配置已保存'})
+
+
+# ============================================================
+# 导出预览 & 下载 — 辅助函数
+# ============================================================
+
+def _aggregate_work_progresses(project, progress_range=''):
+    """聚合项目工作进展，按开始日期倒序，序号分段"""
+    q = WorkProgress.query.filter_by(project_id=project.id)
+    if progress_range == 'last1m':
+        since = datetime.utcnow() - timedelta(days=30)
+        q = q.filter(WorkProgress.start_date >= since)
+    elif progress_range == 'last3m':
+        since = datetime.utcnow() - timedelta(days=90)
+        q = q.filter(WorkProgress.start_date >= since)
+
+    q = q.order_by(WorkProgress.start_date.desc())
+    if progress_range == 'last5':
+        progresses = q.limit(5).all()
+    else:
+        progresses = q.all()
+
+    if not progresses:
+        return ''
+
+    lines = []
+    for i, p in enumerate(progresses, 1):
+        start = p.start_date.isoformat() if p.start_date else ''
+        end = p.end_date.isoformat() if p.end_date else ''
+        content = p.content or ''
+        lines.append(f'{i}、{start}~{end}: {content}')
+    return '\n'.join(lines)
+
+
+def _aggregate_issues(project):
+    """聚合调度问题，按创建时间倒序，序号分段"""
+    issues = ProjectIssue.query.filter_by(project_id=project.id)\
+        .order_by(ProjectIssue.created_at.desc()).all()
+    if not issues:
+        return ''
+
+    issue_type_map = {d.code: d.name for d in IssueTypeDict.query.all()}
+    resolution_map = {d.code: d.name for d in ResolutionStatusDict.query.all()}
+    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+
+    lines = []
+    for i, iss in enumerate(issues, 1):
+        type_name = issue_type_map.get(iss.issue_type_code, iss.issue_type_code or '')
+        status_name = resolution_map.get(iss.resolution_status_code, iss.resolution_status_code)
+        desc = iss.issue_description or ''
+        resolution = f' | 措施: {iss.resolution_note}' if iss.resolution_note else ''
+        dept = f' | 责任部门: {org_map.get(iss.main_department_code, iss.main_department_code or "")}' if iss.main_department_code else ''
+        lines.append(f'{i}、[{type_name}][{status_name}] {desc}{dept}{resolution}')
+    return '\n'.join(lines)
+
+
+def _aggregate_work_roadmap(project):
+    """聚合工作路径图，按 sort_order 升序，序号分段"""
+    items = WorkRoadmapItem.query.filter_by(project_id=project.id)\
+        .order_by(WorkRoadmapItem.sort_order.asc()).all()
+    if not items:
+        return ''
+
+    status_labels = {'pending': '待完成', 'completed': '已完成', 'cancelled': '已作废'}
+
+    lines = []
+    for i, item in enumerate(items, 1):
+        status = status_labels.get(item.status, item.status)
+        planned = item.planned_date.isoformat() if item.planned_date else '暂未明确'
+        actual = f' | 实际: {item.actual_date.isoformat()}' if item.actual_date else ''
+        delay = f' [延期: {item.delay_reason}]' if item.is_delayed and item.delay_reason else ''
+        cancel = f' [作废: {item.cancel_reason}]' if item.status == 'cancelled' and item.cancel_reason else ''
+        lines.append(f'{i}、{item.content} [{status}] 预计:{planned}{actual}{delay}{cancel}')
+    return '\n'.join(lines)
+
+
+def _resolve_project_row(p, progress_range=''):
+    """将 ConstructionProject 解析为展示用 dict（含字典名称 + 聚合字段）"""
+    type_map = {d.code: d.name for d in ConstructionProjectTypeDict.query.all()}
+    dispatch_map = {d.code: d.name for d in DispatchStatusDict.query.all()}
+    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+
+    return {
+        'order_no': p.order_no,
+        'project_name': p.project_name or '',
+        'project_type_code': type_map.get(p.project_type_code, p.project_type_code),
+        'dispatch_status_code': dispatch_map.get(p.dispatch_status_code, p.dispatch_status_code),
+        'construction_content': p.construction_content or '',
+        'construction_unit': p.construction_unit or '',
+        'responsible_unit_code': org_map.get(p.responsible_unit_code, p.responsible_unit_code or ''),
+        'responsible_person': p.responsible_person or '',
+        'responsible_person_phone': p.responsible_person_phone or '',
+        # 聚合字段
+        'work_progresses': _aggregate_work_progresses(p, progress_range),
+        'issues': _aggregate_issues(p),
+        'work_roadmap': _aggregate_work_roadmap(p),
+    }
+
+
+def _fmt_cell(val):
+    """格式化单元格值"""
+    if isinstance(val, date):
+        return val.isoformat()
+    return val
+
+
+# ============================================================
+# 导出预览
+# ============================================================
+
+@admin_construction_export_bp.route('/construction-export/preview', methods=['POST'])
+@dual_login_required
+def export_preview():
+    """导出预览：返回表头+前3条数据"""
+    data = request.get_json() or {}
+    project_ids = data.get('project_ids', [])
+    template_id = data.get('template_id', 0) or _get_default_template_id()
+
+    fields = ExportFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
+        .order_by(ExportFieldConfig.sort_order).all()
+
+    headers = [{'field_key': f.field_key, 'field_label': f.field_label, 'column_width': f.column_width}
+               for f in fields]
+
+    q = ConstructionProject.query.filter_by(is_deleted=False)
+    if project_ids:
+        q = q.filter(ConstructionProject.id.in_(project_ids))
+    projects = q.order_by(ConstructionProject.order_no.asc()).limit(3).all()
+
+    rows = [_resolve_project_row(p) for p in projects]
+
+    return jsonify({'code': 0, 'data': {'headers': headers, 'rows': rows, 'total': q.count()}})
+
+
+# ============================================================
+# 导出下载
+# ============================================================
+
+@admin_construction_export_bp.route('/construction-export/download', methods=['GET'])
+@dual_login_required
+def export_download():
+    """生成并下载 Excel 文件"""
+    ids_str = request.args.get('project_ids', '')
+    project_ids = [int(x) for x in ids_str.split(',') if x.strip().isdigit()] if ids_str else []
+
+    template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
+    progress_range = request.args.get('progress_range', '').strip()
+    progress_mode = request.args.get('progress_mode', 'aggregate').strip()  # 'aggregate' | 'progress'
+
+    template = ExportTemplate.query.get(template_id)
+    template_name = template.name if template else '在建项目库'
+
+    fields = ExportFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
+        .order_by(ExportFieldConfig.sort_order).all()
+    if not fields:
+        return jsonify({'code': 1, 'message': '未配置导出字段'}), 400
+
+    q = ConstructionProject.query.filter_by(is_deleted=False)
+    if project_ids:
+        q = q.filter(ConstructionProject.id.in_(project_ids))
+    projects = q.order_by(ConstructionProject.order_no.asc()).all()
+
+    # ---- 样式定义 ----
+    title_font = Font(name='微软雅黑', size=14, bold=True, color='1A3A5C')
+    title_align = Alignment(horizontal='center', vertical='center')
+    header_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='1A3A5C', end_color='1A3A5C', fill_type='solid')
+    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    cell_font = Font(name='微软雅黑', size=10)
+    cell_align = Alignment(vertical='top', wrap_text=True)
+    cell_align_center = Alignment(horizontal='center', vertical='top', wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin', color='D0D0D0'),
+        right=Side(style='thin', color='D0D0D0'),
+        top=Side(style='thin', color='D0D0D0'),
+        bottom=Side(style='thin', color='D0D0D0'),
+    )
+    title_fill = PatternFill(start_color='F5F7FA', end_color='F5F7FA', fill_type='solid')
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = template_name[:31]
+
+    if progress_mode == 'progress':
+        # ---- 按行导出：工作进展拆分为独立行 ----
+        project_fields = [f for f in fields if f.field_key not in ('work_progresses',)]
+        progress_cols = [
+            {'field_key': 'progress_start_date', 'field_label': '进展开始日期', 'column_width': 120},
+            {'field_key': 'progress_end_date', 'field_label': '进展结束日期', 'column_width': 120},
+            {'field_key': 'progress_content', 'field_label': '进展内容', 'column_width': 400},
+        ]
+        total_cols = len(project_fields) + len(progress_cols)
+
+        # 第1行：标题行（合并单元格）
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+        title_cell = ws.cell(row=1, column=1, value=template_name)
+        title_cell.font = title_font
+        title_cell.alignment = title_align
+        title_cell.fill = title_fill
+        for c in range(1, total_cols + 1):
+            ws.cell(row=1, column=c).border = thin_border
+
+        # 第2行：表头
+        for col_idx, f in enumerate(project_fields, 1):
+            cell = ws.cell(row=2, column=col_idx, value=f.field_label)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+            ws.column_dimensions[get_column_letter(col_idx)].width = f.column_width / 7
+        for col_idx, pc in enumerate(progress_cols, len(project_fields) + 1):
+            cell = ws.cell(row=2, column=col_idx, value=pc['field_label'])
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+            ws.column_dimensions[get_column_letter(col_idx)].width = pc['column_width'] / 7
+
+        # 数据行 + 合并单元格
+        current_row = 3
+        for p in projects:
+            project_row = _resolve_project_row(p, progress_range=progress_range)
+            progresses = WorkProgress.query.filter_by(project_id=p.id)\
+                .order_by(WorkProgress.start_date.desc()).all()
+
+            if not progresses:
+                # 无进展：一行，项目字段正常填，进展字段留空
+                for col_idx, f in enumerate(project_fields, 1):
+                    val = _fmt_cell(project_row.get(f.field_key, ''))
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
+                    cell.font = cell_font
+                    cell.alignment = cell_align
+                    cell.border = thin_border
+                for col_idx in range(len(project_fields) + 1, total_cols + 1):
+                    cell = ws.cell(row=current_row, column=col_idx, value='')
+                    cell.font = cell_font
+                    cell.alignment = cell_align_center
+                    cell.border = thin_border
+                current_row += 1
+            else:
+                start_row = current_row
+                for pg in progresses:
+                    # 项目字段
+                    for col_idx, f in enumerate(project_fields, 1):
+                        val = _fmt_cell(project_row.get(f.field_key, ''))
+                        cell = ws.cell(row=current_row, column=col_idx, value=val)
+                        cell.font = cell_font
+                        cell.alignment = cell_align
+                        cell.border = thin_border
+                    # 进展字段
+                    progress_data = {
+                        'progress_start_date': pg.start_date.isoformat() if pg.start_date else '',
+                        'progress_end_date': pg.end_date.isoformat() if pg.end_date else '',
+                        'progress_content': pg.content or '',
+                    }
+                    for col_idx, pc in enumerate(progress_cols, len(project_fields) + 1):
+                        val = progress_data.get(pc['field_key'], '')
+                        cell = ws.cell(row=current_row, column=col_idx, value=val)
+                        cell.font = cell_font
+                        cell.alignment = cell_align_center if col_idx <= len(project_fields) + 2 else cell_align
+                        cell.border = thin_border
+                    current_row += 1
+
+                # 合并项目字段单元格（纵向）
+                if current_row - start_row > 1:
+                    for col_idx in range(1, len(project_fields) + 1):
+                        ws.merge_cells(
+                            start_row=start_row, start_column=col_idx,
+                            end_row=current_row - 1, end_column=col_idx
+                        )
+
+        ws.freeze_panes = 'A3'
+    else:
+        # ---- 聚合导出 ----
+        total_cols = len(fields)
+
+        # 第1行：标题行（合并单元格）
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+        title_cell = ws.cell(row=1, column=1, value=template_name)
+        title_cell.font = title_font
+        title_cell.alignment = title_align
+        title_cell.fill = title_fill
+        for c in range(1, total_cols + 1):
+            ws.cell(row=1, column=c).border = thin_border
+
+        # 第2行：表头
+        for col_idx, field in enumerate(fields, 1):
+            cell = ws.cell(row=2, column=col_idx, value=field.field_label)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+            ws.column_dimensions[get_column_letter(col_idx)].width = field.column_width / 7
+
+        # 数据行
+        for row_idx, p in enumerate(projects, 3):
+            row_data = _resolve_project_row(p, progress_range=progress_range)
+            for col_idx, field in enumerate(fields, 1):
+                val = row_data.get(field.field_key, '')
+                val = _fmt_cell(val)
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.font = cell_font
+                cell.alignment = cell_align
+                cell.border = thin_border
+
+        ws.freeze_panes = 'A3'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'{template_name}.xlsx'
+    )

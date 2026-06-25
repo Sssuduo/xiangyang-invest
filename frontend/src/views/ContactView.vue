@@ -1,7 +1,7 @@
 <template>
   <div class="contact-page">
     <!-- ===== 顶部导航栏（复用首页风格） ===== -->
-    <BusinessNavbar variant="contact" />
+    <BusinessNavbar variant="light" />
 
     <!-- ===== 主体内容 ===== -->
     <div class="contact-body">

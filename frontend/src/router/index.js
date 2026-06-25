@@ -22,6 +22,11 @@ const routes = [
     component: () => import('@/views/NationalAgriZone.vue')
   },
   {
+    path: '/promo-video',
+    name: 'PromoVideo',
+    component: () => import('@/views/PromoVideoView.vue')
+  },
+  {
     path: '/contact',
     name: 'Contact',
     component: () => import('@/views/ContactView.vue')
@@ -147,6 +152,12 @@ const routes = [
   },
   // ---- 在建项目库 ----
   {
+    path: '/construction-dashboard',
+    name: 'ConstructionDashboard',
+    component: () => import('@/views/ConstructionDashboardView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
     path: '/construction',
     name: 'Construction',
     component: () => import('@/views/ConstructionView.vue'),
@@ -217,6 +228,18 @@ const routes = [
     path: '/admin/activity-export-config',
     name: 'AdminActivityExportConfig',
     component: () => import('@/views/admin/ActivityExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/construction-export-config',
+    name: 'AdminConstructionExportConfig',
+    component: () => import('@/views/admin/ConstructionExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/promo-video',
+    name: 'AdminPromoVideo',
+    component: () => import('@/views/admin/PromoVideoManage.vue'),
     meta: { requiresAuth: true }
   },
   {

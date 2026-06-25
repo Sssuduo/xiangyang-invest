@@ -33,6 +33,10 @@ admin_demand_bp = Blueprint('admin_demand', __name__, url_prefix='/api/admin')
 admin_construction_bp = Blueprint('admin_construction', __name__, url_prefix='/api/admin')
 admin_construction_import_bp = Blueprint('admin_construction_import', __name__, url_prefix='/api/admin')
 admin_construction_progress_import_bp = Blueprint('admin_construction_progress_import', __name__, url_prefix='/api/admin')
+admin_construction_export_bp = Blueprint('admin_construction_export', __name__, url_prefix='/api/admin')
+
+# 招商宣传视频
+admin_promo_video_bp = Blueprint('admin_promo_video', __name__, url_prefix='/api')
 
 # 业务用户管理（后台）
 admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix='/api/admin')
@@ -59,6 +63,8 @@ def register_routes(app):
     from routes import admin_construction as _admin_construction
     from routes import admin_construction_import as _admin_construction_import
     from routes import admin_construction_progress_import as _admin_construction_progress_import
+    from routes import admin_construction_export as _admin_construction_export
+    from routes import admin_promo_video as _admin_promo_video
     from routes import business_auth as _business_auth
     from routes import admin_business_users as _admin_business_users
     from routes import admin_debug as _admin_debug
@@ -82,6 +88,8 @@ def register_routes(app):
     app.register_blueprint(admin_construction.admin_construction_bp)
     app.register_blueprint(admin_construction_import.admin_construction_import_bp)
     app.register_blueprint(admin_construction_progress_import.admin_construction_progress_import_bp)
+    app.register_blueprint(admin_construction_export.admin_construction_export_bp)
+    app.register_blueprint(admin_promo_video.admin_promo_video_bp)
 
     # 注册业务用户认证和管理蓝图
     app.register_blueprint(business_auth.business_auth_bp)

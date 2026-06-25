@@ -90,6 +90,13 @@
           >
             <el-icon><Plus /></el-icon> 添加在建项目
           </el-button>
+          <el-button
+            v-if="selectedIds.length > 0"
+            type="success"
+            @click="openExportDialog"
+          >
+            <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
+          </el-button>
         </div>
 
         <!-- 表格 -->
@@ -100,10 +107,124 @@
           row-key="id"
           v-loading="loading"
           @selection-change="handleSelectionChange"
+          @expand-change="onExpandChange"
           empty-text="暂无在建项目数据"
           style="width: 100%"
         >
           <el-table-column type="selection" width="45" />
+          <el-table-column type="expand" width="42">
+            <template #default="{ row }">
+              <div class="expand-content" :style="{ width: expandWidth + 'px', maxWidth: expandWidth + 'px' }">
+                <!-- 顶部切换栏 -->
+                <div class="expand-toggle-bar expand-toggle-top">
+                  <el-button size="small" link type="primary" @click="toggleCardExpand(row.id)">
+                    <el-icon><ArrowUp v-if="expandedCardIds.has(row.id)" /><ArrowDown v-else /></el-icon>
+                    {{ expandedCardIds.has(row.id) ? '收起基础信息' : '展开基础信息' }}
+                  </el-button>
+                </div>
+
+                <!-- 基础信息 (可折叠) -->
+                <template v-if="expandedCardIds.has(row.id)">
+                  <div class="expand-block">
+                    <div class="expand-block-title">基础信息</div>
+                    <div class="expand-grid">
+                      <div class="expand-item"><label>项目名称</label><span>{{ row.project_name }}</span></div>
+                      <div class="expand-item"><label>建设单位</label><span>{{ row.construction_unit || '-' }}</span></div>
+                      <div class="expand-item"><label>项目类型</label><span>{{ row.project_type_name || row.project_type_code }}</span></div>
+                      <div class="expand-item"><label>调度状态</label><span>{{ row.dispatch_status_name || row.dispatch_status_code }}</span></div>
+                      <div class="expand-item"><label>责任单位</label><span>{{ row.responsible_unit_name || row.responsible_unit_code || '-' }}</span></div>
+                      <div class="expand-item"><label>责任人</label><span>{{ row.responsible_person || '-' }}</span></div>
+                      <div class="expand-item"><label>联系电话</label><span>{{ row.responsible_person_phone || '-' }}</span></div>
+                    </div>
+                  </div>
+                  <div class="expand-block" v-if="row.construction_content">
+                    <div class="expand-block-title">建设内容</div>
+                    <p class="expand-text-block">{{ row.construction_content }}</p>
+                  </div>
+                </template>
+
+                <!-- 工作路径图 — 时间轴 (始终可见) -->
+                <div class="expand-block" v-if="row.work_roadmap_items && row.work_roadmap_items.length > 0">
+                  <div class="expand-block-title">工作路径图</div>
+                  <div class="timeline">
+                    <div
+                      v-for="(item, i) in row.work_roadmap_items"
+                      :key="i"
+                      class="timeline-item"
+                      :class="{ 'is-delayed': item.is_delayed, 'is-cancelled': item.status === 'cancelled', 'is-completed': item.status === 'completed' }"
+                    >
+                      <div class="timeline-dot"></div>
+                      <div class="timeline-body">
+                        <div class="timeline-row">
+                          <span class="timeline-index">{{ i + 1 }}</span>
+                          <span class="timeline-content">{{ item.content }}</span>
+                          <span class="timeline-date">{{ item.planned_date || '暂未明确' }}</span>
+                          <span class="timeline-status">{{ roadmapStatusLabel(item) }}</span>
+                        </div>
+                        <div class="timeline-extra" v-if="item.actual_date || item.is_delayed || item.status === 'cancelled'">
+                          <span v-if="item.actual_date" class="timeline-actual">实际：{{ item.actual_date }}</span>
+                          <span v-if="item.is_delayed && item.delay_reason" class="timeline-reason">延期：{{ item.delay_reason }}</span>
+                          <span v-if="item.status === 'cancelled' && item.cancel_reason" class="timeline-reason cancel">作废：{{ item.cancel_reason }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 工作进展 -->
+                <div class="expand-block" v-if="row.work_progresses && row.work_progresses.length > 0">
+                  <div class="expand-block-title">工作进展</div>
+                  <div class="demand-summary-card">
+                    <div class="demand-summary-text">
+                      共 <strong>{{ row.work_progresses.length }}</strong> 条进展记录
+                    </div>
+                    <el-button size="small" link type="primary" @click="toggleProgressExpand(row.id)">
+                      <el-icon><ArrowUp v-if="expandedProgressIds.has(row.id)" /><ArrowDown v-else /></el-icon>
+                      {{ expandedProgressIds.has(row.id) ? '收起进展明细' : '展开进展明细' }}
+                    </el-button>
+                  </div>
+                  <div class="progress-list" v-if="expandedProgressIds.has(row.id)">
+                    <div v-for="(pg, i) in row.work_progresses" :key="i" class="progress-card">
+                      <div class="progress-card-header">
+                        <span class="progress-index">{{ i + 1 }}</span>
+                        <span class="progress-date-range">{{ pg.start_date }} ~ {{ pg.end_date }}</span>
+                      </div>
+                      <p class="progress-content-text">{{ pg.content }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 存在问题 -->
+                <div class="expand-block" v-if="row.issues && row.issues.length > 0">
+                  <div class="expand-block-title">存在问题</div>
+                  <div class="demand-summary-card">
+                    <div class="demand-summary-text">
+                      共 <strong>{{ row.issues.length }}</strong> 条问题
+                      <template v-if="pendingIssueCount(row) > 0">
+                        ，<span class="text-warning">{{ pendingIssueCount(row) }} 条待解决</span>
+                      </template>
+                    </div>
+                    <el-button size="small" link type="primary" @click="toggleIssueExpand(row.id)">
+                      <el-icon><ArrowUp v-if="expandedIssueIds.has(row.id)" /><ArrowDown v-else /></el-icon>
+                      {{ expandedIssueIds.has(row.id) ? '收起问题明细' : '展开问题明细' }}
+                    </el-button>
+                  </div>
+                  <div class="issue-list" v-if="expandedIssueIds.has(row.id)">
+                    <div v-for="(iss, i) in row.issues" :key="i" class="issue-card" :class="{ 'is-resolved': iss.resolution_status_code === 'resolved' }">
+                      <div class="issue-card-header">
+                        <span class="issue-index">{{ i + 1 }}</span>
+                        <span class="issue-type-tag">{{ iss.issue_type_name || iss.issue_type_code || '问题' }}</span>
+                        <span class="issue-status-tag" :class="iss.resolution_status_code">{{ iss.resolution_status_name || iss.resolution_status_code }}</span>
+                        <span v-if="iss.main_department_name" class="issue-dept">{{ iss.main_department_name }}</span>
+                      </div>
+                      <p class="issue-desc">{{ iss.issue_description }}</p>
+                      <p v-if="iss.resolution_note" class="issue-resolution">措施: {{ iss.resolution_note }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="order_no" label="序号" width="60" align="center" />
           <el-table-column prop="project_name" label="在建项目名称" min-width="220" show-overflow-tooltip />
           <el-table-column label="项目类型" width="110">
@@ -632,17 +753,52 @@
       :project-id="progressProjectId"
       :project-name="progressProjectName"
     />
+
+    <!-- ========== 导出 Excel 弹窗 ========== -->
+    <el-dialog v-model="exportDialogVisible" title="导出Excel" width="500px" :close-on-click-modal="false">
+      <el-form label-width="110px">
+        <el-form-item label="选择模板">
+          <el-select v-model="exportTemplateId" placeholder="请选择导出模板" style="width: 100%;">
+            <el-option v-for="t in exportTemplates" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作进展范围">
+          <el-select v-model="exportProgressRange" placeholder="请选择" style="width: 100%;">
+            <el-option label="全部进展" value="" />
+            <el-option label="最近5条" value="last5" />
+            <el-option label="最近1个月" value="last1m" />
+            <el-option label="最近3个月" value="last3m" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作进展导出">
+          <el-select v-model="exportProgressMode" placeholder="请选择" style="width: 100%;">
+            <el-option label="聚合导出" value="aggregate" />
+            <el-option label="按行导出" value="progress" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <p style="color:#909399;font-size:13px;margin-top:12px;">
+        将导出选中的 <strong>{{ selectedIds.length }}</strong> 个项目
+      </p>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" @click="handleExport">
+          <el-icon><Download /></el-icon> 导出
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Plus, MoreFilled, View, Delete,
   InfoFilled, Document, OfficeBuilding, Guide,
   Check, Clock, Close, Edit,
-  Upload, UploadFilled, Download
+  Upload, UploadFilled, Download,
+  ArrowUp, ArrowDown
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProgressTimelineDrawer from '@/components/investment/ProgressTimelineDrawer.vue'
@@ -653,6 +809,7 @@ import {
 import {
   downloadTemplate, previewImport, executeImport
 } from '@/api/construction_import'
+import { downloadConstructionExcel, getConstructionExportTemplates } from '@/api/construction_export'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 
 const businessAuth = useBusinessAuthStore()
@@ -665,6 +822,109 @@ const filterDispatchStatus = ref('')
 const filterProjectType = ref('')
 const filterResponsibleUnit = ref('')
 const selectedIds = ref([])
+
+// ---- 导出 ----
+const exportDialogVisible = ref(false)
+const exportTemplates = ref([])
+const exportTemplateId = ref(0)
+const exportProgressRange = ref('')
+const exportProgressMode = ref('aggregate')
+const exporting = ref(false)
+
+async function openExportDialog() {
+  exportDialogVisible.value = true
+  try {
+    const res = await getConstructionExportTemplates()
+    if (res.code === 0) {
+      exportTemplates.value = res.data || []
+      const stillExists = exportTemplates.value.some(t => t.id === exportTemplateId.value)
+      if (!stillExists && exportTemplates.value.length > 0) {
+        exportTemplateId.value = exportTemplates.value[0].id
+      } else if (!exportTemplateId.value && exportTemplates.value.length > 0) {
+        exportTemplateId.value = exportTemplates.value[0].id
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+async function handleExport() {
+  if (!exportTemplateId.value) {
+    ElMessage.warning('请选择导出模板')
+    return
+  }
+  exporting.value = true
+  try {
+    await downloadConstructionExcel(selectedIds.value, {
+      templateId: exportTemplateId.value,
+      progressRange: exportProgressRange.value,
+      progressMode: exportProgressMode.value
+    })
+    ElMessage.success('导出成功')
+    exportDialogVisible.value = false
+  } catch (err) {
+    ElMessage.error(err.message || '导出失败')
+  } finally { exporting.value = false }
+}
+
+// ---- 展开卡片 ----
+const expandedCardIds = ref(new Set())
+const expandedProgressIds = ref(new Set())
+const expandedIssueIds = ref(new Set())
+
+function toggleCardExpand(rowId) {
+  const next = new Set(expandedCardIds.value)
+  if (next.has(rowId)) { next.delete(rowId) } else { next.add(rowId) }
+  expandedCardIds.value = next
+}
+
+function toggleProgressExpand(rowId) {
+  const next = new Set(expandedProgressIds.value)
+  if (next.has(rowId)) { next.delete(rowId) } else { next.add(rowId) }
+  expandedProgressIds.value = next
+}
+
+function toggleIssueExpand(rowId) {
+  const next = new Set(expandedIssueIds.value)
+  if (next.has(rowId)) { next.delete(rowId) } else { next.add(rowId) }
+  expandedIssueIds.value = next
+}
+
+function roadmapStatusLabel(item) {
+  if (item.status === 'completed') return '已完成'
+  if (item.status === 'cancelled') return '已作废'
+  if (item.is_delayed) return '待完成（已延期）'
+  return '待完成'
+}
+
+function pendingIssueCount(row) {
+  if (!row.issues) return 0
+  return row.issues.filter(iss => iss.resolution_status_code === 'pending').length
+}
+
+// 展开宽度 + 横向滚动冻结
+const expandWidth = ref(1488)
+let tableScrollWrapper = null
+
+function updateExpandWidth() {
+  const el = tableRef.value?.$el
+  if (el) {
+    expandWidth.value = el.clientWidth || 1488
+  }
+}
+
+function onTableScroll(e) {
+  const sl = e.target.scrollLeft
+  const cells = tableRef.value?.$el?.querySelectorAll('.el-table__expanded-cell')
+  cells?.forEach(c => {
+    c.style.transform = `translateX(${sl}px)`
+  })
+}
+
+function onExpandChange() {
+  nextTick(() => {
+    updateExpandWidth()
+  })
+}
 
 const dicts = reactive({
   project_types: [],
@@ -752,6 +1012,21 @@ function resolutionStatusColor(code) {
 onMounted(async () => {
   await loadDicts()
   fetchData()
+  nextTick(() => {
+    updateExpandWidth()
+    tableScrollWrapper = tableRef.value?.$el?.querySelector('.el-table__body-wrapper')
+    if (tableScrollWrapper) {
+      tableScrollWrapper.addEventListener('scroll', onTableScroll)
+    }
+    window.addEventListener('resize', updateExpandWidth)
+  })
+})
+
+onBeforeUnmount(() => {
+  if (tableScrollWrapper) {
+    tableScrollWrapper.removeEventListener('scroll', onTableScroll)
+  }
+  window.removeEventListener('resize', updateExpandWidth)
 })
 
 async function loadDicts() {
@@ -1345,6 +1620,223 @@ async function handleViewDetail(row) {
 /* 表格行 hover */
 :deep(.el-table__body tr:hover > td) { background-color: #fef7e8 !important; }
 :deep(.el-table td.el-table__cell) { padding: 6px 2px; }
+
+/* 展开图标 */
+:deep(.el-table__expand-icon) {
+  font-size: 15px;
+  color: #409eff;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+:deep(.el-table__expand-icon::before) { display: none !important; }
+:deep(.el-table__expand-column .cell::before),
+:deep(.el-table__expand-column .cell::after) { display: none !important; }
+:deep(.el-table__expand-icon:hover) {
+  background: #ecf5ff;
+  color: #1a3a5c;
+  transform: scale(1.15);
+}
+:deep(.el-table__expand-icon--expanded) { color: #1a3a5c; }
+:deep(.el-table__expand-icon--expanded:hover) {
+  background: #ecf5ff;
+  color: #1a3a5c;
+  transform: rotate(90deg) scale(1.15);
+}
+
+/* ===== 展开卡片 ===== */
+.expand-content {
+  padding: 8px 20px 16px;
+  background: #f5f7fa;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.expand-block {
+  margin-top: 14px;
+  padding: 12px 16px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+  box-sizing: border-box;
+}
+.expand-block:first-child { margin-top: 6px; }
+
+.expand-block-title {
+  font-size: 12px; font-weight: 600; color: #1a3a5c;
+  margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px dashed #e4e7ed;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+.expand-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 28px;
+}
+.expand-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.expand-item label { font-size: 12px; color: #909399; font-weight: 500; }
+.expand-item span { font-size: 14px; color: #303133; word-break: break-word; }
+
+.expand-text-block {
+  font-size: 13px; color: #4a5568; line-height: 1.7;
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+}
+
+.expand-toggle-bar {
+  display: flex; justify-content: center;
+  padding: 10px 0 4px;
+  border-top: 1px dashed #d0d7de; margin-top: 6px;
+}
+.expand-toggle-top {
+  padding: 0 0 10px; border-top: none;
+  border-bottom: 1px dashed #d0d7de; margin-top: 0; margin-bottom: 6px;
+}
+
+.demand-summary-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: #fafbfc; border-radius: 6px; border: 1px dashed #d4d9e1;
+}
+.demand-summary-text { font-size: 13px; color: #606266; }
+.text-warning { color: #e6a23c; }
+
+/* 工作路径图 — 时间轴 */
+.timeline {
+  position: relative;
+  padding-left: 24px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: #dcdfe6;
+  border-radius: 1px;
+}
+.timeline-item {
+  position: relative;
+  padding: 5px 0;
+}
+.timeline-item:first-child { padding-top: 0; }
+.timeline-item:last-child { padding-bottom: 0; }
+
+.timeline-dot {
+  position: absolute;
+  left: -16px;
+  top: 11px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #409eff;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #409eff;
+  z-index: 1;
+}
+.timeline-item.is-completed .timeline-dot {
+  background: #67c23a;
+  box-shadow: 0 0 0 2px #67c23a;
+}
+.timeline-item.is-delayed .timeline-dot {
+  background: #e6a23c;
+  box-shadow: 0 0 0 2px #e6a23c;
+}
+.timeline-item.is-cancelled .timeline-dot {
+  background: #f56c6c;
+  box-shadow: 0 0 0 2px #f56c6c;
+}
+
+.timeline-body {
+  background: #fafbfc;
+  border-radius: 6px;
+  padding: 6px 12px;
+  border: 1px solid #ebeef5;
+}
+.timeline-item.is-completed .timeline-body { background: #f0f9eb; border-color: #d2eac2; }
+.timeline-item.is-delayed .timeline-body { background: #fdf6ec; border-color: #f5dab1; }
+.timeline-item.is-cancelled .timeline-body { background: #fef0f0; border-color: #fbc4c4; }
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.timeline-index {
+  font-size: 12px;
+  font-weight: 700;
+  color: #909399;
+  min-width: 18px;
+}
+.timeline-content {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+}
+.timeline-date {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+}
+.timeline-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #ecf5ff;
+  color: #409eff;
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.timeline-item.is-completed .timeline-status { background: #e1f0d8; color: #529b2e; }
+.timeline-item.is-delayed .timeline-status { background: #faecd8; color: #b88230; }
+.timeline-item.is-cancelled .timeline-status { background: #fbc4c4; color: #c45656; }
+
+.timeline-extra {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed #e4e7ed;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.timeline-actual { color: #67c23a; }
+.timeline-reason { color: #e6a23c; }
+.timeline-reason.cancel { color: #f56c6c; }
+
+/* 工作进展卡片 */
+.progress-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.progress-card { padding: 10px 14px; background: #f5f7fa; border-radius: 6px; border: 1px solid #ebeef5; }
+.progress-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.progress-index { font-weight: 600; color: #1a3a5c; font-size: 13px; }
+.progress-date-range { font-size: 12px; color: #909399; }
+.progress-content-text { font-size: 13px; color: #4a5568; margin: 0; line-height: 1.6; white-space: pre-wrap; }
+
+/* 存在问题卡片 */
+.issue-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.issue-card { padding: 10px 14px; background: #f5f7fa; border-radius: 6px; border: 1px solid #ebeef5; }
+.issue-card.is-resolved { opacity: 0.7; }
+.issue-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.issue-index { font-weight: 600; color: #1a3a5c; font-size: 13px; }
+.issue-type-tag {
+  font-size: 12px; padding: 1px 8px; border-radius: 10px;
+  background: #ecf5ff; color: #409eff;
+}
+.issue-status-tag {
+  font-size: 12px; padding: 1px 8px; border-radius: 10px;
+  background: #fdf6ec; color: #e6a23c;
+}
+.issue-status-tag.resolved { background: #f0f9eb; color: #67c23a; }
+.issue-dept { font-size: 12px; color: #909399; }
+.issue-desc { font-size: 13px; color: #4a5568; margin: 0 0 4px; line-height: 1.6; }
+.issue-resolution { font-size: 13px; color: #67c23a; margin: 0; }
 </style>
 
 <!-- 非 scoped 样式 -->
@@ -1358,4 +1850,11 @@ async function handleViewDetail(row) {
 .import-error-row { background-color: #fef0f0 !important; }
 .import-errors { display: flex; flex-direction: column; gap: 2px; }
 .import-error-item { font-size: 12px; color: #f56c6c; }
+
+/* 展开卡片 — 横向滚动冻结 */
+.el-table__expanded-cell {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
 </style>

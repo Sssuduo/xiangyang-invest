@@ -1,5 +1,5 @@
 """在建项目库 — 管理端 API"""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from flask import request, jsonify
 from models import (
     ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem,
@@ -126,6 +126,7 @@ def _build_project_dict(p):
         'responsible_unit_code': p.responsible_unit_code or '',
         'responsible_unit_name': getattr(p, '_responsible_unit_name', p.responsible_unit_code or ''),
         'responsible_person': p.responsible_person or '',
+        'responsible_person_phone': p.responsible_person_phone or '',
         'is_deleted': p.is_deleted,
         'work_progresses': [
             {
@@ -828,3 +829,226 @@ def delete_issue(issue_id):
     db.session.delete(iss)
     db.session.commit()
     return jsonify({'code': 0, 'message': '问题已删除'})
+
+
+# ============================================================
+# 数据看板 — 统计
+# ============================================================
+
+@admin_construction_bp.route('/construction/stats', methods=['GET'])
+@dual_login_required
+def construction_stats():
+    """在建项目数据统计（数据看板）"""
+    from sqlalchemy import func
+
+    # 项目类型筛选参数
+    project_type = request.args.get('project_type', '').strip()
+
+    # 构建项目查询基类（可选按项目类型过滤）
+    def project_query():
+        q = ConstructionProject.query.filter_by(is_deleted=False)
+        if project_type:
+            q = q.filter(ConstructionProject.project_type_code == project_type)
+        return q
+
+    # ---- 总体概览 ----
+    total_projects = project_query().count()
+    dispatching_count = project_query().filter(
+        ConstructionProject.dispatch_status_code == 'dispatching'
+    ).count()
+    completed_count = project_query().filter(
+        ConstructionProject.dispatch_status_code == 'completed'
+    ).count()
+
+    # 涉及责任单位数（去重，非空）
+    responsible_units = db.session.query(func.count(func.distinct(
+        project_query().with_entities(ConstructionProject.responsible_unit_code).filter(
+            ConstructionProject.responsible_unit_code.isnot(None),
+            ConstructionProject.responsible_unit_code != ''
+        ).subquery().c.responsible_unit_code
+    ))).scalar() or 0
+
+    # 工作进展总数（关联 project 表过滤）
+    progress_q = WorkProgress.query.join(
+        ConstructionProject,
+        WorkProgress.project_id == ConstructionProject.id
+    ).filter(ConstructionProject.is_deleted == False)
+    if project_type:
+        progress_q = progress_q.filter(ConstructionProject.project_type_code == project_type)
+    total_progress = progress_q.count()
+
+    # 待解决问题数
+    issues_q = ProjectIssue.query.join(
+        ConstructionProject,
+        ProjectIssue.project_id == ConstructionProject.id
+    ).filter(ConstructionProject.is_deleted == False)
+    if project_type:
+        issues_q = issues_q.filter(ConstructionProject.project_type_code == project_type)
+    pending_issues = issues_q.filter(ProjectIssue.resolution_status_code == 'pending').count()
+
+    overview = {
+        'total_projects': total_projects,
+        'dispatching_count': dispatching_count,
+        'completed_count': completed_count,
+        'responsible_units': responsible_units,
+        'total_progress': total_progress,
+        'pending_issues': pending_issues
+    }
+
+    # ---- 按项目类型分布 ----
+    ptype_map = {d.code: d.name for d in ConstructionProjectTypeDict.query.all()}
+    dispatch_map = {d.code: d.name for d in DispatchStatusDict.query.all()}
+
+    # 按类型 + 调度状态分组统计
+    type_rows = project_query().with_entities(
+        ConstructionProject.project_type_code,
+        ConstructionProject.dispatch_status_code,
+        func.count(ConstructionProject.id)
+    ).group_by(
+        ConstructionProject.project_type_code,
+        ConstructionProject.dispatch_status_code
+    ).all()
+
+    # 汇总为 { code: { dispatching: n, completed: n, other: n, count: total } }
+    type_stats = {}
+    for code, status, cnt in type_rows:
+        code = code or '__empty__'
+        if code not in type_stats:
+            type_stats[code] = {'dispatching': 0, 'completed': 0, 'other': 0, 'count': 0}
+        if status == 'dispatching':
+            type_stats[code]['dispatching'] += cnt
+        elif status == 'completed':
+            type_stats[code]['completed'] += cnt
+        else:
+            type_stats[code]['other'] += cnt
+        type_stats[code]['count'] += cnt
+
+    # 查询各类型关联的项目列表（用于悬停提示）
+    type_project_rows = project_query().with_entities(
+        ConstructionProject.project_type_code,
+        ConstructionProject.id,
+        ConstructionProject.project_name
+    ).filter(
+        ConstructionProject.project_type_code.isnot(None),
+        ConstructionProject.project_type_code != ''
+    ).all()
+
+    type_projects = {}
+    for code, pid, pname in type_project_rows:
+        if code not in type_projects:
+            type_projects[code] = []
+        if len(type_projects[code]) < 15:
+            if not any(p['id'] == pid for p in type_projects[code]):
+                type_projects[code].append({'id': pid, 'name': pname})
+
+    by_type = []
+    for code, s in sorted(type_stats.items(), key=lambda x: x[1]['count'], reverse=True):
+        clean_code = code if code != '__empty__' else ''
+        by_type.append({
+            'code': clean_code,
+            'name': ptype_map.get(clean_code, '未分类') if code != '__empty__' else '未分类',
+            'count': s['count'],
+            'dispatching': s['dispatching'],
+            'completed': s['completed'],
+            'other': s['other'],
+            'projects': type_projects.get(clean_code, [])
+        })
+
+    # ---- 按责任单位分布（Top 15）----
+    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+    unit_rows = project_query().with_entities(
+        ConstructionProject.responsible_unit_code,
+        func.count(ConstructionProject.id)
+    ).filter(
+        ConstructionProject.responsible_unit_code.isnot(None),
+        ConstructionProject.responsible_unit_code != ''
+    ).group_by(ConstructionProject.responsible_unit_code).order_by(
+        func.count(ConstructionProject.id).desc()
+    ).limit(15).all()
+
+    # 查询各单位的项目类型明细
+    unit_codes = [code for code, _ in unit_rows]
+    unit_type_rows = []
+    if unit_codes:
+        unit_type_rows = project_query().with_entities(
+            ConstructionProject.responsible_unit_code,
+            ConstructionProject.project_type_code,
+            func.count(ConstructionProject.id)
+        ).filter(
+            ConstructionProject.responsible_unit_code.in_(unit_codes)
+        ).group_by(
+            ConstructionProject.responsible_unit_code,
+            ConstructionProject.project_type_code
+        ).order_by(
+            ConstructionProject.responsible_unit_code,
+            func.count(ConstructionProject.id).desc()
+        ).all()
+
+    unit_types = {}
+    for code, ptype, cnt in unit_type_rows:
+        ptype = ptype or '__empty__'
+        if code not in unit_types:
+            unit_types[code] = []
+        unit_types[code].append({
+            'name': ptype_map.get(ptype, '未分类') if ptype != '__empty__' else '未分类',
+            'code': ptype if ptype != '__empty__' else '',
+            'count': cnt
+        })
+
+    by_unit = []
+    for code, cnt in unit_rows:
+        by_unit.append({
+            'code': code,
+            'name': org_map.get(code, code),
+            'count': cnt,
+            'types': unit_types.get(code, [])
+        })
+
+    # ---- 月度趋势（最近12个月）----
+    now = datetime.utcnow()
+    twelve_months_ago = now - timedelta(days=365)
+
+    month_rows = project_query().with_entities(
+        func.strftime('%Y-%m', ConstructionProject.created_at).label('month'),
+        func.count(ConstructionProject.id)
+    ).filter(
+        ConstructionProject.created_at >= twelve_months_ago
+    ).group_by('month').order_by('month').all()
+
+    # 补全缺失的月份为 0
+    month_dict = {m: c for m, c in month_rows}
+    by_month = []
+    cursor = datetime(twelve_months_ago.year, twelve_months_ago.month, 1)
+    end = datetime(now.year, now.month, 1)
+    while cursor <= end:
+        key = cursor.strftime('%Y-%m')
+        by_month.append({'month': key, 'count': month_dict.get(key, 0)})
+        if cursor.month == 12:
+            cursor = cursor.replace(year=cursor.year + 1, month=1)
+        else:
+            cursor = cursor.replace(month=cursor.month + 1)
+
+    # ---- 按调度状态分布（环形图）----
+    dispatch_rows = project_query().with_entities(
+        ConstructionProject.dispatch_status_code,
+        func.count(ConstructionProject.id)
+    ).group_by(ConstructionProject.dispatch_status_code).all()
+
+    by_dispatch_status = []
+    for code, cnt in dispatch_rows:
+        by_dispatch_status.append({
+            'code': code,
+            'name': dispatch_map.get(code, code),
+            'count': cnt
+        })
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'overview': overview,
+            'by_type': by_type,
+            'by_unit': by_unit,
+            'by_month': by_month,
+            'by_dispatch_status': by_dispatch_status
+        }
+    })

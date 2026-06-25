@@ -1,7 +1,7 @@
 <template>
   <div class="national-page">
     <!-- ===== 顶部导航栏（透明叠加） ===== -->
-    <BusinessNavbar variant="overlay" />
+    <BusinessNavbar variant="light" />
 
     <!-- ===== 地图主体（全屏） ===== -->
     <div class="map-stage">

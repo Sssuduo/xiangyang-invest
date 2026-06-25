@@ -95,3 +95,12 @@ a {
 .fade-leave-to {
   opacity: 0;
 }
+
+/* 管理后台布局锁定：侧边栏+主内容区撑满视口，超长内容在主区域独立滚动 */
+.admin-layout {
+  height: 100vh !important;
+  overflow: hidden !important;
+}
+.admin-layout > main {
+  overflow-y: auto !important;
+}

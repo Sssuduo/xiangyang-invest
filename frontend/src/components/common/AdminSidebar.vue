@@ -51,6 +51,7 @@
       </template>
       <el-menu-item index="/admin/export-config">招商项目导出</el-menu-item>
       <el-menu-item index="/admin/activity-export-config">招商动态导出</el-menu-item>
+      <el-menu-item index="/admin/construction-export-config">在建项目导出</el-menu-item>
     </el-sub-menu>
 
     <!-- 导入配置子菜单 -->
@@ -72,6 +73,11 @@
     <el-menu-item index="/admin/models">
       <el-icon><Cpu /></el-icon>
       <span>大模型管理</span>
+    </el-menu-item>
+
+    <el-menu-item index="/admin/promo-video">
+      <el-icon><VideoCameraFilled /></el-icon>
+      <span>宣传视频管理</span>
     </el-menu-item>
 
     <el-menu-item index="/admin/contact">
@@ -118,7 +124,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -141,6 +147,8 @@ async function handleLogout() {
   border-right: none;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  background-color: #1a3a5c;
 }
 
 .sidebar-header {

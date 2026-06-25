@@ -6,7 +6,8 @@
       </router-link>
       <nav class="nav-menu">
         <router-link to="/national" class="nav-item" active-class="active-item">国家农高区</router-link>
-        <router-link to="/intro" class="nav-item" active-class="active-item">襄阳农高区介绍</router-link>
+        <router-link to="/promo-video" class="nav-item" active-class="active-item">招商宣传视频</router-link>
+        <!-- <router-link to="/intro" class="nav-item" active-class="active-item">襄阳农高区介绍</router-link> -->
         <!-- 招商项目库 下拉菜单 — 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isInvestmentRoute }">
@@ -30,6 +31,7 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="/construction-dashboard">数据看板</el-dropdown-item>
               <el-dropdown-item command="/construction">在建项目管理</el-dropdown-item>
               <el-dropdown-item command="/construction-progress">工作进展管理</el-dropdown-item>
               <el-dropdown-item command="/construction-issues">调度问题管理</el-dropdown-item>

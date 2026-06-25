@@ -1021,3 +1021,29 @@ class ChangeHistory(db.Model):
             'changed_by_name': self.changed_by_name,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+
+# ============================================================
+# 招商宣传视频
+# ============================================================
+
+class PromoVideo(db.Model):
+    """招商宣传视频"""
+    __tablename__ = 'promo_videos'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(512), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'file_path': self.file_path,
+            'sort_order': self.sort_order,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }

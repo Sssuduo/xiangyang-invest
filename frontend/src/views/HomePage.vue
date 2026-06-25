@@ -1,7 +1,7 @@
 <template>
   <div class="homepage" :style="bgStyle">
     <!-- ===== 顶部导航栏 ===== -->
-    <BusinessNavbar variant="home" :scrolled="isScrolled" />
+    <BusinessNavbar variant="light" />
 
     <!-- ===== 主视觉区 ===== -->
     <div class="hero-section">

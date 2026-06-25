@@ -5,6 +5,7 @@ from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldCon
 from models import ImportFieldConfigDemand, ImportFieldConfigConstruction, ImportFieldConfigWorkProgress
 from models import ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict
 from models import ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem
+from models import PromoVideo
 from extensions import db
 
 
@@ -193,6 +194,9 @@ def init_database(app):
     # ---- 工作进展 - 导入字段配置 ----
     _seed_construction_progress_import_fields()
 
+    # ---- 在建项目 - 导出字段配置 ----
+    _seed_construction_export_fields()
+
 
 def _seed_investment_dicts():
     """初始化招商对接项目库的字典表"""
@@ -335,7 +339,7 @@ def _seed_export_fields():
         ('project_type_code', '项目类型', 120, 3),
         ('invest_enterprise', '投资商名称', 160, 4),
         ('enterprise_info', '企业简介', 300, 5),
-        ('project_content', '项目内容', 300, 6),
+        ('project_content', '项目对接及进展情况', 300, 6),
         ('invest_amount', '投资金额(万元)', 120, 7),
         ('invest_amount_yi', '投资金额(亿元)', 120, 8),
         ('follow_status_code', '跟进状态', 100, 9),
@@ -351,7 +355,13 @@ def _seed_export_fields():
         ('resolution', '解决措施', 500, 18),
     ]
     for field_key, field_label, column_width, sort_order in fields:
-        if not ExportFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first():
+        existing = ExportFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first()
+        if existing:
+            # 更新已存在字段的标签、列宽和排序（保留 is_visible/is_custom）
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+        else:
             db.session.add(ExportFieldConfig(
                 template_id=template.id,
                 field_key=field_key,
@@ -362,6 +372,50 @@ def _seed_export_fields():
             ))
     db.session.commit()
     print('[种子数据] 导出字段配置已初始化')
+
+
+def _seed_construction_export_fields():
+    """初始化在建项目导出字段配置（默认模板 + 字段）"""
+    # 先确保默认模板存在
+    template = ExportTemplate.query.filter_by(entity_type='construction').first()
+    if not template:
+        template = ExportTemplate(name='默认导出模板', entity_type='construction')
+        db.session.add(template)
+        db.session.flush()
+
+    fields = [
+        ('order_no', '序号', 60, 1),
+        ('project_name', '在建项目名称', 200, 2),
+        ('project_type_code', '项目类型', 120, 3),
+        ('dispatch_status_code', '调度状态', 100, 4),
+        ('construction_content', '建设内容', 400, 5),
+        ('construction_unit', '建设单位', 150, 6),
+        ('responsible_unit_code', '责任单位', 150, 7),
+        ('responsible_person', '责任人', 80, 8),
+        ('responsible_person_phone', '联系电话', 130, 9),
+        # 聚合字段
+        ('work_progresses', '工作进展', 500, 10),
+        ('issues', '存在问题', 500, 11),
+        ('work_roadmap', '工作路径图', 400, 12),
+    ]
+    for field_key, field_label, column_width, sort_order in fields:
+        existing = ExportFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first()
+        if existing:
+            # 更新已存在字段的标签、列宽和排序（保留 is_visible/is_custom）
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+        else:
+            db.session.add(ExportFieldConfig(
+                template_id=template.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 在建项目导出字段配置已初始化')
 
 
 def _seed_import_fields():

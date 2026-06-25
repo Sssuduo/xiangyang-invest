@@ -222,9 +222,19 @@ function renderPieChart() {
       trigger: 'item',
       formatter: (params) => {
         const pct = params.percent != null ? params.percent.toFixed(1) : '0.0'
-        return `<strong>${params.name}</strong><br/>
-          项目数量：${params.value} 个<br/>
-          占比：${pct}%`
+        const item = data[params.dataIndex]
+        const projects = item?.projects || []
+        let html = `<strong>${params.name}</strong><br/>
+          项目数量：${params.value} 个 &nbsp; 占比：${pct}%`
+        if (projects.length > 0) {
+          html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;max-height:240px;overflow-y:auto;font-size:12px;color:#606266;">'
+          html += '<strong>关联项目：</strong><br/>'
+          projects.forEach(p => {
+            html += `· ${p.name}<br/>`
+          })
+          html += '</div>'
+        }
+        return html
       }
     },
     legend: {

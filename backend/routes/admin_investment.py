@@ -447,12 +447,30 @@ def investment_stats():
         for d in ProjectTypeDict.query.all()
     }
 
+    # 获取所有未删除项目，用于按类型聚合项目清单
+    all_projects = InvestmentProject.query.filter_by(is_deleted=False).with_entities(
+        InvestmentProject.id, InvestmentProject.project_name,
+        InvestmentProject.project_type_code
+    ).order_by(InvestmentProject.order_no).all()
+
+    # 按类型分组项目清单
+    projects_by_type = {}
+    for p in all_projects:
+        code = p.project_type_code
+        if code not in projects_by_type:
+            projects_by_type[code] = []
+        projects_by_type[code].append({
+            'id': p.id,
+            'name': p.project_name,
+        })
+
     by_project_type = []
     for code, count in rows:
         by_project_type.append({
             'code': code,
             'name': type_dicts.get(code, code),
             'count': count,
+            'projects': projects_by_type.get(code, []),
         })
 
     # 按数量降序排列

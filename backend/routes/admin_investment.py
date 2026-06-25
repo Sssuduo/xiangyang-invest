@@ -430,14 +430,28 @@ def delete_demand(project_id, demand_id):
 @admin_investment_bp.route('/investment-stats', methods=['GET'])
 @dual_login_required
 def investment_stats():
-    """招商项目统计数据（按项目类型分布）"""
+    """招商项目统计数据（按项目类型分布，支持跟进状态/上会状态筛选）"""
     from sqlalchemy import func
+
+    follow_status = request.args.get('follow_status', '').strip()
+    meeting_status = request.args.get('meeting_status', '').strip()
+
+    # 基础过滤条件
+    base_filters = [InvestmentProject.is_deleted == False]
+    if follow_status:
+        codes = [c.strip() for c in follow_status.split(',') if c.strip()]
+        if len(codes) == 1:
+            base_filters.append(InvestmentProject.follow_status_code == codes[0])
+        elif len(codes) > 1:
+            base_filters.append(InvestmentProject.follow_status_code.in_(codes))
+    if meeting_status:
+        base_filters.append(InvestmentProject.meeting_status_code == meeting_status)
 
     # 按 project_type_code 分组统计项目数量
     rows = db.session.query(
         InvestmentProject.project_type_code,
         func.count(InvestmentProject.id)
-    ).filter_by(is_deleted=False).group_by(
+    ).filter(*base_filters).group_by(
         InvestmentProject.project_type_code
     ).all()
 
@@ -447,10 +461,10 @@ def investment_stats():
         for d in ProjectTypeDict.query.all()
     }
 
-    # 获取所有未删除项目，用于按类型聚合项目清单
-    all_projects = InvestmentProject.query.filter_by(is_deleted=False).with_entities(
+    # 获取符合条件的项目，用于按类型聚合项目清单（含投资金额）
+    all_projects = InvestmentProject.query.filter(*base_filters).with_entities(
         InvestmentProject.id, InvestmentProject.project_name,
-        InvestmentProject.project_type_code
+        InvestmentProject.project_type_code, InvestmentProject.invest_amount
     ).order_by(InvestmentProject.order_no).all()
 
     # 按类型分组项目清单
@@ -462,6 +476,7 @@ def investment_stats():
         projects_by_type[code].append({
             'id': p.id,
             'name': p.project_name,
+            'invest_amount': p.invest_amount or '',
         })
 
     by_project_type = []

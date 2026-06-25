@@ -73,6 +73,41 @@
         <div class="chart-panel">
           <div class="chart-panel-header">
             <h3>招商项目类型分布</h3>
+            <div class="chart-panel-actions">
+              <el-select
+                v-model="pieFollowStatus"
+                placeholder="跟进状态"
+                clearable
+                multiple
+                collapse-tags
+                size="small"
+                style="width: 150px;"
+                @change="fetchInvestmentStats"
+              >
+                <el-option
+                  v-for="s in followStatuses"
+                  :key="s.code"
+                  :label="s.name"
+                  :value="s.code"
+                />
+              </el-select>
+              <el-select
+                v-model="pieMeetingStatus"
+                placeholder="上会状态"
+                clearable
+                size="small"
+                style="width: 130px;"
+                @change="fetchInvestmentStats"
+              >
+                <el-option label="全部上会" value="" />
+                <el-option
+                  v-for="s in meetingStatuses"
+                  :key="s.code"
+                  :label="s.name"
+                  :value="s.code"
+                />
+              </el-select>
+            </div>
           </div>
           <div ref="pieChartRef" class="chart-box"></div>
         </div>
@@ -178,6 +213,12 @@ const investmentStats = reactive({
   by_project_type: []
 })
 
+// 饼状图筛选
+const pieFollowStatus = ref([])
+const pieMeetingStatus = ref('')
+const followStatuses = ref([])
+const meetingStatuses = ref([])
+
 // 状态筛选（下拉框，''=全部）
 const filterStatus = ref('')
 // 项目类型筛选
@@ -220,6 +261,8 @@ function renderPieChart() {
   pieChart.setOption({
     tooltip: {
       trigger: 'item',
+      confine: true,
+      extraCssText: 'max-width:420px;',
       formatter: (params) => {
         const pct = params.percent != null ? params.percent.toFixed(1) : '0.0'
         const item = data[params.dataIndex]
@@ -227,10 +270,19 @@ function renderPieChart() {
         let html = `<strong>${params.name}</strong><br/>
           项目数量：${params.value} 个 &nbsp; 占比：${pct}%`
         if (projects.length > 0) {
-          html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;max-height:240px;overflow-y:auto;font-size:12px;color:#606266;">'
+          html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:12px;color:#606266;">'
           html += '<strong>关联项目：</strong><br/>'
           projects.forEach(p => {
-            html += `· ${p.name}<br/>`
+            const raw = parseFloat(p.invest_amount) || 0
+            let amt = ''
+            if (raw >= 10000) {
+              amt = (raw / 10000).toFixed(2) + ' 亿元'
+            } else if (raw > 0) {
+              amt = raw.toFixed(2) + ' 万元'
+            } else {
+              amt = '暂未明确'
+            }
+            html += `<div style="display:flex;justify-content:space-between;padding:1px 0;"><span>· ${p.name}</span><span style="text-align:right;min-width:100px;flex-shrink:0;color:#909399;">${amt}</span></div>`
           })
           html += '</div>'
         }
@@ -571,7 +623,12 @@ function onProjectTypeChange() {
 // 获取招商项目统计数据
 async function fetchInvestmentStats() {
   try {
-    const res = await getInvestmentStats()
+    const params = {}
+    if (pieFollowStatus.value && pieFollowStatus.value.length > 0) {
+      params.follow_status = pieFollowStatus.value.join(',')
+    }
+    if (pieMeetingStatus.value) params.meeting_status = pieMeetingStatus.value
+    const res = await getInvestmentStats(params)
     if (res?.code === 0) {
       investmentStats.total_projects = res.data.total_projects || 0
       investmentStats.by_project_type = res.data.by_project_type || []
@@ -626,11 +683,13 @@ function disposeCharts() {
   resizeObserver?.disconnect()
 }
 
-async function fetchProjectTypes() {
+async function fetchDicts() {
   try {
     const res = await getDicts()
     if (res?.code === 0) {
       projectTypes.value = res.data?.project_types || []
+      followStatuses.value = res.data?.follow_statuses || []
+      meetingStatuses.value = res.data?.meeting_statuses || []
     }
   } catch { /* ignore */ }
 }
@@ -638,7 +697,7 @@ async function fetchProjectTypes() {
 onMounted(() => {
   initCharts()
   setupResizeObserver()
-  fetchProjectTypes()
+  fetchDicts()
   fetchStats()
   fetchInvestmentStats()
 })

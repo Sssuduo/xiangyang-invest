@@ -104,6 +104,16 @@ def init_database(app):
         db.session.add(admin)
         print('[种子数据] 管理员账号已创建: admin / changeme123')
 
+    # 创建超级管理员 suduo
+    if not AdminUser.query.filter_by(username='suduo').first():
+        suduo = AdminUser(
+            username='suduo',
+            display_name='苏铎'
+        )
+        suduo.set_password('suduo2026')
+        db.session.add(suduo)
+        print('[种子数据] 超级管理员账号已创建: suduo / suduo2026')
+
     # 创建默认业务用户
     if not BusinessUser.query.filter_by(username='demo').first():
         demo = BusinessUser(

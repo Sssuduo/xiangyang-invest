@@ -13,9 +13,12 @@
             class="main-player"
             controls
             controlsList="nodownload"
+            preload="metadata"
             autoplay
             @ended="onVideoEnded"
             @loadeddata="onPlayerReady"
+            @waiting="onPlayerWaiting"
+            @canplay="onPlayerCanPlay"
           >
             您的浏览器不支持视频播放
           </video>
@@ -43,7 +46,7 @@
             @click="switchVideo(v, idx)"
           >
             <div class="film-thumb">
-              <img v-if="thumbnails[v.id]" :src="thumbnails[v.id]" alt="" />
+              <img v-if="v.thumbnail_url" :src="v.thumbnail_url" alt="" loading="lazy" />
               <div v-else class="thumb-placeholder">
                 <el-icon><VideoCameraFilled /></el-icon>
               </div>
@@ -63,7 +66,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { VideoPlay, VideoCameraFilled } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { getPublicVideos } from '@/api/promo_video'
@@ -71,8 +74,11 @@ import { getPublicVideos } from '@/api/promo_video'
 const playerRef = ref(null)
 const videos = ref([])
 const currentVideo = ref(null)
-const thumbnails = ref({})
 const currentIndex = ref(0)
+
+// 预缓冲：隐藏的 video 元素，提前加载下一个视频
+const prebufferRef = ref(null)
+const playerBuffering = ref(false)
 
 onMounted(async () => {
   try {
@@ -82,16 +88,26 @@ onMounted(async () => {
       currentVideo.value = videos.value[0]
       currentIndex.value = 0
       await nextTick()
-      generateAllThumbnails()
+      // 第一个视频开始播放后，预缓冲下一个
+      prebufferNext(0)
     }
   } catch (e) {
     console.error('加载视频列表失败', e)
   }
 })
 
+onUnmounted(() => {
+  // 清理预缓冲元素
+  if (prebufferRef.value) {
+    prebufferRef.value.removeAttribute('src')
+    prebufferRef.value.load()
+  }
+})
+
 function switchVideo(v, idx) {
   currentVideo.value = v
   currentIndex.value = idx
+  prebufferNext(idx)
 }
 
 function onVideoEnded() {
@@ -107,51 +123,40 @@ function onPlayerReady() {
   }
 }
 
-async function generateAllThumbnails() {
-  for (const v of videos.value) {
-    if (!thumbnails.value[v.id]) {
-      const url = await captureFrame(v.file_path)
-      if (url) {
-        thumbnails.value[v.id] = url
-      }
-    }
-  }
+function onPlayerWaiting() {
+  playerBuffering.value = true
 }
 
-function captureFrame(videoUrl) {
-  return new Promise((resolve) => {
-    const video = document.createElement('video')
-    video.crossOrigin = 'anonymous'
-    video.preload = 'metadata'
-    video.muted = true
-    video.src = videoUrl
+function onPlayerCanPlay() {
+  playerBuffering.value = false
+}
 
-    let resolved = false
-    const finish = (result) => {
-      if (resolved) return
-      resolved = true
-      video.remove()
-      resolve(result)
+// 预缓冲下一个视频
+function prebufferNext(currentIdx) {
+  const nextIdx = currentIdx + 1
+  if (nextIdx >= videos.value.length) {
+    // 最后一个视频，预缓冲第一个（循环）
+    if (videos.value.length > 1 && currentIdx === videos.value.length - 1) {
+      preloadVideo(videos.value[0].file_path)
     }
+    return
+  }
+  preloadVideo(videos.value[nextIdx].file_path)
+}
 
-    video.onloadeddata = () => {
-      video.currentTime = Math.min(1, video.duration || 1)
-    }
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = video.videoWidth || 320
-        canvas.height = video.videoHeight || 180
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        finish(canvas.toDataURL('image/jpeg', 0.6))
-      } catch {
-        finish(null)
-      }
-    }
-    video.onerror = () => finish(null)
-    setTimeout(() => finish(null), 5000)
-  })
+function preloadVideo(url) {
+  if (!prebufferRef.value) {
+    prebufferRef.value = document.createElement('video')
+    prebufferRef.value.muted = true
+    prebufferRef.value.preload = 'auto'
+    prebufferRef.value.style.display = 'none'
+    document.body.appendChild(prebufferRef.value)
+  }
+  // 避免重复加载同一个 URL
+  if (prebufferRef.value.getAttribute('data-url') !== url) {
+    prebufferRef.value.setAttribute('data-url', url)
+    prebufferRef.value.src = url
+  }
 }
 </script>
 

@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime
 from flask_login import UserMixin
@@ -1038,11 +1039,21 @@ class PromoVideo(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    @property
+    def thumbnail_url(self):
+        """从视频路径推导缩略图 URL"""
+        if not self.file_path:
+            return None
+        # /static/uploads/xxx.mp4 → /static/uploads/xxx_thumb.jpg
+        base, ext = os.path.splitext(self.file_path)
+        return f'{base}_thumb.jpg'
+
     def to_dict(self):
         return {
             'id': self.id,
             'title': self.title,
             'file_path': self.file_path,
+            'thumbnail_url': self.thumbnail_url,
             'sort_order': self.sort_order,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None

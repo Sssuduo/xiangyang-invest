@@ -95,11 +95,12 @@
                 v-model="pieMeetingStatus"
                 placeholder="上会状态"
                 clearable
+                multiple
+                collapse-tags
                 size="small"
-                style="width: 130px;"
+                style="width: 150px;"
                 @change="fetchInvestmentStats"
               >
-                <el-option label="全部上会" value="" />
                 <el-option
                   v-for="s in meetingStatuses"
                   :key="s.code"
@@ -215,7 +216,7 @@ const investmentStats = reactive({
 
 // 饼状图筛选
 const pieFollowStatus = ref([])
-const pieMeetingStatus = ref('')
+const pieMeetingStatus = ref([])
 const followStatuses = ref([])
 const meetingStatuses = ref([])
 
@@ -627,7 +628,9 @@ async function fetchInvestmentStats() {
     if (pieFollowStatus.value && pieFollowStatus.value.length > 0) {
       params.follow_status = pieFollowStatus.value.join(',')
     }
-    if (pieMeetingStatus.value) params.meeting_status = pieMeetingStatus.value
+    if (pieMeetingStatus.value && pieMeetingStatus.value.length > 0) {
+      params.meeting_status = pieMeetingStatus.value.join(',')
+    }
     const res = await getInvestmentStats(params)
     if (res?.code === 0) {
       investmentStats.total_projects = res.data.total_projects || 0

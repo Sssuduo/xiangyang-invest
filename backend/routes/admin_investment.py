@@ -445,7 +445,11 @@ def investment_stats():
         elif len(codes) > 1:
             base_filters.append(InvestmentProject.follow_status_code.in_(codes))
     if meeting_status:
-        base_filters.append(InvestmentProject.meeting_status_code == meeting_status)
+        codes = [c.strip() for c in meeting_status.split(',') if c.strip()]
+        if len(codes) == 1:
+            base_filters.append(InvestmentProject.meeting_status_code == codes[0])
+        elif len(codes) > 1:
+            base_filters.append(InvestmentProject.meeting_status_code.in_(codes))
 
     # 按 project_type_code 分组统计项目数量
     rows = db.session.query(

@@ -1063,8 +1063,8 @@ class ConstructionProject(db.Model):
     dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
     construction_content = db.Column(db.Text, default='')
     construction_location = db.Column(db.String(255), default='')
-    start_date = db.Column(db.String(7), default='')     # 年-月 格式
-    end_date = db.Column(db.String(7), default='')       # 年-月 格式
+    start_date = db.Column(db.String(10), default='')    # 年-月-日 格式
+    end_date = db.Column(db.String(10), default='')      # 年-月-日 格式
     funding_source = db.Column(db.String(255), default='')
     wuhua_platform = db.Column(db.String(8), default='')  # 是 / 否
     construction_unit = db.Column(db.String(255), default='')

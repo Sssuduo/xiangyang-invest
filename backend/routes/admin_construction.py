@@ -13,6 +13,15 @@ from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
+def _safe_date_str(val):
+    """安全转换为日期字符串（YYYY-MM-DD），兼容 date 对象和字符串"""
+    if not val:
+        return ''
+    if hasattr(val, 'strftime'):
+        return val.strftime('%Y-%m-%d')
+    return str(val)[:10] if val else ''
+
+
 def _parse_date(val):
     """将日期字符串转为 date 对象，兼容 YYYY-MM 和 YYYY-MM-DD 格式"""
     if not val:
@@ -151,8 +160,8 @@ def _build_project_dict(p):
         'responsible_person': p.responsible_person or '',
         'responsible_person_phone': p.responsible_person_phone or '',
         'construction_location': p.construction_location or '',
-        'start_date': p.start_date or '',
-        'end_date': p.end_date or '',
+        'start_date': _safe_date_str(p.start_date),
+        'end_date': _safe_date_str(p.end_date),
         'funding_source': p.funding_source or '',
         'wuhua_platform': p.wuhua_platform or '',
         'team_leader_ids': json.loads(p.team_leader_ids) if p.team_leader_ids else [],
@@ -284,8 +293,8 @@ def create_project():
         responsible_person=(data.get('responsible_person') or '').strip(),
         responsible_person_phone=(data.get('responsible_person_phone') or '').strip(),
         construction_location=(data.get('construction_location') or '').strip(),
-        start_date=_parse_date(data.get('start_date')),
-        end_date=_parse_date(data.get('end_date')),
+        start_date=((data.get('start_date') or '').strip()[:10] or ''),
+        end_date=((data.get('end_date') or '').strip()[:10] or ''),
         funding_source=(data.get('funding_source') or '').strip(),
         wuhua_platform=(data.get('wuhua_platform') or '').strip(),
         team_leader_ids=json.dumps(data.get('team_leader_ids', []), ensure_ascii=False) if isinstance(data.get('team_leader_ids'), list) else (data.get('team_leader_ids') or ''),
@@ -458,10 +467,13 @@ def update_project(project_id):
     project.responsible_person = (data.get('responsible_person') or '').strip()
     project.responsible_person_phone = (data.get('responsible_person_phone') or '').strip()
     project.construction_location = (data.get('construction_location') or '').strip()
+    # start_date/end_date 存储为 YYYY-MM-DD 字符串（列类型 String(10)），非必填
     if 'start_date' in data:
-        project.start_date = _parse_date(data.get('start_date'))
+        val = (data.get('start_date') or '').strip()
+        project.start_date = val[:10] if val else ''
     if 'end_date' in data:
-        project.end_date = _parse_date(data.get('end_date'))
+        val = (data.get('end_date') or '').strip()
+        project.end_date = val[:10] if val else ''
     project.funding_source = (data.get('funding_source') or '').strip()
     project.wuhua_platform = (data.get('wuhua_platform') or '').strip()
     if 'team_leader_ids' in data:

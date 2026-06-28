@@ -283,10 +283,10 @@
           <el-table-column label="建设地点" width="140" show-overflow-tooltip>
             <template #default="{ row }">{{ dn(row.construction_location) || '-' }}</template>
           </el-table-column>
-          <el-table-column label="开工时间" width="100" align="center">
+          <el-table-column label="开工时间" width="110" align="center">
             <template #default="{ row }">{{ row.start_date || '-' }}</template>
           </el-table-column>
-          <el-table-column label="完工时间" width="100" align="center">
+          <el-table-column label="完工时间" width="110" align="center">
             <template #default="{ row }">{{ row.end_date || '-' }}</template>
           </el-table-column>
           <el-table-column label="资金来源" width="140" show-overflow-tooltip>
@@ -445,10 +445,10 @@
               <el-form-item label="开工时间">
                 <el-date-picker
                   v-model="form.start_date"
-                  type="month"
-                  placeholder="选择开工年月"
-                  format="YYYY-MM"
-                  value-format="YYYY-MM"
+                  type="date"
+                  placeholder="选择开工日期"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
                   style="width:100%"
                 />
               </el-form-item>
@@ -457,10 +457,10 @@
               <el-form-item label="完工时间">
                 <el-date-picker
                   v-model="form.end_date"
-                  type="month"
-                  placeholder="选择完工年月"
-                  format="YYYY-MM"
-                  value-format="YYYY-MM"
+                  type="date"
+                  placeholder="选择完工日期"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
                   style="width:100%"
                 />
               </el-form-item>

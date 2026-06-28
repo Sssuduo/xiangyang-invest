@@ -112,7 +112,7 @@ const sampleData = {
   demand_type_code: '用地需求',
   demand_content: '示例诉求内容',
   unit_code: '示例对接单位',
-  status: '待处理',
+  status: '待回应',
 }
 
 onMounted(() => loadFields())

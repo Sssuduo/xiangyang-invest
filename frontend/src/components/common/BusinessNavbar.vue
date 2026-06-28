@@ -20,6 +20,7 @@
               <el-dropdown-item command="/investment">招商项目管理</el-dropdown-item>
               <el-dropdown-item command="/investment-activity">招商动态管理</el-dropdown-item>
               <el-dropdown-item command="/investment-demand">企业诉求管理</el-dropdown-item>
+              <el-dropdown-item command="/investment-activity-ledger">活动台账管理</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -44,6 +45,7 @@
           <span class="nav-item nav-user nav-user-clickable" @click="showProfileDialog = true">
             <el-icon><UserFilled /></el-icon>
             {{ businessAuth.user?.display_name || businessAuth.user?.username }}
+            <el-tag v-if="businessAuth.isVisitor" size="small" type="warning" effect="plain" style="margin-left: 6px;">访客</el-tag>
           </span>
           <span class="nav-item nav-logout" @click="handleLogout">退出</span>
         </template>

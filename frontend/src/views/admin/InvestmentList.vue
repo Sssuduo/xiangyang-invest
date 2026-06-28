@@ -13,7 +13,7 @@
         <!-- 搜索筛选 -->
         <div class="filter-bar">
           <el-input v-model="searchText" placeholder="模糊搜索..." :prefix-icon="Search" clearable class="search-input" @input="handleSearch" />
-          <el-select v-model="filterFollow" placeholder="跟进状态" clearable @change="fetchData" style="width: 130px;">
+          <el-select v-model="filterFollow" multiple placeholder="跟进状态" clearable collapse-tags collapse-tags-tooltip @change="fetchData" style="width: 150px;">
             <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
           <el-select v-model="filterMeeting" placeholder="上会状态" clearable @change="fetchData" style="width: 130px;">
@@ -57,6 +57,13 @@
             <template #default="{ row }">
               <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
                 {{ resolveName('project_tags', tag) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="专班负责人" width="130">
+            <template #default="{ row }">
+              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ name }}
               </el-tag>
             </template>
           </el-table-column>
@@ -230,6 +237,17 @@
                 </el-select>
               </el-form-item>
 
+              <!-- 专班负责人 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><User /></el-icon></span>
+                <span class="section-title">专班负责人</span>
+              </div>
+              <el-form-item label="专班负责人">
+                <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
+                  <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+              </el-form-item>
+
               <!-- 企业诉求 -->
               <div class="section-header">
                 <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
@@ -244,9 +262,9 @@
                   <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
                   <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
                   <el-select v-model="d.status" size="small" style="width: 120px;">
-                    <el-option label="待处理" value="pending" />
-                    <el-option label="处理中" value="processing" />
-                    <el-option label="已解决" value="resolved" />
+                    <el-option label="待回应" value="pending" />
+                    <el-option label="协调中" value="processing" />
+                    <el-option label="已回应" value="resolved" />
                   </el-select>
                 </div>
                 <el-button size="small" @click="addDemand">
@@ -269,7 +287,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Delete, InfoFilled, OfficeBuilding, Connection, ChatLineSquare, UploadFilled, DataAnalysis, PriceTag } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, InfoFilled, OfficeBuilding, Connection, ChatLineSquare, UploadFilled, DataAnalysis, PriceTag, User } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getProjects, deleteProject, getDicts, createProject, updateProject, getProject, getMaxOrderNo } from '@/api/investment'
@@ -277,10 +295,10 @@ import { getProjects, deleteProject, getDicts, createProject, updateProject, get
 const projects = ref([])
 const loading = ref(false)
 const searchText = ref('')
-const filterFollow = ref('')
+const filterFollow = ref([])
 const filterMeeting = ref('')
 const filterType = ref('')
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], project_tags: [] })
+const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], project_tags: [], staff: [] })
 
 // 查看抽屉
 const viewDrawerVisible = ref(false)
@@ -315,6 +333,7 @@ const defaultForm = () => ({
   person_in_charge_phone: '',
   first_contact_date: '',
   tags: [],
+  team_leader_ids: [],
   demands: []
 })
 
@@ -344,7 +363,7 @@ async function fetchData() {
   try {
     const params = {}
     if (searchText.value) params.search = searchText.value
-    if (filterFollow.value) params.follow_status = filterFollow.value
+    if (filterFollow.value.length > 0) params.follow_status = filterFollow.value.join(',')
     if (filterMeeting.value) params.meeting_status = filterMeeting.value
     if (filterType.value) params.project_type = filterType.value
     const res = await getProjects(params)
@@ -410,6 +429,7 @@ async function openEdit(row) {
       form.person_in_charge_phone = d.person_in_charge_phone || ''
       form.first_contact_date = d.first_contact_date || ''
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
+      form.team_leader_ids = Array.isArray(d.team_leader_ids) ? [...d.team_leader_ids] : []
       form.demands = (d.demands || []).map(dd => ({ ...dd }))
     }
     editDrawerVisible.value = true
@@ -473,6 +493,7 @@ async function handleSave() {
       person_in_charge_phone: form.person_in_charge_phone,
       first_contact_date: form.first_contact_date || null,
       tags: form.tags,
+      team_leader_ids: form.team_leader_ids,
       demands: form.demands
     }
 

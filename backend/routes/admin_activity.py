@@ -4,7 +4,7 @@ from flask import request, jsonify
 from models import InvestmentActivity, InvestmentProject
 from extensions import db
 from routes import admin_activity_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
@@ -66,6 +66,7 @@ def list_activities():
 
 @admin_activity_bp.route('/activity/activities', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_activity():
     """新建动态"""
     data = request.get_json()
@@ -115,6 +116,7 @@ def get_activity(activity_id):
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_activity(activity_id):
     """更新动态"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
@@ -167,6 +169,7 @@ def update_activity(activity_id):
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_activity(activity_id):
     """物理删除动态"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
@@ -177,6 +180,7 @@ def delete_activity(activity_id):
 
 @admin_activity_bp.route('/activity/activities/batch-delete', methods=['POST'])
 @dual_login_required
+@visitor_block
 def batch_delete_activities():
     """批量删除动态"""
     data = request.get_json()

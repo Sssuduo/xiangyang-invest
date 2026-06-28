@@ -90,13 +90,29 @@
           >
             <el-icon><Plus /></el-icon> 添加在建项目
           </el-button>
-          <el-button
+          <el-dropdown
             v-if="selectedIds.length > 0"
-            type="success"
-            @click="openExportDialog"
+            trigger="hover"
+            @command="handleBatchCmd"
           >
-            <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
-          </el-button>
+            <el-button type="primary" plain>
+              <el-icon><Operation /></el-icon> 批量操作 ({{ selectedIds.length }})
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="print">
+                  <el-icon><Printer /></el-icon> 在线打印
+                </el-dropdown-item>
+                <el-dropdown-item command="export">
+                  <el-icon><Download /></el-icon> 导出文件
+                </el-dropdown-item>
+                <el-dropdown-item command="export-print" divided>
+                  <el-icon><Finished /></el-icon> 导出并打印
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
 
         <!-- 表格 -->
@@ -128,18 +144,18 @@
                   <div class="expand-block">
                     <div class="expand-block-title">基础信息</div>
                     <div class="expand-grid">
-                      <div class="expand-item"><label>项目名称</label><span>{{ row.project_name }}</span></div>
-                      <div class="expand-item"><label>建设单位</label><span>{{ row.construction_unit || '-' }}</span></div>
+                      <div class="expand-item"><label>项目名称</label><span>{{ dn(row.project_name) }}</span></div>
+                      <div class="expand-item"><label>建设单位</label><span>{{ dn(row.construction_unit) || '-' }}</span></div>
                       <div class="expand-item"><label>项目类型</label><span>{{ row.project_type_name || row.project_type_code }}</span></div>
                       <div class="expand-item"><label>调度状态</label><span>{{ row.dispatch_status_name || row.dispatch_status_code }}</span></div>
-                      <div class="expand-item"><label>责任单位</label><span>{{ row.responsible_unit_name || row.responsible_unit_code || '-' }}</span></div>
-                      <div class="expand-item"><label>责任人</label><span>{{ row.responsible_person || '-' }}</span></div>
-                      <div class="expand-item"><label>联系电话</label><span>{{ row.responsible_person_phone || '-' }}</span></div>
+                      <div class="expand-item"><label>责任单位</label><span>{{ dn(row.responsible_unit_name || row.responsible_unit_code) || '-' }}</span></div>
+                      <div class="expand-item"><label>责任人</label><span>{{ dn(row.responsible_person) || '-' }}</span></div>
+                      <div class="expand-item"><label>联系电话</label><span>{{ dp(row.responsible_person_phone) || '-' }}</span></div>
                     </div>
                   </div>
                   <div class="expand-block" v-if="row.construction_content">
                     <div class="expand-block-title">建设内容</div>
-                    <p class="expand-text-block">{{ row.construction_content }}</p>
+                    <p class="expand-text-block">{{ dc(row.construction_content) }}</p>
                   </div>
                 </template>
 
@@ -157,14 +173,14 @@
                       <div class="timeline-body">
                         <div class="timeline-row">
                           <span class="timeline-index">{{ i + 1 }}</span>
-                          <span class="timeline-content">{{ item.content }}</span>
+                          <span class="timeline-content">{{ dc(item.content) }}</span>
                           <span class="timeline-date">{{ item.planned_date || '暂未明确' }}</span>
                           <span class="timeline-status">{{ roadmapStatusLabel(item) }}</span>
                         </div>
                         <div class="timeline-extra" v-if="item.actual_date || item.is_delayed || item.status === 'cancelled'">
                           <span v-if="item.actual_date" class="timeline-actual">实际：{{ item.actual_date }}</span>
-                          <span v-if="item.is_delayed && item.delay_reason" class="timeline-reason">延期：{{ item.delay_reason }}</span>
-                          <span v-if="item.status === 'cancelled' && item.cancel_reason" class="timeline-reason cancel">作废：{{ item.cancel_reason }}</span>
+                          <span v-if="item.is_delayed && item.delay_reason" class="timeline-reason">延期：{{ dc(item.delay_reason) }}</span>
+                          <span v-if="item.status === 'cancelled' && item.cancel_reason" class="timeline-reason cancel">作废：{{ dc(item.cancel_reason) }}</span>
                         </div>
                       </div>
                     </div>
@@ -189,7 +205,7 @@
                         <span class="progress-index">{{ i + 1 }}</span>
                         <span class="progress-date-range">{{ pg.start_date }} ~ {{ pg.end_date }}</span>
                       </div>
-                      <p class="progress-content-text">{{ pg.content }}</p>
+                      <p class="progress-content-text">{{ dc(pg.content) }}</p>
                     </div>
                   </div>
                 </div>
@@ -217,8 +233,8 @@
                         <span class="issue-status-tag" :class="iss.resolution_status_code">{{ iss.resolution_status_name || iss.resolution_status_code }}</span>
                         <span v-if="iss.main_department_name" class="issue-dept">{{ iss.main_department_name }}</span>
                       </div>
-                      <p class="issue-desc">{{ iss.issue_description }}</p>
-                      <p v-if="iss.resolution_note" class="issue-resolution">措施: {{ iss.resolution_note }}</p>
+                      <p class="issue-desc">{{ dc(iss.issue_description) }}</p>
+                      <p v-if="iss.resolution_note" class="issue-resolution">措施: {{ dc(iss.resolution_note) }}</p>
                     </div>
                   </div>
                 </div>
@@ -226,17 +242,21 @@
             </template>
           </el-table-column>
           <el-table-column prop="order_no" label="序号" width="60" align="center" />
-          <el-table-column prop="project_name" label="在建项目名称" min-width="220" show-overflow-tooltip />
+          <el-table-column label="在建项目名称" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ dn(row.project_name) }}</template>
+          </el-table-column>
           <el-table-column label="项目类型" width="110">
             <template #default="{ row }">
               <span class="project-type-tag">{{ row.project_type_name || row.project_type_code }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="construction_unit" label="建设单位" width="130" show-overflow-tooltip />
+          <el-table-column label="建设单位" width="130" show-overflow-tooltip>
+            <template #default="{ row }">{{ dn(row.construction_unit) }}</template>
+          </el-table-column>
           <el-table-column label="建设内容" min-width="160">
             <template #default="{ row }">
-              <el-tooltip :content="row.construction_content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.construction_content, 40) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.construction_content" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ dc(truncate(row.construction_content, 40)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -254,10 +274,34 @@
           </el-table-column>
           <el-table-column label="责任单位" width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.responsible_unit_name || row.responsible_unit_code || '-' }}
+              {{ dn(row.responsible_unit_name || row.responsible_unit_code) || '-' }}
             </template>
           </el-table-column>
-          <el-table-column prop="responsible_person" label="责任人" width="70" align="center" />
+          <el-table-column label="责任人" width="70" align="center">
+            <template #default="{ row }">{{ dn(row.responsible_person) }}</template>
+          </el-table-column>
+          <el-table-column label="建设地点" width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ dn(row.construction_location) || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="开工时间" width="100" align="center">
+            <template #default="{ row }">{{ row.start_date || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="完工时间" width="100" align="center">
+            <template #default="{ row }">{{ row.end_date || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="资金来源" width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ dn(row.funding_source) || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="五化平台" width="80" align="center">
+            <template #default="{ row }">{{ row.wuhua_platform || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="专班负责人" width="130">
+            <template #default="{ row }">
+              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ name }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <div class="action-cell">
@@ -395,6 +439,42 @@
             />
           </el-form-item>
 
+          <!-- 项目信息 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
+            <span class="section-title">项目信息</span>
+          </div>
+          <el-form-item label="建设地点">
+            <el-input v-model="form.construction_location" placeholder="请输入建设地点" maxlength="255" />
+          </el-form-item>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="开工时间">
+                <el-input v-model="form.start_date" placeholder="年-月，如 2025-08" maxlength="64" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="完工时间">
+                <el-input v-model="form.end_date" placeholder="年-月，如 2026-12" maxlength="64" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="资金来源">
+                <el-input v-model="form.funding_source" placeholder="请输入资金来源" maxlength="255" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="五化平台">
+                <el-select v-model="form.wuhua_platform" placeholder="请选择" style="width: 100%;">
+                  <el-option label="是" value="是" />
+                  <el-option label="否" value="否" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
           <!-- 工作路径图 -->
           <div class="section-header">
             <span class="section-icon"><el-icon><Guide /></el-icon></span>
@@ -463,8 +543,8 @@
                     >
                       待完成<template v-if="item.is_delayed">（已延期）</template>
                     </el-tag>
-                    <span v-if="item.delay_reason" class="roadmap-reason">延期原因：{{ item.delay_reason }}</span>
-                    <span v-if="item.cancel_reason" class="roadmap-reason cancel">作废原因：{{ item.cancel_reason }}</span>
+                    <span v-if="item.delay_reason" class="roadmap-reason">延期原因：{{ dc(item.delay_reason) }}</span>
+                    <span v-if="item.cancel_reason" class="roadmap-reason cancel">作废原因：{{ dc(item.cancel_reason) }}</span>
                   </div>
                   <div class="roadmap-actions" v-if="item.status === 'pending'">
                     <el-button size="small" type="success" plain @click="handleRoadmapComplete(item)">
@@ -529,6 +609,17 @@
             </el-col>
           </el-row>
 
+          <!-- 专班负责人 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><User /></el-icon></span>
+            <span class="section-title">专班负责人</span>
+          </div>
+          <el-form-item label="专班负责人">
+            <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
+              <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+          </el-form-item>
+
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="handleSave">
@@ -563,21 +654,21 @@
           <el-descriptions-item label="调度状态">
             <el-tag effect="dark" size="small" :color="dispatchStatusColor(detailProject.dispatch_status_code)" style="border:none;color:#fff;">{{ detailProject.dispatch_status_name || detailProject.dispatch_status_code }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="建设单位">{{ detailProject.construction_unit || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="责任单位">{{ detailProject.responsible_unit_name || detailProject.responsible_unit_code || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="责任人">{{ detailProject.responsible_person || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="联系电话">{{ detailProject.responsible_person_phone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="建设单位">{{ dn(detailProject.construction_unit) || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="责任单位">{{ dn(detailProject.responsible_unit_name || detailProject.responsible_unit_code) || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="责任人">{{ dn(detailProject.responsible_person) || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ dp(detailProject.responsible_person_phone) || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div class="detail-section" v-if="detailProject.construction_content">
           <h4>建设内容</h4>
-          <p>{{ detailProject.construction_content }}</p>
+          <p>{{ dc(detailProject.construction_content) }}</p>
         </div>
         <div class="detail-section" v-if="detailProject.work_roadmap_items && detailProject.work_roadmap_items.length > 0">
           <h4>工作路径图 ({{ detailProject.work_roadmap_items.length }}条)</h4>
           <div v-for="(wri, i) in detailProject.work_roadmap_items" :key="i" class="detail-sub-item">
             <div class="roadmap-detail-header">
               <span class="sub-index">{{ i + 1 }}.</span>
-              <span class="sub-text">{{ wri.content }}</span>
+              <span class="sub-text">{{ dc(wri.content) }}</span>
               <el-tag
                 v-if="wri.status === 'completed'"
                 type="success"
@@ -607,8 +698,8 @@
               <span v-if="wri.actual_date" style="margin-left:12px;">实际：{{ wri.actual_date }}</span>
               <span v-if="!wri.planned_date" style="color:#909399;">预计：暂未明确</span>
             </div>
-            <p v-if="wri.delay_reason" style="color:#e6a23c;">延期原因：{{ wri.delay_reason }}</p>
-            <p v-if="wri.cancel_reason" style="color:#f56c6c;">作废原因：{{ wri.cancel_reason }}</p>
+            <p v-if="wri.delay_reason" style="color:#e6a23c;">延期原因：{{ dc(wri.delay_reason) }}</p>
+            <p v-if="wri.cancel_reason" style="color:#f56c6c;">作废原因：{{ dc(wri.cancel_reason) }}</p>
           </div>
         </div>
         <!-- 工作进展 -->
@@ -616,7 +707,7 @@
           <h4>工作进展 ({{ detailProject.work_progresses.length }}条)</h4>
           <div v-for="(wp, i) in detailProject.work_progresses" :key="i" class="detail-sub-item">
             <span class="sub-date">{{ wp.start_date }} ~ {{ wp.end_date }}</span>
-            <p>{{ wp.content }}</p>
+            <p>{{ dc(wp.content) }}</p>
           </div>
         </div>
         <!-- 存在问题 -->
@@ -625,8 +716,8 @@
           <div v-for="(iss, i) in detailProject.issues" :key="i" class="detail-sub-item">
             <el-tag size="small" effect="plain">{{ iss.issue_type_name || iss.issue_type_code }}</el-tag>
             <el-tag size="small" effect="dark" :color="resolutionStatusColor(iss.resolution_status_code)" style="margin-left: 8px; border: none; color: #fff;">{{ iss.resolution_status_name || iss.resolution_status_code }}</el-tag>
-            <p v-if="iss.issue_description" style="margin-top: 6px;">{{ iss.issue_description }}</p>
-            <p v-if="iss.resolution_note" style="color: #909399; font-size: 12px;">解决措施：{{ iss.resolution_note }}</p>
+            <p v-if="iss.issue_description" style="margin-top: 6px;">{{ dc(iss.issue_description) }}</p>
+            <p v-if="iss.resolution_note" style="color: #909399; font-size: 12px;">解决措施：{{ dc(iss.resolution_note) }}</p>
           </div>
         </div>
       </template>
@@ -754,39 +845,12 @@
       :project-name="progressProjectName"
     />
 
-    <!-- ========== 导出 Excel 弹窗 ========== -->
-    <el-dialog v-model="exportDialogVisible" title="导出Excel" width="500px" :close-on-click-modal="false">
-      <el-form label-width="110px">
-        <el-form-item label="选择模板">
-          <el-select v-model="exportTemplateId" placeholder="请选择导出模板" style="width: 100%;">
-            <el-option v-for="t in exportTemplates" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="工作进展范围">
-          <el-select v-model="exportProgressRange" placeholder="请选择" style="width: 100%;">
-            <el-option label="全部进展" value="" />
-            <el-option label="最近5条" value="last5" />
-            <el-option label="最近1个月" value="last1m" />
-            <el-option label="最近3个月" value="last3m" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="工作进展导出">
-          <el-select v-model="exportProgressMode" placeholder="请选择" style="width: 100%;">
-            <el-option label="聚合导出" value="aggregate" />
-            <el-option label="按行导出" value="progress" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <p style="color:#909399;font-size:13px;margin-top:12px;">
-        将导出选中的 <strong>{{ selectedIds.length }}</strong> 个项目
-      </p>
-      <template #footer>
-        <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="exporting" @click="handleExport">
-          <el-icon><Download /></el-icon> 导出
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- 打印/导出弹窗 -->
+    <SimplePrintExportDialog
+      v-model="printExportDialogVisible"
+      entity-type="construction"
+      :project-ids="selectedIds"
+    />
   </div>
 </template>
 
@@ -797,11 +861,12 @@ import {
   Search, Plus, MoreFilled, View, Delete,
   InfoFilled, Document, OfficeBuilding, Guide,
   Check, Clock, Close, Edit,
-  Upload, UploadFilled, Download,
-  ArrowUp, ArrowDown
+  Upload, UploadFilled, Download, User,
+  ArrowUp, ArrowDown, Operation, Printer, Finished
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProgressTimelineDrawer from '@/components/investment/ProgressTimelineDrawer.vue'
+import SimplePrintExportDialog from '@/components/common/SimplePrintExportDialog.vue'
 import {
   getDicts, getProjects, createProject, updateProject,
   getProject, deleteProject, getMaxOrderNo
@@ -810,9 +875,15 @@ import {
   downloadTemplate, previewImport, executeImport
 } from '@/api/construction_import'
 import { downloadConstructionExcel, getConstructionExportTemplates } from '@/api/construction_export'
+// import { getConstructionPrintTemplates, downloadConstructionPrintExcel } from '@/api/construction_print'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent, maskPhone } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
+function dp(v) { return businessAuth.isVisitor ? maskPhone(v) : (v || '') }
 const tableRef = ref(null)
 const projects = ref([])
 const loading = ref(false)
@@ -823,47 +894,14 @@ const filterProjectType = ref('')
 const filterResponsibleUnit = ref('')
 const selectedIds = ref([])
 
-// ---- 导出 ----
-const exportDialogVisible = ref(false)
-const exportTemplates = ref([])
-const exportTemplateId = ref(0)
-const exportProgressRange = ref('')
-const exportProgressMode = ref('aggregate')
-const exporting = ref(false)
+// ---- 打印 / 导出 ----
+const printExportDialogVisible = ref(false)
 
-async function openExportDialog() {
-  exportDialogVisible.value = true
-  try {
-    const res = await getConstructionExportTemplates()
-    if (res.code === 0) {
-      exportTemplates.value = res.data || []
-      const stillExists = exportTemplates.value.some(t => t.id === exportTemplateId.value)
-      if (!stillExists && exportTemplates.value.length > 0) {
-        exportTemplateId.value = exportTemplates.value[0].id
-      } else if (!exportTemplateId.value && exportTemplates.value.length > 0) {
-        exportTemplateId.value = exportTemplates.value[0].id
-      }
-    }
-  } catch { /* ignore */ }
-}
-
-async function handleExport() {
-  if (!exportTemplateId.value) {
-    ElMessage.warning('请选择导出模板')
-    return
-  }
-  exporting.value = true
-  try {
-    await downloadConstructionExcel(selectedIds.value, {
-      templateId: exportTemplateId.value,
-      progressRange: exportProgressRange.value,
-      progressMode: exportProgressMode.value
-    })
-    ElMessage.success('导出成功')
-    exportDialogVisible.value = false
-  } catch (err) {
-    ElMessage.error(err.message || '导出失败')
-  } finally { exporting.value = false }
+// ---- 批量操作 ----
+function handleBatchCmd(cmd) {
+  if (cmd === 'print' || cmd === 'export' || cmd === 'export-print') {
+    printExportDialogVisible.value = true
+  } else if (cmd === 'batch-delete') { handleBatchDelete() }
 }
 
 // ---- 展开卡片 ----
@@ -931,7 +969,8 @@ const dicts = reactive({
   dispatch_statuses: [],
   issue_types: [],
   resolution_statuses: [],
-  organizations: []
+  organizations: [],
+  staff: []
 })
 
 // 分页
@@ -960,9 +999,15 @@ const defaultForm = () => ({
   construction_content: '',
   work_roadmap_items: [],
   construction_unit: '',
+  construction_location: '',
+  start_date: '',
+  end_date: '',
+  funding_source: '',
+  wuhua_platform: '',
   responsible_unit_code: '',
   responsible_person: '',
-  responsible_person_phone: ''
+  responsible_person_phone: '',
+  team_leader_ids: []
 })
 const form = reactive(defaultForm())
 
@@ -1107,9 +1152,15 @@ async function openEdit(row) {
         cancel_reason: item.cancel_reason || ''
       }))
       form.construction_unit = d.construction_unit || ''
+      form.construction_location = d.construction_location || ''
+      form.start_date = d.start_date || ''
+      form.end_date = d.end_date || ''
+      form.funding_source = d.funding_source || ''
+      form.wuhua_platform = d.wuhua_platform || ''
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.responsible_person = d.responsible_person || ''
       form.responsible_person_phone = d.responsible_person_phone || ''
+      form.team_leader_ids = Array.isArray(d.team_leader_ids) ? [...d.team_leader_ids] : []
     }
     editDrawerVisible.value = true
   } catch (err) {

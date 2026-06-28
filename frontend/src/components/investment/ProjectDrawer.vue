@@ -11,7 +11,7 @@
     <template v-if="project">
       <el-descriptions :column="2" border size="small" class="detail-desc">
         <el-descriptions-item label="项目名称" :span="2">
-          <strong>{{ project.project_name }}</strong>
+          <strong>{{ dn(project.project_name) }}</strong>
         </el-descriptions-item>
         <el-descriptions-item label="顺序号">{{ project.order_no }}</el-descriptions-item>
         <el-descriptions-item label="项目类型">
@@ -21,12 +21,12 @@
           <strong class="amount-txt">{{ formatAmount(project.invest_amount) }}</strong>
         </el-descriptions-item>
         <el-descriptions-item label="首次对接时间">{{ project.first_contact_date || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="投资商名称" :span="2">{{ project.invest_enterprise }}</el-descriptions-item>
+        <el-descriptions-item label="投资商名称" :span="2">{{ dn(project.invest_enterprise) }}</el-descriptions-item>
         <el-descriptions-item label="企业简介" :span="2">
           <div class="text-block">{{ project.enterprise_info }}</div>
         </el-descriptions-item>
         <el-descriptions-item label="项目内容" :span="2">
-          <div class="text-block text-block-lg">{{ project.project_content }}</div>
+          <div class="text-block text-block-lg">{{ dc(project.project_content) }}</div>
         </el-descriptions-item>
         <el-descriptions-item v-if="project.conclusion" label="专班研判结论" :span="2">
           <div class="text-block text-block-lg">{{ project.conclusion }}</div>
@@ -38,8 +38,8 @@
           <el-tag :color="project.meeting_status_color" effect="dark" size="small">{{ project.meeting_status_name || project.meeting_status_code }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="推介单位">{{ project.recommend_unit_name || project.recommend_unit_code || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="责任单位">{{ project.responsible_unit_name || project.responsible_unit_code }}</el-descriptions-item>
-        <el-descriptions-item label="责任人">{{ project.person_in_charge || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="责任单位">{{ dn(project.responsible_unit_name || project.responsible_unit_code) }}</el-descriptions-item>
+        <el-descriptions-item label="责任人">{{ dn(project.person_in_charge || '-') }}</el-descriptions-item>
         <el-descriptions-item v-if="project._tagNames && project._tagNames.length > 0" label="项目标签" :span="2">
           <el-tag v-for="(name, idx) in project._tagNames" :key="idx" size="small" effect="plain" style="margin-right: 6px; margin-bottom: 4px;">
             {{ name }}
@@ -81,6 +81,13 @@
 <script setup>
 import { computed } from 'vue'
 import { Document, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
+import { maskName, maskContent, maskPhone } from '@/utils/mask'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
+
+const businessAuth = useBusinessAuthStore()
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
+function dp(v) { return businessAuth.isVisitor ? maskPhone(v) : (v || '') }
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -94,7 +101,7 @@ function handleClose() { emit('update:modelValue', false) }
 function formatAmount(a) { if (!a && a !== 0) return '暂未明确'; const n = Number(a); if (n === 0) return '暂未明确'; return n >= 10000 ? (n / 10000).toFixed(2) + ' 亿元' : n.toLocaleString('zh-CN') + ' 万元' }
 function fmtDt(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN', { hour12: false }) }
 function dStatusColor(s) { return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399' }
-function dStatusName(s) { return { pending: '待处理', processing: '处理中', resolved: '已解决' }[s] || s }
+function dStatusName(s) { return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s }
 </script>
 
 <style scoped>

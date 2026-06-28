@@ -79,7 +79,7 @@
           <el-table-column label="所属项目" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               <el-tag class="project-name-tag" @click="handleProjectClick(row)">
-                {{ row.project_name }}
+                {{ dn(row.project_name) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -91,8 +91,8 @@
           </el-table-column>
           <el-table-column label="问题描述" min-width="220">
             <template #default="{ row }">
-              <el-tooltip :content="row.issue_description" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.issue_description, 50) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.issue_description" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ dc(truncate(row.issue_description, 50)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -115,7 +115,7 @@
           </el-table-column>
           <el-table-column label="解决措施" min-width="160">
             <template #default="{ row }">
-              <span v-if="row.resolution_note" class="content-preview">{{ truncate(row.resolution_note, 40) }}</span>
+              <span v-if="row.resolution_note" class="content-preview">{{ dc(truncate(row.resolution_note, 40)) }}</span>
               <span v-else style="color:#909399;">-</span>
             </template>
           </el-table-column>
@@ -284,8 +284,12 @@ import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ConstructionProjectDrawer from '@/components/investment/ConstructionProjectDrawer.vue'
 import { getDicts, getProjects, getIssueList, createIssue, updateIssue, deleteIssue } from '@/api/construction'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 const items = ref([])
 const loading = ref(false)
 const searchText = ref('')

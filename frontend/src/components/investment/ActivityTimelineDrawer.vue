@@ -10,7 +10,7 @@
       <div class="drawer-title-bar">
         <span class="drawer-title">
           <el-icon><ChatLineSquare /></el-icon>
-          项目动态 · {{ projectName }}
+          项目动态 · {{ dn(projectName) }}
         </span>
       </div>
     </template>
@@ -31,7 +31,7 @@
           >极简</span>
         </div>
         <div class="mode-right">
-          <el-button size="small" type="primary" @click="openCreateDialog">
+          <el-button v-if="!businessAuth.isVisitor" size="small" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon> 新建动态
           </el-button>
           <span v-if="activities.length > 0" class="mode-count">共 {{ activities.length }} 条</span>
@@ -58,7 +58,7 @@
           </div>
           <!-- 卡片内容 -->
           <div class="tl-card">
-            <div class="card-actions">
+            <div class="card-actions" v-if="!businessAuth.isVisitor">
               <el-button size="small" link type="primary" title="编辑动态" @click="openEditDialog(act)">
                 <el-icon><Edit /></el-icon>
               </el-button>
@@ -70,7 +70,7 @@
               <el-icon><Clock /></el-icon>
               <span>{{ act.date || act.created_at?.slice(0, 10) || '-' }}</span>
             </div>
-            <div class="card-body">{{ act.content }}</div>
+            <div class="card-body">{{ dc(act.content) }}</div>
             <!-- 附件 -->
             <div v-if="act.files && act.files.length > 0" class="card-files">
               <div
@@ -133,7 +133,7 @@
               <el-icon><Clock /></el-icon>
               <span>{{ act.date || act.created_at?.slice(0, 10) || '-' }}</span>
             </div>
-            <div class="simple-item-actions">
+            <div class="simple-item-actions" v-if="!businessAuth.isVisitor">
               <el-button size="small" link type="primary" title="编辑动态" @click="openEditDialog(act)">
                 <el-icon><Edit /></el-icon>
               </el-button>
@@ -142,7 +142,7 @@
               </el-button>
             </div>
           </div>
-          <div class="simple-content">{{ act.content }}</div>
+          <div class="simple-content">{{ dc(act.content) }}</div>
           <!-- 附件 -->
           <div v-if="act.files && act.files.length > 0" class="simple-files">
             <div
@@ -248,8 +248,12 @@ import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, 
 import { getPublicActivities, createActivity, updateActivity, deleteActivity } from '@/api/activity'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

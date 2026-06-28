@@ -1,4 +1,5 @@
 """在建项目库 — 管理端 API"""
+import json
 from datetime import date, datetime, timedelta
 from flask import request, jsonify
 from models import (
@@ -8,7 +9,7 @@ from models import (
 )
 from extensions import db
 from routes import admin_construction_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
@@ -88,10 +89,26 @@ def _resolve_project_names(projects):
     issue_type_map = {d.code: d.name for d in IssueTypeDict.query.all()}
     res_status_map = {d.code: d.name for d in ResolutionStatusDict.query.all()}
 
+    # 预加载 staff 用于专班负责人名称解析
+    from models import Staff
+    all_leader_ids = set()
+    for p in projects:
+        if p.team_leader_ids:
+            try:
+                all_leader_ids.update(json.loads(p.team_leader_ids))
+            except Exception:
+                pass
+    staff_map = {}
+    if all_leader_ids:
+        staff_map = {s.id: s.name for s in Staff.query.filter(Staff.id.in_(list(all_leader_ids))).all()}
+
     for p in projects:
         p._project_type_name = ptype_map.get(p.project_type_code, p.project_type_code)
         p._dispatch_status_name = dispatch_map.get(p.dispatch_status_code, p.dispatch_status_code)
         p._responsible_unit_name = org_map.get(p.responsible_unit_code, p.responsible_unit_code or '')
+        # 专班负责人名称
+        leader_ids = json.loads(p.team_leader_ids) if p.team_leader_ids else []
+        p._team_leader_names = [staff_map.get(sid, str(sid)) for sid in leader_ids]
         for iss in (p.issues.all() if hasattr(p, 'issues') else []):
             iss._issue_type_name = issue_type_map.get(iss.issue_type_code, iss.issue_type_code or '')
             iss._resolution_status_name = res_status_map.get(iss.resolution_status_code, iss.resolution_status_code)
@@ -127,6 +144,13 @@ def _build_project_dict(p):
         'responsible_unit_name': getattr(p, '_responsible_unit_name', p.responsible_unit_code or ''),
         'responsible_person': p.responsible_person or '',
         'responsible_person_phone': p.responsible_person_phone or '',
+        'construction_location': p.construction_location or '',
+        'start_date': p.start_date or '',
+        'end_date': p.end_date or '',
+        'funding_source': p.funding_source or '',
+        'wuhua_platform': p.wuhua_platform or '',
+        'team_leader_ids': json.loads(p.team_leader_ids) if p.team_leader_ids else [],
+        'team_leader_names': getattr(p, '_team_leader_names', []),
         'is_deleted': p.is_deleted,
         'work_progresses': [
             {
@@ -223,6 +247,7 @@ def list_projects():
 
 @admin_construction_bp.route('/construction/projects', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_project():
     """创建在建项目"""
     data = request.get_json(silent=True) or {}
@@ -252,6 +277,12 @@ def create_project():
         responsible_unit_code=(data.get('responsible_unit_code') or '').strip(),
         responsible_person=(data.get('responsible_person') or '').strip(),
         responsible_person_phone=(data.get('responsible_person_phone') or '').strip(),
+        construction_location=(data.get('construction_location') or '').strip(),
+        start_date=_parse_date(data.get('start_date')),
+        end_date=_parse_date(data.get('end_date')),
+        funding_source=(data.get('funding_source') or '').strip(),
+        wuhua_platform=(data.get('wuhua_platform') or '').strip(),
+        team_leader_ids=json.dumps(data.get('team_leader_ids', []), ensure_ascii=False) if isinstance(data.get('team_leader_ids'), list) else (data.get('team_leader_ids') or ''),
     )
     db.session.add(project)
     db.session.flush()  # 获取 project.id
@@ -314,6 +345,12 @@ def create_project():
             'responsible_unit_code': (None, project.responsible_unit_code or ''),
             'responsible_person': (None, project.responsible_person or ''),
             'responsible_person_phone': (None, project.responsible_person_phone or ''),
+            'construction_location': (None, project.construction_location or ''),
+            'start_date': (None, project.start_date.isoformat() if project.start_date else ''),
+            'end_date': (None, project.end_date.isoformat() if project.end_date else ''),
+            'funding_source': (None, project.funding_source or ''),
+            'wuhua_platform': (None, project.wuhua_platform or ''),
+            'team_leader_ids': (None, project.team_leader_ids or ''),
         }
         log_changes('construction_projects', project.id, changes, 'create', user_info)
 
@@ -345,6 +382,7 @@ def get_project(project_id):
 
 @admin_construction_bp.route('/construction/projects/<int:project_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_project(project_id):
     """更新在建项目"""
     project = ConstructionProject.query \
@@ -395,6 +433,12 @@ def update_project(project_id):
         'responsible_unit_code': project.responsible_unit_code or '',
         'responsible_person': project.responsible_person or '',
         'responsible_person_phone': project.responsible_person_phone or '',
+        'construction_location': project.construction_location or '',
+        'start_date': project.start_date.isoformat() if project.start_date else '',
+        'end_date': project.end_date.isoformat() if project.end_date else '',
+        'funding_source': project.funding_source or '',
+        'wuhua_platform': project.wuhua_platform or '',
+        'team_leader_ids': project.team_leader_ids or '',
     }
 
     # 更新字段
@@ -407,6 +451,16 @@ def update_project(project_id):
     project.responsible_unit_code = (data.get('responsible_unit_code') or '').strip()
     project.responsible_person = (data.get('responsible_person') or '').strip()
     project.responsible_person_phone = (data.get('responsible_person_phone') or '').strip()
+    project.construction_location = (data.get('construction_location') or '').strip()
+    if 'start_date' in data:
+        project.start_date = _parse_date(data.get('start_date'))
+    if 'end_date' in data:
+        project.end_date = _parse_date(data.get('end_date'))
+    project.funding_source = (data.get('funding_source') or '').strip()
+    project.wuhua_platform = (data.get('wuhua_platform') or '').strip()
+    if 'team_leader_ids' in data:
+        val = data['team_leader_ids']
+        project.team_leader_ids = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
 
     # 同步子表：先删后建
     for wp in WorkProgress.query.filter_by(project_id=project.id).all():
@@ -472,6 +526,12 @@ def update_project(project_id):
             'responsible_unit_code': project.responsible_unit_code or '',
             'responsible_person': project.responsible_person or '',
             'responsible_person_phone': project.responsible_person_phone or '',
+            'construction_location': project.construction_location or '',
+            'start_date': project.start_date.isoformat() if project.start_date else '',
+            'end_date': project.end_date.isoformat() if project.end_date else '',
+            'funding_source': project.funding_source or '',
+            'wuhua_platform': project.wuhua_platform or '',
+            'team_leader_ids': project.team_leader_ids or '',
         }
         changes = {}
         for k in old_values:
@@ -494,6 +554,7 @@ def update_project(project_id):
 
 @admin_construction_bp.route('/construction/projects/<int:project_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_project(project_id):
     """软删除在建项目"""
     project = ConstructionProject.query \
@@ -517,6 +578,7 @@ def delete_project(project_id):
 
 @admin_construction_bp.route('/construction/projects/batch-delete', methods=['POST'])
 @dual_login_required
+@visitor_block
 def batch_delete_projects():
     """批量软删除在建项目"""
     data = request.get_json(silent=True) or {}
@@ -602,6 +664,7 @@ def list_progress():
 
 @admin_construction_bp.route('/construction/progress', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_progress():
     """创建工作进展"""
     data = request.get_json(silent=True) or {}
@@ -637,6 +700,7 @@ def create_progress():
 
 @admin_construction_bp.route('/construction/progress/<int:progress_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_progress(progress_id):
     """更新工作进展"""
     wp = WorkProgress.query.get_or_404(progress_id)
@@ -674,6 +738,7 @@ def update_progress(progress_id):
 
 @admin_construction_bp.route('/construction/progress/<int:progress_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_progress(progress_id):
     """删除工作进展"""
     wp = WorkProgress.query.get_or_404(progress_id)
@@ -764,6 +829,7 @@ def list_issues():
 
 @admin_construction_bp.route('/construction/issues', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_issue():
     """创建存在问题"""
     data = request.get_json(silent=True) or {}
@@ -794,6 +860,7 @@ def create_issue():
 
 @admin_construction_bp.route('/construction/issues/<int:issue_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_issue(issue_id):
     """更新存在问题"""
     iss = ProjectIssue.query.get_or_404(issue_id)
@@ -823,6 +890,7 @@ def update_issue(issue_id):
 
 @admin_construction_bp.route('/construction/issues/<int:issue_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_issue(issue_id):
     """删除存在问题"""
     iss = ProjectIssue.query.get_or_404(issue_id)
@@ -843,12 +911,23 @@ def construction_stats():
 
     # 项目类型筛选参数
     project_type = request.args.get('project_type', '').strip()
+    dispatch_status = request.args.get('dispatch_status', '').strip()
 
-    # 构建项目查询基类（可选按项目类型过滤）
+    # 构建项目查询基类（可选按项目类型 / 调度状态过滤）
     def project_query():
         q = ConstructionProject.query.filter_by(is_deleted=False)
         if project_type:
-            q = q.filter(ConstructionProject.project_type_code == project_type)
+            codes = [c.strip() for c in project_type.split(',') if c.strip()]
+            if len(codes) == 1:
+                q = q.filter(ConstructionProject.project_type_code == codes[0])
+            elif len(codes) > 1:
+                q = q.filter(ConstructionProject.project_type_code.in_(codes))
+        if dispatch_status:
+            codes = [c.strip() for c in dispatch_status.split(',') if c.strip()]
+            if len(codes) == 1:
+                q = q.filter(ConstructionProject.dispatch_status_code == codes[0])
+            elif len(codes) > 1:
+                q = q.filter(ConstructionProject.dispatch_status_code.in_(codes))
         return q
 
     # ---- 总体概览 ----
@@ -1042,6 +1121,37 @@ def construction_stats():
             'count': cnt
         })
 
+    # ---- 按专班负责人分布 ----
+    from models import Staff
+    leader_projects = project_query().with_entities(
+        ConstructionProject.id,
+        ConstructionProject.project_name,
+        ConstructionProject.team_leader_ids
+    ).all()
+    leader_stats = {}
+    for pid, pname, tids in leader_projects:
+        try:
+            leader_ids = json.loads(tids or '[]')
+        except (json.JSONDecodeError, TypeError):
+            leader_ids = []
+        if not leader_ids:
+            continue
+        for sid in leader_ids:
+            if sid not in leader_stats:
+                leader_stats[sid] = {'staff_id': sid, 'count': 0, 'projects': []}
+            leader_stats[sid]['count'] += 1
+            leader_stats[sid]['projects'].append({'id': pid, 'name': pname, 'invest_amount': 0})
+    staff_map = {s.id: s.name for s in Staff.query.filter(Staff.id.in_(list(leader_stats.keys()))).all()} if leader_stats else {}
+    by_team_leader = []
+    for sid, stats in leader_stats.items():
+        by_team_leader.append({
+            'staff_id': stats['staff_id'],
+            'name': staff_map.get(sid, str(sid)),
+            'count': stats['count'],
+            'projects': stats['projects']
+        })
+    by_team_leader.sort(key=lambda x: x['count'], reverse=True)
+
     return jsonify({
         'code': 0,
         'data': {
@@ -1049,6 +1159,7 @@ def construction_stats():
             'by_type': by_type,
             'by_unit': by_unit,
             'by_month': by_month,
-            'by_dispatch_status': by_dispatch_status
+            'by_dispatch_status': by_dispatch_status,
+            'by_team_leader': by_team_leader
         }
     })

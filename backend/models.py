@@ -32,6 +32,30 @@ class AdminUser(UserMixin, db.Model):
         }
 
 
+class Staff(db.Model):
+    """工作人员（专班成员）"""
+    __tablename__ = 'staff'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(64), nullable=False)
+    position = db.Column(db.String(128), default='农高区创建专班工作人员')
+    user_id = db.Column(db.Integer, db.ForeignKey('admin_users.id'), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'position': self.position or '农高区创建专班工作人员',
+            'user_id': self.user_id,
+            'is_active': self.is_active,
+            'sort_order': self.sort_order,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class BusinessUser(UserMixin, db.Model):
     """业务用户（前台登录）— 由管理员在后台配置"""
     __tablename__ = 'business_users'
@@ -41,6 +65,7 @@ class BusinessUser(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     display_name = db.Column(db.String(128))
     is_active = db.Column(db.Boolean, default=True)
+    role = db.Column(db.String(16), default='user')  # 'user' | 'visitor'
     permissions = db.Column(db.Text, default='{}')  # JSON: {"investment":{"edit":true,...},...}
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -68,6 +93,7 @@ class BusinessUser(UserMixin, db.Model):
             'username': self.username,
             'display_name': self.display_name,
             'is_active': self.is_active,
+            'role': self.role,
             'permissions': self.get_permissions(),
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
@@ -415,6 +441,7 @@ class InvestmentProject(db.Model):
     investment_plan = db.Column(db.Text, default='')
     conclusion = db.Column(db.Text, default='')
     tags = db.Column(db.Text, default='[]')
+    team_leader_ids = db.Column(db.Text, default='[]')  # JSON 数组，staff ID 列表
     first_contact_date = db.Column(db.Date)
 
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
@@ -444,6 +471,7 @@ class InvestmentProject(db.Model):
             'investment_plan': self.investment_plan or '',
             'conclusion': self.conclusion or '',
             'tags': json.loads(self.tags) if self.tags else [],
+            'team_leader_ids': json.loads(self.team_leader_ids) if self.team_leader_ids else [],
             'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
             'is_deleted': self.is_deleted,
             'demands': [d.to_dict() for d in self.demands.all()],
@@ -658,6 +686,38 @@ class InvestmentActivity(db.Model):
         }
 
 
+class ActivityLedger(db.Model):
+    """活动台账（未明确项目的活动记录，后续可关联到招商项目）"""
+    __tablename__ = 'activity_ledger'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    date = db.Column(db.DateTime, nullable=True)
+    content = db.Column(db.Text, nullable=False)
+    files = db.Column(db.Text, default='[]')
+    tags = db.Column(db.Text, default='[]')
+    linked_project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
+    linked_activity_id = db.Column(db.Integer, db.ForeignKey('investment_activities.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    linked_project = db.relationship('InvestmentProject', foreign_keys=[linked_project_id])
+    linked_activity = db.relationship('InvestmentActivity', foreign_keys=[linked_activity_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'date': self.date.strftime('%Y-%m-%d') if self.date else None,
+            'content': self.content,
+            'files': json.loads(self.files) if self.files else [],
+            'tags': json.loads(self.tags) if self.tags else [],
+            'linked_project_id': self.linked_project_id,
+            'linked_project_name': self.linked_project.project_name if self.linked_project else '',
+            'linked_activity_id': self.linked_activity_id,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
+        }
+
+
 class ExportFieldConfigActivity(db.Model):
     """招商动态导出字段配置"""
     __tablename__ = 'export_field_config_activity'
@@ -679,6 +739,146 @@ class ExportFieldConfigActivity(db.Model):
             'is_visible': self.is_visible,
             'column_width': self.column_width,
             'sort_order': self.sort_order
+        }
+
+
+class PrintTemplate(db.Model):
+    """打印模板"""
+    __tablename__ = 'print_template'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(128), nullable=False)
+    entity_type = db.Column(db.String(32), default='investment')  # 'investment' | 'construction'
+    # 页面布局
+    paper_size = db.Column(db.String(20), default='A4')          # A4 | A3 | Letter
+    orientation = db.Column(db.String(10), default='landscape')   # portrait | landscape
+    font_family = db.Column(db.String(64), default='微软雅黑')     # 全局默认字体（fallback）
+    font_size = db.Column(db.Integer, default=10)                 # 全局默认字号（fallback）
+    # 三部分独立字体
+    title_font_family = db.Column(db.String(64), default='微软雅黑')      # 大标题字体
+    title_font_size = db.Column(db.Integer, default=14)                  # 大标题字号
+    table_header_font_family = db.Column(db.String(64), default='微软雅黑')  # 列标题字体
+    table_header_font_size = db.Column(db.Integer, default=10)           # 列标题字号
+    cell_font_family = db.Column(db.String(64), default='微软雅黑')       # 单元格字体
+    cell_font_size = db.Column(db.Integer, default=10)                   # 单元格字号
+    header_font_size = db.Column(db.Integer, default=12)          # 标题 pt（旧，兼容）
+    margin_top = db.Column(db.Float, default=0.5)                 # inches
+    margin_bottom = db.Column(db.Float, default=0.5)
+    margin_left = db.Column(db.Float, default=0.4)
+    margin_right = db.Column(db.Float, default=0.4)
+    show_page_number = db.Column(db.Boolean, default=True)
+    show_print_meta = db.Column(db.Boolean, default=True)         # 显示"打印时间 + 共N条记录"
+    # V3 新增
+    sub_title_font_size = db.Column(db.Integer, default=12)       # 小标题字号
+    title_bold = db.Column(db.Boolean, default=True)              # 大标题加粗
+    subtitle_bold = db.Column(db.Boolean, default=True)           # 小标题加粗
+    border_style = db.Column(db.String(20), default='all')        # 边框样式: 'all' | 'none'
+    group_by = db.Column(db.String(64), default='')               # 分组字段（预留扩展）
+    # 模板文件上传
+    template_file = db.Column(db.String(512), default='')           # 上传的模板文件路径
+    data_start_row = db.Column(db.Integer, default=3)               # 数据起始行
+    header_row = db.Column(db.Integer, default=2)                   # 列标题所在行
+    title_row = db.Column(db.Integer, default=1)                    # 大标题所在行
+    has_group_title = db.Column(db.Boolean, default=False)          # 是否有分组标题行
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    fields = db.relationship('PrintFieldConfig', backref='template', lazy='dynamic',
+                             cascade='all, delete-orphan')
+    mappings = db.relationship('TemplateFieldMapping', backref='template', lazy='dynamic',
+                               cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'entity_type': self.entity_type,
+            'paper_size': self.paper_size,
+            'orientation': self.orientation,
+            'font_family': self.font_family,
+            'font_size': self.font_size,
+            'title_font_family': self.title_font_family,
+            'title_font_size': self.title_font_size,
+            'table_header_font_family': self.table_header_font_family,
+            'table_header_font_size': self.table_header_font_size,
+            'cell_font_family': self.cell_font_family,
+            'cell_font_size': self.cell_font_size,
+            'header_font_size': self.header_font_size,
+            'margin_top': self.margin_top,
+            'margin_bottom': self.margin_bottom,
+            'margin_left': self.margin_left,
+            'margin_right': self.margin_right,
+            'show_page_number': self.show_page_number,
+            'show_print_meta': self.show_print_meta,
+            'sub_title_font_size': self.sub_title_font_size,
+            'title_bold': self.title_bold,
+            'subtitle_bold': self.subtitle_bold,
+            'border_style': self.border_style,
+            'group_by': self.group_by,
+            'template_file': self.template_file,
+            'data_start_row': self.data_start_row,
+            'header_row': self.header_row,
+            'title_row': self.title_row,
+            'has_group_title': self.has_group_title,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class PrintFieldConfig(db.Model):
+    """打印字段配置"""
+    __tablename__ = 'print_field_config'
+    __table_args__ = (
+        db.UniqueConstraint('template_id', 'field_key', name='uq_print_template_field'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('print_template.id'), nullable=False)
+    field_key = db.Column(db.String(64), nullable=False)
+    field_label = db.Column(db.String(128), nullable=False)
+    is_visible = db.Column(db.Boolean, default=True)
+    is_custom = db.Column(db.Boolean, default=False)
+    column_width = db.Column(db.Integer, default=120)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'template_id': self.template_id,
+            'field_key': self.field_key,
+            'field_label': self.field_label,
+            'is_visible': self.is_visible,
+            'is_custom': self.is_custom,
+            'column_width': self.column_width,
+            'sort_order': self.sort_order
+        }
+
+
+class TemplateFieldMapping(db.Model):
+    """模板列→系统字段映射（上传 .xlsx 模板后自动解析列标题）"""
+    __tablename__ = 'template_field_mapping'
+    __table_args__ = (
+        db.UniqueConstraint('template_id', 'column_letter', name='uq_template_column'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('print_template.id'), nullable=False)
+    column_letter = db.Column(db.String(4), nullable=False)          # Excel 列字母: A, B, ... AA
+    column_header = db.Column(db.String(255), default='')            # 模板中读到的列标题原文
+    field_key = db.Column(db.String(64), default='')                 # 映射的系统字段 key（空=未映射）
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'template_id': self.template_id,
+            'column_letter': self.column_letter,
+            'column_header': self.column_header,
+            'field_key': self.field_key,
+            'sort_order': self.sort_order,
         }
 
 
@@ -862,10 +1062,16 @@ class ConstructionProject(db.Model):
     project_type_code = db.Column(db.String(32), nullable=False)
     dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
     construction_content = db.Column(db.Text, default='')
+    construction_location = db.Column(db.String(255), default='')
+    start_date = db.Column(db.String(7), default='')     # 年-月 格式
+    end_date = db.Column(db.String(7), default='')       # 年-月 格式
+    funding_source = db.Column(db.String(255), default='')
+    wuhua_platform = db.Column(db.String(8), default='')  # 是 / 否
     construction_unit = db.Column(db.String(255), default='')
     responsible_unit_code = db.Column(db.String(32), default='')
     responsible_person = db.Column(db.String(64), default='')
     responsible_person_phone = db.Column(db.String(32), default='')
+    team_leader_ids = db.Column(db.Text, default='[]')    # JSON 数组
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -885,11 +1091,17 @@ class ConstructionProject(db.Model):
             'project_type_code': self.project_type_code,
             'dispatch_status_code': self.dispatch_status_code,
             'construction_content': self.construction_content or '',
+            'construction_location': self.construction_location or '',
+            'start_date': self.start_date or '',
+            'end_date': self.end_date or '',
+            'funding_source': self.funding_source or '',
+            'wuhua_platform': self.wuhua_platform or '',
             'work_roadmap_items': [wri.to_dict() for wri in self.work_roadmap_items.all()],
             'construction_unit': self.construction_unit or '',
             'responsible_unit_code': self.responsible_unit_code or '',
             'responsible_person': self.responsible_person or '',
             'responsible_person_phone': self.responsible_person_phone or '',
+            'team_leader_ids': json.loads(self.team_leader_ids) if self.team_leader_ids else [],
             'is_deleted': self.is_deleted,
             'work_progresses': [wp.to_dict() for wp in self.work_progresses.all()],
             'issues': [iss.to_dict() for iss in self.issues.all()],

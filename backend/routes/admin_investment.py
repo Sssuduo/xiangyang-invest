@@ -5,7 +5,7 @@ from models import InvestmentProject, EnterpriseDemand
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from extensions import db
 from routes import admin_investment_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
@@ -77,7 +77,11 @@ def list_projects():
         ))
 
     if follow_status:
-        q = q.filter_by(follow_status_code=follow_status)
+        codes = [c.strip() for c in follow_status.split(',') if c.strip()]
+        if len(codes) == 1:
+            q = q.filter_by(follow_status_code=codes[0])
+        elif len(codes) > 1:
+            q = q.filter(InvestmentProject.follow_status_code.in_(codes))
     if meeting_status:
         q = q.filter_by(meeting_status_code=meeting_status)
     if project_type:
@@ -91,11 +95,31 @@ def list_projects():
     )
 
     projects = q.all()
-    return jsonify({'code': 0, 'data': [p.to_dict() for p in projects]})
+    result = []
+    # 预加载 staff 映射用于专班负责人名称解析
+    all_leader_ids = set()
+    for p in projects:
+        if p.team_leader_ids:
+            try:
+                ids = json.loads(p.team_leader_ids)
+                all_leader_ids.update(ids)
+            except Exception:
+                pass
+    staff_map = {}
+    if all_leader_ids:
+        from models import Staff
+        staff_map = {s.id: s.name for s in Staff.query.filter(Staff.id.in_(list(all_leader_ids))).all()}
+    for p in projects:
+        d = p.to_dict()
+        leader_ids = d.get('team_leader_ids', [])
+        d['team_leader_names'] = [staff_map.get(sid, str(sid)) for sid in leader_ids]
+        result.append(d)
+    return jsonify({'code': 0, 'data': result})
 
 
 @admin_investment_bp.route('/investment/projects', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_project():
     """新建项目"""
     data = request.get_json()
@@ -127,6 +151,7 @@ def create_project():
         investment_plan=data.get('investment_plan', ''),
         conclusion=data.get('conclusion', ''),
         tags=json.dumps(data.get('tags', []), ensure_ascii=False),
+        team_leader_ids=json.dumps(data.get('team_leader_ids', []), ensure_ascii=False),
         first_contact_date=_parse_date(data.get('first_contact_date'))
     )
 
@@ -158,6 +183,7 @@ def create_project():
             changes[field] = (None, getattr(project, field))
         changes['first_contact_date'] = (None, project.first_contact_date.isoformat() if project.first_contact_date else None)
         changes['tags'] = (None, json.dumps(data.get('tags', []), ensure_ascii=False))
+        changes['team_leader_ids'] = (None, json.dumps(data.get('team_leader_ids', []), ensure_ascii=False))
         log_changes('investment_projects', project.id, changes, 'create', user_info)
 
     db.session.commit()
@@ -204,6 +230,7 @@ def get_project(project_id):
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_project(project_id):
     """更新项目"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
@@ -240,7 +267,7 @@ def update_project(project_id):
         'order_no', 'project_name', 'invest_enterprise', 'enterprise_info',
         'project_content', 'invest_amount', 'follow_status_code',
         'meeting_status_code', 'recommend_unit_code', 'responsible_unit_code',
-        'project_type_code', 'person_in_charge', 'person_in_charge_phone', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'first_contact_date'
+        'project_type_code', 'person_in_charge', 'person_in_charge_phone', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'team_leader_ids', 'first_contact_date'
     ]
 
     # 审计日志：保存旧值
@@ -253,6 +280,8 @@ def update_project(project_id):
                 old_val = old_val.isoformat() if old_val else None
             elif field == 'tags':
                 old_val = json.dumps(json.loads(old_val) if old_val else [], ensure_ascii=False) if old_val else '[]'
+            elif field == 'team_leader_ids':
+                old_val = json.dumps(json.loads(old_val) if old_val else [], ensure_ascii=False) if old_val else '[]'
             old_values[field] = old_val
 
     for field in updatable_fields:
@@ -261,6 +290,8 @@ def update_project(project_id):
             if field == 'first_contact_date':
                 val = _parse_date(val)
             elif field == 'tags':
+                val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
+            elif field == 'team_leader_ids':
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(project, field, val)
 
@@ -273,6 +304,8 @@ def update_project(project_id):
             if field == 'first_contact_date':
                 new_val = new_val.isoformat() if new_val else None
             elif field == 'tags':
+                new_val = json.dumps(json.loads(new_val) if new_val else [], ensure_ascii=False) if new_val else '[]'
+            elif field == 'team_leader_ids':
                 new_val = json.dumps(json.loads(new_val) if new_val else [], ensure_ascii=False) if new_val else '[]'
             if str(old_val) != str(new_val):
                 changes[field] = (old_val, new_val)
@@ -299,6 +332,7 @@ def update_project(project_id):
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_project(project_id):
     """逻辑删除项目"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
@@ -309,6 +343,7 @@ def delete_project(project_id):
 
 @admin_investment_bp.route('/investment/projects/batch-delete', methods=['POST'])
 @dual_login_required
+@visitor_block
 def batch_delete_projects():
     """批量删除项目"""
     data = request.get_json()
@@ -343,6 +378,7 @@ def list_demands(project_id):
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_demand(project_id):
     """新增企业诉求"""
     data = request.get_json()
@@ -381,6 +417,7 @@ def create_demand(project_id):
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands/<int:demand_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_demand(project_id, demand_id):
     """更新企业诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id, project_id=project_id).first_or_404()
@@ -415,6 +452,7 @@ def update_demand(project_id, demand_id):
 
 @admin_investment_bp.route('/investment/projects/<int:project_id>/demands/<int:demand_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_demand(project_id, demand_id):
     """删除企业诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id, project_id=project_id).first_or_404()
@@ -497,10 +535,41 @@ def investment_stats():
 
     total_projects = sum(item['count'] for item in by_project_type)
 
+    # 按专班负责人统计
+    from models import Staff
+    leader_stats = {}
+    for p in all_projects:
+        try:
+            leader_ids = json.loads(getattr(p, 'team_leader_ids', '[]') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            leader_ids = []
+        if not leader_ids:
+            continue
+        for sid in leader_ids:
+            if sid not in leader_stats:
+                leader_stats[sid] = {'staff_id': sid, 'count': 0, 'projects': []}
+            leader_stats[sid]['count'] += 1
+            leader_stats[sid]['projects'].append({
+                'id': p.id,
+                'name': p.project_name,
+                'invest_amount': float(p.invest_amount) if p.invest_amount else 0
+            })
+    staff_map = {s.id: s.name for s in Staff.query.filter(Staff.id.in_(list(leader_stats.keys()))).all()} if leader_stats else {}
+    by_team_leader = []
+    for sid, stats in leader_stats.items():
+        by_team_leader.append({
+            'staff_id': stats['staff_id'],
+            'name': staff_map.get(sid, str(sid)),
+            'count': stats['count'],
+            'projects': stats['projects']
+        })
+    by_team_leader.sort(key=lambda x: x['count'], reverse=True)
+
     return jsonify({
         'code': 0,
         'data': {
             'total_projects': total_projects,
             'by_project_type': by_project_type,
+            'by_team_leader': by_team_leader,
         }
     })

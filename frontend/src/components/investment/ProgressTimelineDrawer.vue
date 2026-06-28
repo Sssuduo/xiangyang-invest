@@ -10,7 +10,7 @@
       <div class="drawer-title-bar">
         <span class="drawer-title">
           <el-icon><List /></el-icon>
-          工作进展 · {{ projectName }}
+          工作进展 · {{ dn(projectName) }}
         </span>
       </div>
     </template>
@@ -31,7 +31,7 @@
           >极简</span>
         </div>
         <div class="mode-right">
-          <el-button size="small" type="primary" @click="openCreateDialog">
+          <el-button v-if="!businessAuth.isVisitor" size="small" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon> 新建进展
           </el-button>
           <span v-if="items.length > 0" class="mode-count">共 {{ items.length }} 条</span>
@@ -56,7 +56,7 @@
             <div v-if="ai < items.length - 1" class="tl-line" />
           </div>
           <div class="tl-card">
-            <div class="card-actions">
+            <div class="card-actions" v-if="!businessAuth.isVisitor">
               <el-button size="small" link type="primary" title="编辑进展" @click="openEditDialog(item)">
                 <el-icon><Edit /></el-icon>
               </el-button>
@@ -68,7 +68,7 @@
               <el-icon><Clock /></el-icon>
               <span>{{ item.start_date }} ~ {{ item.end_date }}</span>
             </div>
-            <div class="card-body">{{ item.content }}</div>
+            <div class="card-body">{{ dc(item.content) }}</div>
             <!-- 附件 -->
             <div v-if="item.files && item.files.length > 0" class="card-files">
               <div v-for="(file, fi) in item.files" :key="fi" class="file-item">
@@ -125,7 +125,7 @@
               <el-icon><Clock /></el-icon>
               <span>{{ item.start_date }} ~ {{ item.end_date }}</span>
             </div>
-            <div class="simple-item-actions">
+            <div class="simple-item-actions" v-if="!businessAuth.isVisitor">
               <el-button size="small" link type="primary" title="编辑进展" @click="openEditDialog(item)">
                 <el-icon><Edit /></el-icon>
               </el-button>
@@ -134,7 +134,7 @@
               </el-button>
             </div>
           </div>
-          <div class="simple-content">{{ item.content }}</div>
+          <div class="simple-content">{{ dc(item.content) }}</div>
           <!-- 附件 -->
           <div v-if="item.files && item.files.length > 0" class="simple-files">
             <div v-for="(file, fi) in item.files" :key="fi" class="sfile-item">
@@ -245,8 +245,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { List, Clock, Edit, Delete, Plus, UploadFilled, ZoomIn, Download, View, Document } from '@element-plus/icons-vue'
 import { getProgressList, createProgress, updateProgress, deleteProgress } from '@/api/construction'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

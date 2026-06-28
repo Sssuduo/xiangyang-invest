@@ -20,6 +20,19 @@ def business_login_required(f):
     return decorated
 
 
+def visitor_block(f):
+    """阻止访客角色用户的写操作。需叠加在 @dual_login_required 或 @business_login_required 之后。"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user_id = session.get('business_user_id')
+        if user_id:
+            user = BusinessUser.query.get(int(user_id))
+            if user and user.role == 'visitor':
+                return jsonify({'code': 1, 'message': '访客账号仅支持查看，没有操作权限'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 def dual_login_required(f):
     """
     双重登录验证装饰器：
@@ -93,6 +106,7 @@ def check_login():
 
 @business_auth_bp.route('/profile', methods=['PUT'])
 @business_login_required
+@visitor_block
 def update_profile():
     """修改显示名称"""
     user_id = session.get('business_user_id')

@@ -65,6 +65,11 @@
       <el-menu-item index="/admin/demand-import-config">企业诉求导入</el-menu-item>
     </el-sub-menu>
 
+    <el-menu-item index="/admin/print-templates">
+      <el-icon><Printer /></el-icon>
+      <span>打印模板管理</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/provinces">
       <el-icon><Location /></el-icon>
       <span>省份信息</span>
@@ -124,7 +129,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

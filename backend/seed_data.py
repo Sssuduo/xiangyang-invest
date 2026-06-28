@@ -1,4 +1,4 @@
-from models import AdminUser, BusinessUser, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
+from models import AdminUser, BusinessUser, Staff, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from models import ExportTemplate, ExportFieldConfig, ImportFieldConfig
 from models import InvestmentActivity, ExportFieldConfigActivity, ImportFieldConfigActivity
@@ -69,6 +69,25 @@ def init_database(app):
         # V11: 联系电话
         "ALTER TABLE investment_projects ADD COLUMN person_in_charge_phone VARCHAR(32) DEFAULT ''",
         "ALTER TABLE construction_projects ADD COLUMN responsible_person_phone VARCHAR(32) DEFAULT ''",
+        # V12: 打印模板 V3 新增字段
+        "ALTER TABLE print_template ADD COLUMN sub_title_font_size INTEGER DEFAULT 12",
+        "ALTER TABLE print_template ADD COLUMN title_bold BOOLEAN DEFAULT 1",
+        "ALTER TABLE print_template ADD COLUMN subtitle_bold BOOLEAN DEFAULT 1",
+        "ALTER TABLE print_template ADD COLUMN border_style VARCHAR(20) DEFAULT 'all'",
+        "ALTER TABLE print_template ADD COLUMN group_by VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE print_template ADD COLUMN template_file VARCHAR(512) DEFAULT ''",
+        "ALTER TABLE print_template ADD COLUMN data_start_row INTEGER DEFAULT 3",
+        "ALTER TABLE print_template ADD COLUMN header_row INTEGER DEFAULT 2",
+        "ALTER TABLE print_template ADD COLUMN title_row INTEGER DEFAULT 1",
+        "ALTER TABLE print_template ADD COLUMN has_group_title BOOLEAN DEFAULT 0",
+        # V13: Staff 表 + 专班负责人 + 在建项目新字段
+        "ALTER TABLE investment_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+        "ALTER TABLE construction_projects ADD COLUMN construction_location VARCHAR(255) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN start_date VARCHAR(7) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN end_date VARCHAR(7) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
+        "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [
@@ -130,6 +149,19 @@ def init_database(app):
         })
         db.session.add(demo)
         print('[种子数据] 业务用户账号已创建: demo / demo123')
+
+    # ---- Staff: 为每个管理员用户创建工作人员记录 ----
+    if not Staff.query.first():
+        for admin_user in AdminUser.query.all():
+            staff = Staff(
+                name=admin_user.display_name or admin_user.username,
+                position='农高区创建专班工作人员',
+                user_id=admin_user.id,
+                sort_order=admin_user.id
+            )
+            db.session.add(staff)
+        db.session.commit()
+        print(f'[种子数据] 工作人员记录已创建（{AdminUser.query.count()} 人）')
 
     # 创建默认首页配置
     if not HomepageConfig.query.first():
@@ -206,6 +238,10 @@ def init_database(app):
 
     # ---- 在建项目 - 导出字段配置 ----
     _seed_construction_export_fields()
+
+    # ---- 打印模板（统一模板）字段配置 ----
+    _seed_print_fields()
+    _seed_construction_print_fields()
 
 
 def _seed_investment_dicts():
@@ -428,6 +464,338 @@ def _seed_construction_export_fields():
     print('[种子数据] 在建项目导出字段配置已初始化')
 
 
+def _seed_print_fields():
+    """初始化招商项目打印模板字段配置（使用统一 PrintTemplate）"""
+    from models import PrintTemplate, PrintFieldConfig
+
+    # ---- 模板1：默认打印模板（A4，通用） ----
+    template1 = PrintTemplate.query.filter_by(name='默认打印模板', entity_type='investment').first()
+    if not template1:
+        template1 = PrintTemplate(name='默认打印模板', entity_type='investment')
+        db.session.add(template1)
+        db.session.flush()
+
+    fields_v1 = [
+        ('order_no', '序号', 60, 1),
+        ('project_name', '项目名称', 180, 2),
+        ('project_type_code', '项目类型', 120, 3),
+        ('invest_enterprise', '投资商名称', 160, 4),
+        ('enterprise_info', '企业简介', 300, 5),
+        ('project_content', '项目对接及进展情况', 300, 6),
+        ('invest_amount', '投资金额(万元)', 120, 7),
+        ('invest_amount_yi', '投资金额(亿元)', 120, 8),
+        ('follow_status_code', '跟进状态', 100, 9),
+        ('meeting_status_code', '上会状态', 100, 10),
+        ('recommend_unit_code', '推介单位', 140, 11),
+        ('responsible_unit_code', '责任单位', 140, 12),
+        ('person_in_charge', '责任人', 80, 13),
+        ('_combined_contact', '责任单位/责任人/联系方式', 200, 14),
+        ('person_in_charge_phone', '联系电话', 130, 15),
+        ('project_doc', '项目文档', 200, 16),
+        ('first_contact_date', '首次对接时间', 120, 17),
+        ('activities', '招商动态', 500, 18),
+        ('demands', '企业诉求', 500, 19),
+        ('resolution', '解决措施', 500, 20),
+    ]
+    for field_key, field_label, column_width, sort_order in fields_v1:
+        existing = PrintFieldConfig.query.filter_by(template_id=template1.id, field_key=field_key).first()
+        if existing:
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+        else:
+            db.session.add(PrintFieldConfig(
+                template_id=template1.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+
+    # ---- 模板2：内置 A3 模板 [(附件1)襄州农高区招商引资项目清单] ----
+    BUILTIN_A3_NAME = '[(附件1)襄州农高区招商引资项目清单]'
+    template2 = PrintTemplate.query.filter_by(entity_type='investment').filter(
+        (PrintTemplate.name == BUILTIN_A3_NAME) | (PrintTemplate.name == 'A3 招商项目清单')
+    ).first()
+    if not template2:
+        template2 = PrintTemplate(
+            name=BUILTIN_A3_NAME,
+            entity_type='investment',
+            paper_size='A3',
+            orientation='landscape',
+            font_family='宋体',
+            font_size=14,
+            title_font_family='宋体',
+            title_font_size=36,
+            table_header_font_family='宋体',
+            table_header_font_size=18,
+            cell_font_family='宋体',
+            cell_font_size=14,
+            header_font_size=18,
+            sub_title_font_size=28,
+            title_bold=True,
+            subtitle_bold=True,
+            border_style='all',
+            margin_top=0.197,
+            margin_bottom=0.118,
+            margin_left=0.354,
+            margin_right=0.118,
+        )
+        db.session.add(template2)
+        db.session.flush()
+    else:
+        # 确保已有模板的格式参数保持最新
+        template2.paper_size = 'A3'
+        template2.orientation = 'landscape'
+        template2.font_family = '宋体'
+        template2.font_size = 14
+        template2.title_font_family = '宋体'
+        template2.title_font_size = 36
+        template2.table_header_font_family = '宋体'
+        template2.table_header_font_size = 18
+        template2.cell_font_family = '宋体'
+        template2.cell_font_size = 14
+        template2.header_font_size = 18
+        template2.sub_title_font_size = 28
+        template2.title_bold = True
+        template2.subtitle_bold = True
+        template2.border_style = 'all'
+        template2.margin_top = 0.197
+        template2.margin_bottom = 0.118
+        template2.margin_left = 0.354
+        template2.margin_right = 0.118
+
+    fields_v2 = [
+        # (field_key, field_label, column_width, sort_order)
+        # 列宽按 Excel 原始比例换算（A3 横向，10 列总宽≈664字符单位）
+        ('order_no',          '序号',               60,   1),
+        ('project_name',      '项目名称',           230,  2),
+        ('invest_enterprise', '投资商名称',         102,  3),
+        ('enterprise_info',   '企业简介',           500,  4),
+        ('project_content',   '项目内容',           549,  5),
+        ('activities',        '项目对接及进展情况', 1107, 6),
+        ('demands',           '企业诉求',           1105, 7),
+        ('resolution',        '拟解决措施',         695,  8),
+        ('_combined_contact', '责任单位/责任人/联系方式', 164, 9),
+        ('_team_followers',   '专班跟进人',         151,  10),
+    ]
+    for field_key, field_label, column_width, sort_order in fields_v2:
+        existing = PrintFieldConfig.query.filter_by(template_id=template2.id, field_key=field_key).first()
+        if existing:
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+            if not existing.is_visible:
+                existing.is_visible = True
+        else:
+            db.session.add(PrintFieldConfig(
+                template_id=template2.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+
+    # ---- A3 模板文件映射 ----
+    template_a3_file = '/static/uploads/templates/A3_投资清单_模板.xlsx'
+    # 始终更新内置模板的文件路径和名称
+    template2.name = BUILTIN_A3_NAME
+    template2.template_file = template_a3_file
+    template2.data_start_row = 3
+    template2.header_row = 2
+    template2.title_row = 1
+    template2.has_group_title = True
+    template2.cell_font_family = '宋体'
+    template2.cell_font_size = 18
+    template2.table_header_font_family = '宋体'
+    template2.table_header_font_size = 18
+
+    # 列映射：模板列字母 → field_key
+    from models import TemplateFieldMapping
+    a3_column_mappings = [
+        ('A', '序号',               'order_no'),
+        ('B', '项目名称',           'project_name'),
+        ('C', '投资商名称',         'invest_enterprise'),
+        ('D', '企业简介',           'enterprise_info'),
+        ('E', '项目内容',           'project_content'),
+        ('F', '项目对接及进展情况', 'activities'),
+        ('G', '企业诉求',           'demands'),
+        ('H', '拟解决措施',         'resolution'),
+        ('I', '责任单位',           '_combined_contact'),
+        ('J', '专班跟进人',         '_team_followers'),
+    ]
+    for idx, (col_letter, col_header, field_key) in enumerate(a3_column_mappings):
+        existing_m = TemplateFieldMapping.query.filter_by(
+            template_id=template2.id, column_letter=col_letter).first()
+        if existing_m:
+            existing_m.column_header = col_header
+            existing_m.field_key = field_key
+            existing_m.sort_order = idx
+        else:
+            db.session.add(TemplateFieldMapping(
+                template_id=template2.id,
+                column_letter=col_letter,
+                column_header=col_header,
+                field_key=field_key,
+                sort_order=idx,
+            ))
+
+    db.session.commit()
+    print('[种子数据] 招商项目打印模板字段已初始化（默认模板 + A3 招商项目清单含文件映射）')
+
+
+def _seed_construction_print_fields():
+    """初始化在建项目打印模板字段配置（使用统一 PrintTemplate）"""
+    from models import PrintTemplate, PrintFieldConfig
+
+    template = PrintTemplate.query.filter_by(entity_type='construction').first()
+    if not template:
+        template = PrintTemplate(name='默认打印模板', entity_type='construction')
+        db.session.add(template)
+        db.session.flush()
+
+    fields = [
+        ('order_no', '序号', 60, 1),
+        ('project_name', '在建项目名称', 200, 2),
+        ('project_type_code', '项目类型', 120, 3),
+        ('dispatch_status_code', '调度状态', 100, 4),
+        ('construction_content', '建设内容', 400, 5),
+        ('construction_unit', '建设单位', 150, 6),
+        ('responsible_unit_code', '责任单位', 150, 7),
+        ('responsible_person', '责任人', 80, 8),
+        ('responsible_person_phone', '联系电话', 130, 9),
+        ('_combined_contact', '责任单位/责任人/联系方式', 200, 10),
+        ('work_progresses', '工作进展', 500, 11),
+        ('issues', '存在问题', 500, 12),
+        ('work_roadmap', '工作路径图', 400, 13),
+    ]
+    for field_key, field_label, column_width, sort_order in fields:
+        existing = PrintFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first()
+        if existing:
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+        else:
+            db.session.add(PrintFieldConfig(
+                template_id=template.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+    db.session.commit()
+    print('[种子数据] 在建项目打印模板字段已初始化')
+
+    # ---- 内置 A3 模板 [(附件2)农高区2026年在建项目统计表] ----
+    from models import TemplateFieldMapping
+    BUILTIN_CONSTRUCTION_NAME = '[(附件2)农高区2026年在建项目统计表]'
+    template_cons = PrintTemplate.query.filter_by(entity_type='construction').filter(
+        PrintTemplate.name == BUILTIN_CONSTRUCTION_NAME
+    ).first()
+    if not template_cons:
+        template_cons = PrintTemplate(
+            name=BUILTIN_CONSTRUCTION_NAME,
+            entity_type='construction',
+            paper_size='A3',
+            orientation='landscape',
+            font_family='微软雅黑',
+            font_size=12,
+            title_font_family='微软雅黑',
+            title_font_size=14,
+            table_header_font_family='微软雅黑',
+            table_header_font_size=12,
+            cell_font_family='微软雅黑',
+            cell_font_size=12,
+        )
+        db.session.add(template_cons)
+        db.session.flush()
+
+    # 模板文件映射
+    template_cons_file = '/static/uploads/templates/A3_在建项目_模板.xlsx'
+    template_cons.name = BUILTIN_CONSTRUCTION_NAME
+    template_cons.template_file = template_cons_file
+    template_cons.data_start_row = 4
+    template_cons.header_row = 3
+    template_cons.title_row = 2
+    template_cons.has_group_title = True
+    template_cons.cell_font_family = '微软雅黑'
+    template_cons.cell_font_size = 12
+    template_cons.table_header_font_family = '微软雅黑'
+    template_cons.table_header_font_size = 12
+
+    # 列映射：模板列字母 → field_key（14列 A-N）
+    cons_column_mappings = [
+        ('A', '序号', 'order_no'),
+        ('B', '项目名称', 'project_name'),
+        ('C', '建设地点', 'construction_location'),
+        ('D', '开工时间', 'start_date'),
+        ('E', '竣工时间', 'end_date'),
+        ('F', '资金来源', 'funding_source'),
+        ('G', '建设内容', 'construction_content'),
+        ('H', '工作路径图（具体时间节点）', 'work_roadmap'),
+        ('I', '周工作进展', 'work_progresses'),
+        ('J', '建设单位', 'construction_unit'),
+        ('K', '责任单位/责任人', '_combined_contact'),
+        ('L', '备注（存在的问题）', 'issues'),
+        ('M', '五化平台', 'wuhua_platform'),
+        ('N', '专班负责人', '_team_follower_names'),
+    ]
+    for idx, (col_letter, col_header, field_key) in enumerate(cons_column_mappings):
+        existing_m = TemplateFieldMapping.query.filter_by(
+            template_id=template_cons.id, column_letter=col_letter).first()
+        if existing_m:
+            existing_m.column_header = col_header
+            existing_m.field_key = field_key
+            existing_m.sort_order = idx
+        else:
+            db.session.add(TemplateFieldMapping(
+                template_id=template_cons.id,
+                column_letter=col_letter,
+                column_header=col_header,
+                field_key=field_key,
+                sort_order=idx,
+            ))
+
+    # 为 A3 模板也创建 PrintFieldConfig 记录（管理后台字段映射下拉框需要）
+    cons_a3_fields = [
+        ('order_no', '序号', 60, 1),
+        ('project_name', '在建项目名称', 200, 2),
+        ('project_type_code', '项目类型', 120, 3),
+        ('dispatch_status_code', '调度状态', 100, 4),
+        ('construction_content', '建设内容', 400, 5),
+        ('construction_unit', '建设单位', 150, 6),
+        ('responsible_unit_code', '责任单位', 150, 7),
+        ('responsible_person', '责任人', 80, 8),
+        ('responsible_person_phone', '联系电话', 130, 9),
+        ('_combined_contact', '责任单位/责任人/联系方式', 200, 10),
+        ('work_progresses', '工作进展', 500, 11),
+        ('issues', '存在问题', 500, 12),
+        ('work_roadmap', '工作路径图', 400, 13),
+    ]
+    for field_key, field_label, column_width, sort_order in cons_a3_fields:
+        existing = PrintFieldConfig.query.filter_by(
+            template_id=template_cons.id, field_key=field_key).first()
+        if existing:
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+        else:
+            db.session.add(PrintFieldConfig(
+                template_id=template_cons.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order
+            ))
+
+    db.session.commit()
+    print('[种子数据] 在建项目 A3 打印模板已初始化（含文件映射 + 字段配置，14列）')
+
+
 def _seed_import_fields():
     """初始化导入字段配置"""
     fields = [
@@ -557,12 +925,18 @@ def _seed_construction_dicts():
 
     # 解决状态
     resolution_statuses = [
-        ('pending', '待处理', '#f56c6c', 1),
-        ('processing', '处理中', '#e6a23c', 2),
-        ('resolved', '已解决', '#67c23a', 3),
+        ('pending', '待回应', '#f56c6c', 1),
+        ('processing', '协调中', '#e6a23c', 2),
+        ('resolved', '已回应', '#67c23a', 3),
     ]
     for code, name, color, order in resolution_statuses:
-        if not ResolutionStatusDict.query.filter_by(code=code).first():
+        existing = ResolutionStatusDict.query.filter_by(code=code).first()
+        if existing:
+            # V12.1: 更新标签名称（待处理→待回应, 处理中→协调中, 已解决→已回应）
+            if existing.name != name:
+                existing.name = name
+                existing.display_color = color
+        else:
             db.session.add(ResolutionStatusDict(code=code, name=name, display_color=color, sort_order=order))
 
     db.session.commit()

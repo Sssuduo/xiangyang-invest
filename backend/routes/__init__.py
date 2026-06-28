@@ -45,6 +45,9 @@ admin_construction_print_bp = Blueprint('admin_construction_print', __name__, ur
 # 招商宣传视频
 admin_promo_video_bp = Blueprint('admin_promo_video', __name__, url_prefix='/api')
 
+# 专班工作人员管理
+admin_staff_bp = Blueprint('admin_staff', __name__, url_prefix='/api/admin')
+
 # 业务用户管理（后台）
 admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix='/api/admin')
 
@@ -77,6 +80,7 @@ def register_routes(app):
     from routes import admin_promo_video as _admin_promo_video
     from routes import business_auth as _business_auth
     from routes import admin_business_users as _admin_business_users
+    from routes import admin_staff as _admin_staff
     from routes import admin_debug as _admin_debug
 
     app.register_blueprint(api.api_bp)
@@ -106,6 +110,7 @@ def register_routes(app):
 
     # 注册业务用户认证和管理蓝图
     app.register_blueprint(business_auth.business_auth_bp)
+    app.register_blueprint(admin_staff.admin_staff_bp)
     app.register_blueprint(admin_business_users.admin_business_users_bp)
 
     # 注册 debug 路由和错误处理器

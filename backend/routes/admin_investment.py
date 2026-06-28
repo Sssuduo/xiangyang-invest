@@ -9,6 +9,16 @@ from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
+def _renumber_investment_projects():
+    """将招商项目序号重新编排为连续整数 1, 2, 3, ..."""
+    projects = InvestmentProject.query.filter_by(is_deleted=False)\
+        .order_by(InvestmentProject.order_no.asc(), InvestmentProject.id.asc()).all()
+    for i, p in enumerate(projects, 1):
+        if p.order_no != i:
+            p.order_no = i
+    # 注意：不在此处 commit，由调用方统一 commit
+
+
 def _parse_date(val):
     """将字符串或 None 转为 date 对象"""
     if not val:
@@ -186,6 +196,7 @@ def create_project():
         changes['team_leader_ids'] = (None, json.dumps(data.get('team_leader_ids', []), ensure_ascii=False))
         log_changes('investment_projects', project.id, changes, 'create', user_info)
 
+    _renumber_investment_projects()
     db.session.commit()
     return jsonify({'code': 0, 'data': project.to_dict(), 'message': '项目创建成功'})
 
@@ -326,6 +337,7 @@ def update_project(project_id):
                     sort_order=i + 1
                 ))
 
+    _renumber_investment_projects()
     db.session.commit()
     return jsonify({'code': 0, 'data': project.to_dict(), 'message': '更新成功'})
 
@@ -337,6 +349,7 @@ def delete_project(project_id):
     """逻辑删除项目"""
     project = InvestmentProject.query.filter_by(id=project_id, is_deleted=False).first_or_404()
     project.is_deleted = True
+    _renumber_investment_projects()
     db.session.commit()
     return jsonify({'code': 0, 'message': '项目已删除'})
 
@@ -358,6 +371,7 @@ def batch_delete_projects():
         InvestmentProject.id.in_(ids),
         InvestmentProject.is_deleted == False
     ).update({'is_deleted': True}, synchronize_session=False)
+    _renumber_investment_projects()
     db.session.commit()
 
     return jsonify({'code': 0, 'message': f'成功删除 {deleted} 个项目', 'data': {'count': deleted}})

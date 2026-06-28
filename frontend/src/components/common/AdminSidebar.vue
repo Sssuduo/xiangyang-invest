@@ -100,6 +100,11 @@
       <span>提示词管理</span>
     </el-menu-item>
 
+    <el-menu-item index="/admin/staff">
+      <el-icon><User /></el-icon>
+      <span>专班人员</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/business-users">
       <el-icon><Avatar /></el-icon>
       <span>用户管理</span>

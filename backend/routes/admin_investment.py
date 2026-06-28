@@ -2,7 +2,7 @@ import json
 from datetime import date
 from flask import request, jsonify
 from models import InvestmentProject, EnterpriseDemand
-from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
+from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict, Staff
 from extensions import db
 from routes import admin_investment_bp
 from routes.business_auth import dual_login_required, visitor_block
@@ -48,7 +48,8 @@ def get_dicts():
             'project_types': [d.to_dict() for d in ProjectTypeDict.query.filter_by(is_active=True).order_by(ProjectTypeDict.sort_order).all()],
             'demand_types': [d.to_dict() for d in DemandTypeDict.query.filter_by(is_active=True).order_by(DemandTypeDict.sort_order).all()],
             'project_tags': [d.to_dict() for d in ProjectTagDict.query.filter_by(is_active=True).order_by(ProjectTagDict.sort_order).all()],
-            'activity_tags': [d.to_dict() for d in ActivityTagDict.query.filter_by(is_active=True).order_by(ActivityTagDict.sort_order).all()]
+            'activity_tags': [d.to_dict() for d in ActivityTagDict.query.filter_by(is_active=True).order_by(ActivityTagDict.sort_order).all()],
+            'staff': [d.to_dict() for d in Staff.query.filter_by(is_active=True).order_by(Staff.sort_order).all()]
         }
     })
 

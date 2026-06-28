@@ -5,7 +5,7 @@ from flask import request, jsonify
 from models import (
     ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem,
     ConstructionProjectTypeDict, DispatchStatusDict,
-    IssueTypeDict, ResolutionStatusDict, OrganizationDict
+    IssueTypeDict, ResolutionStatusDict, OrganizationDict, Staff
 )
 from extensions import db
 from routes import admin_construction_bp
@@ -64,12 +64,15 @@ def get_dicts():
         .order_by(OrganizationDict.sort_order) \
         .all()
 
+    staff_list = Staff.query.filter_by(is_active=True).order_by(Staff.sort_order).all()
+
     return jsonify({'code': 0, 'data': {
         'project_types': [d.to_dict() for d in project_types],
         'dispatch_statuses': [d.to_dict() for d in dispatch_statuses],
         'issue_types': [d.to_dict() for d in issue_types],
         'resolution_statuses': [d.to_dict() for d in resolution_statuses],
-        'organizations': [d.to_dict() for d in organizations]
+        'organizations': [d.to_dict() for d in organizations],
+        'staff': [d.to_dict() for d in staff_list]
     }})
 
 
@@ -346,8 +349,8 @@ def create_project():
             'responsible_person': (None, project.responsible_person or ''),
             'responsible_person_phone': (None, project.responsible_person_phone or ''),
             'construction_location': (None, project.construction_location or ''),
-            'start_date': (None, project.start_date.isoformat() if project.start_date else ''),
-            'end_date': (None, project.end_date.isoformat() if project.end_date else ''),
+            'start_date': (None, project.str(project.start_date) if project.start_date else ''),
+            'end_date': (None, project.str(project.end_date) if project.end_date else ''),
             'funding_source': (None, project.funding_source or ''),
             'wuhua_platform': (None, project.wuhua_platform or ''),
             'team_leader_ids': (None, project.team_leader_ids or ''),
@@ -434,8 +437,8 @@ def update_project(project_id):
         'responsible_person': project.responsible_person or '',
         'responsible_person_phone': project.responsible_person_phone or '',
         'construction_location': project.construction_location or '',
-        'start_date': project.start_date.isoformat() if project.start_date else '',
-        'end_date': project.end_date.isoformat() if project.end_date else '',
+        'start_date': project.str(project.start_date) if project.start_date else '',
+        'end_date': project.str(project.end_date) if project.end_date else '',
         'funding_source': project.funding_source or '',
         'wuhua_platform': project.wuhua_platform or '',
         'team_leader_ids': project.team_leader_ids or '',
@@ -527,8 +530,8 @@ def update_project(project_id):
             'responsible_person': project.responsible_person or '',
             'responsible_person_phone': project.responsible_person_phone or '',
             'construction_location': project.construction_location or '',
-            'start_date': project.start_date.isoformat() if project.start_date else '',
-            'end_date': project.end_date.isoformat() if project.end_date else '',
+            'start_date': project.str(project.start_date) if project.start_date else '',
+            'end_date': project.str(project.end_date) if project.end_date else '',
             'funding_source': project.funding_source or '',
             'wuhua_platform': project.wuhua_platform or '',
             'team_leader_ids': project.team_leader_ids or '',

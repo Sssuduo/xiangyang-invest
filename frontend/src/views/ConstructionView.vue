@@ -295,13 +295,6 @@
           <el-table-column label="五化平台" width="80" align="center">
             <template #default="{ row }">{{ row.wuhua_platform || '-' }}</template>
           </el-table-column>
-          <el-table-column label="专班负责人" width="130">
-            <template #default="{ row }">
-              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
-                {{ name }}
-              </el-tag>
-            </template>
-          </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <div class="action-cell">
@@ -450,12 +443,26 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="开工时间">
-                <el-input v-model="form.start_date" placeholder="年-月，如 2025-08" maxlength="64" />
+                <el-date-picker
+                  v-model="form.start_date"
+                  type="month"
+                  placeholder="选择开工年月"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  style="width:100%"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="完工时间">
-                <el-input v-model="form.end_date" placeholder="年-月，如 2026-12" maxlength="64" />
+                <el-date-picker
+                  v-model="form.end_date"
+                  type="month"
+                  placeholder="选择完工年月"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  style="width:100%"
+                />
               </el-form-item>
             </el-col>
           </el-row>

@@ -218,14 +218,14 @@ def _aggregate_demands(project, demand_status=''):
             q = q.filter(EnterpriseDemand.status.in_(status_list))
     demands = q.order_by(EnterpriseDemand.sort_order.asc()).all()
     if not demands:
-        return ''
+        return '暂无'
 
     type_map = DemandTypeDict.build_display_name_map()
     lines = []
     for i, d in enumerate(demands, 1):
         codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
         type_name = '、'.join([type_map.get(c, c) for c in codes]) if codes else (d.demand_type_code or '诉求')
-        content = d.demand_content or ''
+        content = d.demand_content or '暂无'
         lines.append(f'{i}、[{type_name}] {content}')
     return '\n'.join(lines)
 
@@ -242,7 +242,7 @@ def _aggregate_resolution(project, demand_status=''):
             q = q.filter(EnterpriseDemand.status.in_(status_list))
     demands = q.order_by(EnterpriseDemand.sort_order.asc()).all()
     if not demands:
-        return ''
+        return '暂无'
 
     lines = []
     for i, d in enumerate(demands, 1):
@@ -433,7 +433,7 @@ def export_download():
                 .order_by(EnterpriseDemand.sort_order.asc()).all()
 
             if not demands:
-                # 无诉求：一行，项目字段正常填，诉求字段留空
+                # 无诉求：一行，项目字段正常填，诉求字段填"暂无"
                 for col_idx, f in enumerate(project_fields, 1):
                     val = _fmt_cell(project_row.get(f.field_key, ''))
                     cell = ws.cell(row=current_row, column=col_idx, value=val)
@@ -441,7 +441,7 @@ def export_download():
                     cell.alignment = cell_align
                     cell.border = thin_border
                 for col_idx in range(len(project_fields) + 1, total_cols + 1):
-                    cell = ws.cell(row=current_row, column=col_idx, value='')
+                    cell = ws.cell(row=current_row, column=col_idx, value='暂无')
                     cell.font = cell_font
                     cell.alignment = cell_align_center
                     cell.border = thin_border
@@ -459,10 +459,10 @@ def export_download():
                     # 诉求字段
                     dt_codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
                     demand_data = {
-                        'demand_type': '、'.join([demand_type_map.get(c, c) for c in dt_codes]) if dt_codes else '',
+                        'demand_type': '、'.join([demand_type_map.get(c, c) for c in dt_codes]) if dt_codes else '暂无',
                         'demand_unit': org_map.get(d.unit_code, d.unit_code or ''),
-                        'demand_content': d.demand_content or '',
-                        'demand_resolution': d.resolution or '',
+                        'demand_content': d.demand_content or '暂无',
+                        'demand_resolution': d.resolution or '暂无',
                     }
                     for col_idx, dc in enumerate(demand_cols, len(project_fields) + 1):
                         val = demand_data.get(dc['field_key'], '')

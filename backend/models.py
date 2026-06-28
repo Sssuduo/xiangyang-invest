@@ -39,7 +39,7 @@ class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(64), nullable=False)
     position = db.Column(db.String(128), default='农高区创建专班工作人员')
-    user_id = db.Column(db.Integer, db.ForeignKey('admin_users.id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('business_users.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

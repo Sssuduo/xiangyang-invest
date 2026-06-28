@@ -2,7 +2,7 @@
 后台管理 — 专班工作人员（Staff）CRUD API
 """
 from flask import request, jsonify
-from models import Staff, AdminUser
+from models import Staff, BusinessUser
 from extensions import db
 from routes import admin_staff_bp
 from flask_login import login_required
@@ -13,19 +13,19 @@ from flask_login import login_required
 def list_staff():
     """列表：所有工作人员，按 sort_order 升序"""
     items = Staff.query.order_by(Staff.sort_order.asc()).all()
-    # 预取关联管理员信息
-    admin_ids = [s.user_id for s in items if s.user_id]
-    admin_map = {}
-    if admin_ids:
-        admins = AdminUser.query.filter(AdminUser.id.in_(admin_ids)).all()
-        admin_map = {a.id: a for a in admins}
+    # 预取关联业务用户信息
+    biz_user_ids = [s.user_id for s in items if s.user_id]
+    biz_user_map = {}
+    if biz_user_ids:
+        biz_users = BusinessUser.query.filter(BusinessUser.id.in_(biz_user_ids)).all()
+        biz_user_map = {u.id: u for u in biz_users}
 
     result = []
     for s in items:
         d = s.to_dict()
-        if s.user_id and s.user_id in admin_map:
-            d['admin_username'] = admin_map[s.user_id].username
-            d['admin_display_name'] = admin_map[s.user_id].display_name or admin_map[s.user_id].username
+        if s.user_id and s.user_id in biz_user_map:
+            d['admin_username'] = biz_user_map[s.user_id].username
+            d['admin_display_name'] = biz_user_map[s.user_id].display_name or biz_user_map[s.user_id].username
         else:
             d['admin_username'] = ''
             d['admin_display_name'] = ''
@@ -36,15 +36,15 @@ def list_staff():
 @admin_staff_bp.route('/staff/admins', methods=['GET'])
 @login_required
 def list_admins():
-    """下拉用：所有管理员账号列表"""
-    admins = AdminUser.query.order_by(AdminUser.id.asc()).all()
+    """下拉用：所有业务用户账号列表"""
+    biz_users = BusinessUser.query.filter_by(is_active=True).order_by(BusinessUser.id.asc()).all()
     return jsonify({
         'code': 0,
         'data': [{
-            'id': a.id,
-            'username': a.username,
-            'display_name': a.display_name or a.username,
-        } for a in admins]
+            'id': u.id,
+            'username': u.username,
+            'display_name': u.display_name or u.username,
+        } for u in biz_users]
     })
 
 

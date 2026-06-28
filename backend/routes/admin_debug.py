@@ -81,4 +81,7 @@ def register_debug_routes(app):
                 'traceback': get_full_traceback(e),
                 'type': type(e).__name__
             }), 500
+        # 始终记录错误日志，方便排查
+        app.logger.error(f'Unhandled exception: {type(e).__name__}: {e}')
+        app.logger.error(get_full_traceback(e))
         return jsonify({'code': 1, 'message': '请求处理失败'}), 500

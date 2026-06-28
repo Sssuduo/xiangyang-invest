@@ -255,6 +255,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/staff',
+    name: 'AdminStaff',
+    component: () => import('@/views/admin/StaffList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/business-users',
     name: 'AdminBusinessUsers',
     component: () => import('@/views/admin/BusinessUserList.vue'),

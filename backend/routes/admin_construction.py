@@ -14,10 +14,13 @@ from utils import get_current_user_info, log_changes
 
 
 def _parse_date(val):
-    """将 ISO 日期字符串转为 date 对象"""
+    """将日期字符串转为 date 对象，兼容 YYYY-MM 和 YYYY-MM-DD 格式"""
     if not val:
         return None
     try:
+        # 月份选择器发送 "YYYY-MM" 格式，补齐为完整日期
+        if isinstance(val, str) and len(val) == 7 and val[4] == '-':
+            val = val + '-01'
         return date.fromisoformat(val)
     except (ValueError, TypeError):
         return None
@@ -349,8 +352,8 @@ def create_project():
             'responsible_person': (None, project.responsible_person or ''),
             'responsible_person_phone': (None, project.responsible_person_phone or ''),
             'construction_location': (None, project.construction_location or ''),
-            'start_date': (None, project.str(project.start_date) if project.start_date else ''),
-            'end_date': (None, project.str(project.end_date) if project.end_date else ''),
+            'start_date': (None, str(project.start_date) if project.start_date else ''),
+            'end_date': (None, str(project.end_date) if project.end_date else ''),
             'funding_source': (None, project.funding_source or ''),
             'wuhua_platform': (None, project.wuhua_platform or ''),
             'team_leader_ids': (None, project.team_leader_ids or ''),
@@ -437,8 +440,8 @@ def update_project(project_id):
         'responsible_person': project.responsible_person or '',
         'responsible_person_phone': project.responsible_person_phone or '',
         'construction_location': project.construction_location or '',
-        'start_date': project.str(project.start_date) if project.start_date else '',
-        'end_date': project.str(project.end_date) if project.end_date else '',
+        'start_date': str(project.start_date) if project.start_date else '',
+        'end_date': str(project.end_date) if project.end_date else '',
         'funding_source': project.funding_source or '',
         'wuhua_platform': project.wuhua_platform or '',
         'team_leader_ids': project.team_leader_ids or '',
@@ -530,8 +533,8 @@ def update_project(project_id):
             'responsible_person': project.responsible_person or '',
             'responsible_person_phone': project.responsible_person_phone or '',
             'construction_location': project.construction_location or '',
-            'start_date': project.str(project.start_date) if project.start_date else '',
-            'end_date': project.str(project.end_date) if project.end_date else '',
+            'start_date': str(project.start_date) if project.start_date else '',
+            'end_date': str(project.end_date) if project.end_date else '',
             'funding_source': project.funding_source or '',
             'wuhua_platform': project.wuhua_platform or '',
             'team_leader_ids': project.team_leader_ids or '',

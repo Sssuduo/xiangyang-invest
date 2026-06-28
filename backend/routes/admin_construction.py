@@ -308,7 +308,6 @@ def create_project():
         end_date = _parse_date(wp_data.get('end_date'))
         content = (wp_data.get('content') or '').strip()
         if content and start_date and end_date:
-            import json
             wp_files = wp_data.get('files') or []
             db.session.add(WorkProgress(
                 project_id=project.id,
@@ -493,7 +492,6 @@ def update_project(project_id):
         end_date = _parse_date(wp_data.get('end_date'))
         content = (wp_data.get('content') or '').strip()
         if content and start_date and end_date:
-            import json
             wp_files = wp_data.get('files') or []
             db.session.add(WorkProgress(
                 project_id=project.id,
@@ -622,7 +620,6 @@ def batch_delete_projects():
 
 def _build_progress_dict(wp):
     """构建工作进展字典（含项目名称）"""
-    import json
     _files = []
     try:
         _files = json.loads(wp.files or '[]')
@@ -698,7 +695,6 @@ def create_progress():
     if not start_date or not end_date:
         return jsonify({'code': 1, 'message': '请选择起止日期'}), 400
 
-    import json
     files = data.get('files') or []
     wp = WorkProgress(
         project_id=project_id,
@@ -737,7 +733,6 @@ def update_progress(progress_id):
         wp.end_date = end_date
     wp.content = content
 
-    import json
     if 'files' in data:
         wp.files = json.dumps(data.get('files') or [], ensure_ascii=False)
 

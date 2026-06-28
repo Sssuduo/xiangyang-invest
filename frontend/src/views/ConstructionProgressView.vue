@@ -71,7 +71,7 @@
           <el-table-column label="所属项目" min-width="220">
             <template #default="{ row }">
               <span class="project-name-card" @click="handleProjectClick(row)">
-                {{ row.project_name }}
+                {{ dn(row.project_name) }}
               </span>
             </template>
           </el-table-column>
@@ -82,8 +82,8 @@
           </el-table-column>
           <el-table-column label="进展内容" min-width="300">
             <template #default="{ row }">
-              <el-tooltip :content="row.content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.content, 60) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.content" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ dc(truncate(row.content, 60)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -318,8 +318,12 @@ import ConstructionProjectDrawer from '@/components/investment/ConstructionProje
 import { getDicts, getProjects, getProgressList, createProgress, updateProgress, deleteProgress } from '@/api/construction'
 import { downloadTemplate, previewImport, executeImport } from '@/api/construction_progress_import'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 const items = ref([])
 const loading = ref(false)
 const searchText = ref('')

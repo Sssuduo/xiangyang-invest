@@ -19,7 +19,7 @@ class Config:
     # 文件上传配置
     UPLOAD_FOLDER = os.path.join(project_root, 'static', 'uploads')
     BACKGROUNDS_FOLDER = os.path.join(UPLOAD_FOLDER, 'backgrounds')
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB 上传限制
+    MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB 上传限制（含大视频）
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
     # Session 配置

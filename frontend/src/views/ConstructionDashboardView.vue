@@ -84,11 +84,26 @@
                   <el-icon><Back /></el-icon> 返回项目类型
                 </el-button>
                 <el-select
+                  v-model="filterDispatchStatus"
+                  placeholder="调度状态"
+                  clearable
+                  multiple
+                  collapse-tags
+                  size="small"
+                  style="width: 160px;"
+                  @change="onFilterChange"
+                >
+                  <el-option label="调度中" value="dispatching" />
+                  <el-option label="不予调度" value="no_dispatch" />
+                </el-select>
+                <el-select
                   v-model="filterProjectType"
                   placeholder="项目类型"
                   clearable
+                  multiple
+                  collapse-tags
                   size="small"
-                  style="width: 150px;"
+                  style="width: 160px;"
                   @change="onFilterChange"
                 >
                   <el-option
@@ -103,10 +118,19 @@
             <div ref="typeChartRef" class="chart-box"></div>
           </div>
 
-          <!-- 调度状态分布（环形图） -->
+          <!-- 项目类型分布（饼状图，支持下钻） -->
           <div class="chart-panel">
             <div class="chart-panel-header">
-              <h3>调度状态分布</h3>
+              <h3>项目类型分布</h3>
+              <div class="chart-panel-actions">
+                <el-button
+                  v-if="drilldownPie"
+                  size="small"
+                  @click="drillupPieChart"
+                >
+                  <el-icon><Back /></el-icon> 返回项目类型
+                </el-button>
+              </div>
             </div>
             <div ref="dispatchPieRef" class="chart-box"></div>
           </div>
@@ -128,6 +152,14 @@
           </div>
           <div ref="unitChartRef" class="chart-box"></div>
         </div>
+
+        <!-- 专班负责人分布（饼状图） -->
+        <div class="chart-panel chart-panel-full">
+          <div class="chart-panel-header">
+            <h3>专班负责人分布</h3>
+          </div>
+          <div ref="teamPieChartRef" class="chart-box" style="height:400px"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -141,31 +173,41 @@ import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { getConstructionStats } from '@/api/construction_dashboard'
 import { getDicts } from '@/api/construction'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName } from '@/utils/mask'
+
+const businessAuth = useBusinessAuthStore()
+function mn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 
 const loading = ref(false)
 const stats = reactive({
   overview: null,
   by_type: [],
   by_unit: [],
-  by_dispatch_status: []
+  by_dispatch_status: [],
+  by_team_leader: []
 })
 
 // 图表 refs
 const typeChartRef = ref(null)
 const unitChartRef = ref(null)
 const dispatchPieRef = ref(null)
+const teamPieChartRef = ref(null)
 
 // 图表实例
 let typeChart = null
 let unitChart = null
 let dispatchPieChart = null
+let teamPieChart = null
 
 // 筛选
-const filterProjectType = ref('')
+const filterProjectType = ref([])
+const filterDispatchStatus = ref(['dispatching'])  // 默认只看调度中
 const projectTypes = ref([])
 
 // 下钻状态
 const drilldownType = ref(null)
+const drilldownPie = ref(null)
 const drilldownUnit = ref(null)
 
 // 调度状态配色（预设）
@@ -274,7 +316,7 @@ function renderTypeChart() {
             html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;font-size:12px;color:#666;">'
             html += '<strong>关联项目：</strong><br/>'
             projects.forEach(p => {
-              html += `· ${p.name}<br/>`
+              html += `· ${mn(p.name)}<br/>`
             })
             html += '</div>'
           }
@@ -306,86 +348,300 @@ function drillupTypeChart() {
   renderTypeChart()
 }
 
-// ========== 图表2：调度状态环形图 ==========
+// ========== 图表2：项目类型分布（饼状图，支持下钻到调度状态）==========
 function renderDispatchPie() {
   if (!dispatchPieChart) return
 
-  const data = stats.by_dispatch_status || []
-  if (data.length === 0) {
-    dispatchPieChart.clear()
+  dispatchPieChart.off('click')
+
+  if (drilldownPie.value) {
+    // ---- 下钻视图：该类型的调度状态分布 ----
+    const item = stats.by_type.find(d => d.code === drilldownPie.value)
+    if (!item) return
+    const parts = [
+      { name: '调度中', value: item.dispatching || 0, color: dispatchStatusColors.dispatching },
+      { name: '已完成', value: item.completed || 0, color: dispatchStatusColors.completed },
+      { name: '其他', value: item.other || 0, color: '#909399' }
+    ].filter(p => p.value > 0)
+
+    const total = parts.reduce((sum, p) => sum + p.value, 0)
+    const colors = ['#e6a23c', '#67c23a', '#909399']
+
+    dispatchPieChart.setOption({
+      title: {
+        text: `「${item.name}」调度状态`,
+        textStyle: { fontSize: 14, fontWeight: 500, color: '#606266' },
+        left: 'center',
+        top: 0
+      },
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        formatter: (params) => {
+          return `<strong>${params.name}</strong><br/>项目数量：${params.value}（${params.percent}%）`
+        }
+      },
+      legend: {
+        orient: 'vertical',
+        left: 10,
+        top: 40,
+        itemGap: 12,
+        textStyle: { fontSize: 12 }
+      },
+      color: colors,
+      series: [{
+        type: 'pie',
+        radius: ['50%', '72%'],
+        center: ['58%', '55%'],
+        avoidLabelOverlap: false,
+        padAngle: 2,
+        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+        label: {
+          show: true,
+          position: 'outside',
+          formatter: '{b}\n{d}%',
+          fontSize: 11
+        },
+        emphasis: {
+          label: { show: true, fontSize: 14, fontWeight: 'bold' },
+          scaleSize: 8
+        },
+        data: parts.map(p => ({ name: mn(p.name), value: p.value }))
+      }],
+      graphic: [
+        {
+          type: 'text',
+          left: '58%',
+          top: '52%',
+          style: {
+            text: `${total}`,
+            textAlign: 'center',
+            fill: '#303133',
+            fontSize: 22,
+            fontWeight: 700
+          }
+        },
+        {
+          type: 'text',
+          left: '58%',
+          top: '59%',
+          style: {
+            text: '小计',
+            textAlign: 'center',
+            fill: '#909399',
+            fontSize: 12
+          }
+        }
+      ]
+    }, true)
+  } else {
+    // ---- 默认视图：项目类型分布 ----
+    const data = stats.by_type || []
+    if (data.length === 0) {
+      dispatchPieChart.clear()
+      return
+    }
+
+    const total = data.reduce((sum, d) => sum + d.count, 0)
+    const colorMap = typeColorMap(data.map(d => d.name))
+    const colors = data.map(d => colorMap[d.name])
+
+    dispatchPieChart.on('click', (params) => {
+      const item = data[params.dataIndex]
+      if (item) {
+        drilldownPie.value = item.code
+      }
+    })
+
+    dispatchPieChart.setOption({
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        formatter: (params) => {
+          const item = data[params.dataIndex]
+          let html = `<strong>${params.name}</strong><br/>项目数量：${params.value}（${params.percent}%）`
+          if (item) {
+            html += '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #ddd;font-size:12px;color:#666;">'
+            html += `调度中：${item.dispatching}　已完成：${item.completed}　其他：${item.other}`
+            html += '</div>'
+            const projects = item.projects || []
+            if (projects.length > 0) {
+              html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;font-size:12px;color:#666;">'
+              html += '<strong>关联项目：</strong><br/>'
+              projects.forEach(p => { html += `· ${mn(p.name)}<br/>` })
+              html += '</div>'
+            }
+          }
+          return html
+        }
+      },
+      legend: {
+        type: 'scroll',
+        orient: 'vertical',
+        left: 10,
+        top: 'center',
+        itemGap: 12,
+        textStyle: { fontSize: 12 },
+        formatter: (name) => {
+          const item = data.find(d => d.name === name)
+          const count = item ? item.count : 0
+          const pct = total > 0 ? (count / total * 100).toFixed(1) : '0'
+          return `${name}  ${count}个 (${pct}%)`
+        }
+      },
+      color: colors,
+      series: [{
+        type: 'pie',
+        radius: ['48%', '75%'],
+        center: ['58%', '50%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2 },
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: '{c}',
+          fontSize: 13,
+          fontWeight: 'bold',
+          color: '#fff'
+        },
+        emphasis: {
+          label: { show: true, fontSize: 18, fontWeight: 'bold' },
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.3)'
+          }
+        },
+        data: data.map(d => ({ name: d.name, value: d.count }))
+      }],
+      graphic: [
+        {
+          type: 'text',
+          left: '58%',
+          top: '49%',
+          style: {
+            text: `${total}`,
+            textAlign: 'center',
+            fill: '#303133',
+            fontSize: 22,
+            fontWeight: 700
+          }
+        },
+        {
+          type: 'text',
+          left: '58%',
+          top: '56%',
+          style: {
+            text: '项目总数',
+            textAlign: 'center',
+            fill: '#909399',
+            fontSize: 12
+          }
+        }
+      ]
+    }, true)
+  }
+}
+
+function drillupPieChart() {
+  drilldownPie.value = null
+  renderDispatchPie()
+}
+
+// ========== 图表3：专班负责人分布（饼状图）==========
+function renderTeamPieChart() {
+  if (!teamPieChart) return
+
+  const data = stats.by_team_leader
+  if (!data || data.length === 0) {
+    teamPieChart.setOption({
+      title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 14 } }
+    })
     return
   }
 
-  const total = data.reduce((sum, d) => sum + d.count, 0)
-  const pieData = data.map(d => ({
-    name: d.name,
-    value: d.count,
-    itemStyle: { color: dispatchStatusColors[d.code] || '#909399' }
-  }))
+  const colors = [
+    '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
+    '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#409eff',
+    '#67c23a', '#e6a23c', '#f56c6c', '#909399'
+  ]
 
-  dispatchPieChart.setOption({
+  const total = data.reduce((sum, d) => sum + (d.count || 0), 0)
+
+  teamPieChart.setOption({
     tooltip: {
       trigger: 'item',
       confine: true,
+      extraCssText: 'max-width:420px;',
       formatter: (params) => {
-        return `<strong>${params.name}</strong><br/>项目数量：${params.value}（${params.percent}%）`
+        const pct = params.percent != null ? params.percent.toFixed(1) : '0.0'
+        const item = data[params.dataIndex]
+        const projects = item?.projects || []
+        let html = `<strong>${params.name}</strong><br/>
+          项目数量：${params.value} 个 &nbsp; 占比：${pct}%`
+        if (projects.length > 0) {
+          html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:12px;color:#606266;">'
+          html += '<strong>关联项目：</strong><br/>'
+          projects.forEach(p => {
+            html += `<div style="padding:1px 0;">· ${mn(p.name)}</div>`
+          })
+          html += '</div>'
+        }
+        return html
       }
     },
     legend: {
+      type: 'scroll',
       orient: 'vertical',
-      left: 10,
+      right: 10,
       top: 'center',
-      itemGap: 12,
-      textStyle: { fontSize: 12 }
+      itemWidth: 12,
+      itemHeight: 12,
+      textStyle: { fontSize: 12 },
+      formatter: (name) => {
+        const item = data.find(d => d.name === name)
+        const count = item ? item.count : 0
+        const pct = total > 0 ? (count / total * 100).toFixed(1) : '0'
+        return `${name}  ${count}个 (${pct}%)`
+      }
     },
+    color: colors,
     series: [{
       type: 'pie',
-      radius: ['55%', '78%'],
-      center: ['58%', '50%'],
+      radius: ['48%', '75%'],
+      center: ['40%', '50%'],
       avoidLabelOverlap: false,
-      padAngle: 2,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: {
+        borderRadius: 3,
+        borderColor: '#fff',
+        borderWidth: 2
+      },
       label: {
         show: true,
-        position: 'outside',
-        formatter: '{b}\n{d}%',
-        fontSize: 11
+        position: 'inside',
+        formatter: '{c}',
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: '#fff'
       },
       emphasis: {
-        label: { show: true, fontSize: 14, fontWeight: 'bold' },
-        scaleSize: 8
-      },
-      data: pieData
-    }],
-    graphic: [
-      {
-        type: 'text',
-        left: '58%',
-        top: '50%',
-        style: {
-          text: `${total}`,
-          textAlign: 'center',
-          fill: '#303133',
-          fontSize: 22,
-          fontWeight: 700
+        label: {
+          show: true,
+          fontSize: 18,
+          fontWeight: 'bold'
+        },
+        itemStyle: {
+          shadowBlur: 10,
+          shadowOffsetX: 0,
+          shadowColor: 'rgba(0, 0, 0, 0.3)'
         }
       },
-      {
-        type: 'text',
-        left: '58%',
-        top: '58%',
-        style: {
-          text: '项目总数',
-          textAlign: 'center',
-          fill: '#909399',
-          fontSize: 12
-        }
-      }
-    ]
+      data: data.map(d => ({ name: d.name, value: d.count }))
+    }]
   }, true)
 }
 
-// ========== 图表3：责任单位分布（横向柱状图，支持下钻）==========
+// ========== 图表4：责任单位分布（横向柱状图，支持下钻）==========
 function renderUnitChart() {
   if (!unitChart) return
 
@@ -491,6 +747,7 @@ function drillupUnitChart() {
 function renderAllCharts() {
   renderTypeChart()
   renderDispatchPie()
+  renderTeamPieChart()
   renderUnitChart()
 }
 
@@ -499,8 +756,11 @@ async function fetchStats() {
   loading.value = true
   try {
     const params = {}
-    if (filterProjectType.value) {
-      params.project_type = filterProjectType.value
+    if (filterProjectType.value && filterProjectType.value.length > 0) {
+      params.project_type = filterProjectType.value.join(',')
+    }
+    if (filterDispatchStatus.value && filterDispatchStatus.value.length > 0) {
+      params.dispatch_status = filterDispatchStatus.value.join(',')
     }
     const res = await getConstructionStats(params)
     if (res?.code === 0) {
@@ -509,6 +769,7 @@ async function fetchStats() {
       stats.by_type = data.by_type || []
       stats.by_unit = data.by_unit || []
       stats.by_dispatch_status = data.by_dispatch_status || []
+      stats.by_team_leader = data.by_team_leader || []
       await nextTick()
       renderAllCharts()
     } else {
@@ -523,6 +784,7 @@ async function fetchStats() {
 
 function onFilterChange() {
   drilldownType.value = null
+  drilldownPie.value = null
   drilldownUnit.value = null
   fetchStats()
 }
@@ -530,6 +792,9 @@ function onFilterChange() {
 // 监听下钻状态
 watch(drilldownType, () => {
   renderTypeChart()
+})
+watch(drilldownPie, () => {
+  renderDispatchPie()
 })
 watch(drilldownUnit, () => {
   renderUnitChart()
@@ -543,6 +808,9 @@ function initCharts() {
   if (dispatchPieRef.value && !dispatchPieChart) {
     dispatchPieChart = echarts.init(dispatchPieRef.value)
   }
+  if (teamPieChartRef.value && !teamPieChart) {
+    teamPieChart = echarts.init(teamPieChartRef.value)
+  }
   if (unitChartRef.value && !unitChart) {
     unitChart = echarts.init(unitChartRef.value)
   }
@@ -555,6 +823,7 @@ function setupResizeObserver() {
   resizeObserver = new ResizeObserver(() => {
     typeChart?.resize()
     dispatchPieChart?.resize()
+    teamPieChart?.resize()
     unitChart?.resize()
   })
   resizeObserver.observe(container)
@@ -563,9 +832,11 @@ function setupResizeObserver() {
 function disposeCharts() {
   typeChart?.dispose()
   dispatchPieChart?.dispose()
+  teamPieChart?.dispose()
   unitChart?.dispose()
   typeChart = null
   dispatchPieChart = null
+  teamPieChart = null
   unitChart = null
   resizeObserver?.disconnect()
 }

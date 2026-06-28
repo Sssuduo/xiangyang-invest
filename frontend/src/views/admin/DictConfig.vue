@@ -110,6 +110,12 @@
           <el-color-picker v-model="form.display_color" />
           <span style="margin-left: 8px; font-size: 12px; color: #909399;">{{ form.display_color }}</span>
         </el-form-item>
+        <el-form-item v-if="activeTab === 'staff'" label="职位">
+          <el-input v-model="form.position" placeholder="职位" />
+        </el-form-item>
+        <el-form-item v-if="activeTab === 'staff'" label="关联用户ID">
+          <el-input v-model="form.user_id" placeholder="admin_users 的用户ID（可选）" />
+        </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.is_active" />
         </el-form-item>
@@ -144,6 +150,7 @@ const tabs = [
   { key: 'dispatch_statuses', label: '调度状态' },
   { key: 'issue_types', label: '问题类型' },
   { key: 'resolution_statuses', label: '解决状态' },
+  { key: 'staff', label: '工作人员' },
 ]
 const tabsWithColor = ['follow_statuses', 'meeting_statuses', 'resolution_statuses']
 
@@ -217,6 +224,8 @@ const defaultForm = () => ({
   name: '',
   parent_code: '',
   display_color: '#909399',
+  position: '',
+  user_id: '',
   is_active: true
 })
 const form = reactive(defaultForm())
@@ -240,6 +249,8 @@ function openEdit(row) {
   form.name = row.name
   form.parent_code = row.parent_code || ''
   form.display_color = row.display_color || '#909399'
+  form.position = row.position || ''
+  form.user_id = row.user_id || ''
   form.is_active = row.is_active
   dialogVisible.value = true
 }
@@ -261,6 +272,10 @@ async function handleSave() {
     }
     if (activeTab.value === 'demand_types') data.parent_code = form.parent_code
     if (currentTabHasColor.value) data.display_color = form.display_color
+    if (activeTab.value === 'staff') {
+      data.position = form.position
+      if (form.user_id) data.user_id = Number(form.user_id)
+    }
 
     if (dialogMode.value === 'create') {
       data.code = form.code

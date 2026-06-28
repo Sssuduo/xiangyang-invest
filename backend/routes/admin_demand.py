@@ -10,7 +10,7 @@ from models import EnterpriseDemand, InvestmentProject, DemandTypeDict, Organiza
 from models import ImportFieldConfigDemand
 from extensions import db
 from routes import admin_demand_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
@@ -75,6 +75,7 @@ def list_demands():
 
 @admin_demand_bp.route('/demand/demands', methods=['POST'])
 @dual_login_required
+@visitor_block
 def create_demand():
     """新建诉求"""
     data = request.get_json()
@@ -131,6 +132,7 @@ def get_demand(demand_id):
 
 @admin_demand_bp.route('/demand/demands/<int:demand_id>', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_demand(demand_id):
     """更新诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id).first_or_404()
@@ -167,6 +169,7 @@ def update_demand(demand_id):
 
 @admin_demand_bp.route('/demand/demands/<int:demand_id>', methods=['DELETE'])
 @dual_login_required
+@visitor_block
 def delete_demand(demand_id):
     """删除诉求"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id).first_or_404()
@@ -177,6 +180,7 @@ def delete_demand(demand_id):
 
 @admin_demand_bp.route('/demand/demands/batch-delete', methods=['POST'])
 @dual_login_required
+@visitor_block
 def batch_delete_demands():
     """批量删除诉求"""
     data = request.get_json()
@@ -206,6 +210,7 @@ def get_import_fields():
 
 @admin_demand_bp.route('/demand-import/fields', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_import_fields():
     data = request.get_json()
     if not data or not isinstance(data, list):
@@ -388,7 +393,7 @@ def download_template():
             'demand_type_code': '用地需求',
             'demand_content': '示例诉求内容',
             'unit_code': '示例对接单位',
-            'status': '待处理',
+            'status': '待回应',
         }
         for col_idx, field in enumerate(fields, 1):
             val = sample.get(field.field_key, '')
@@ -456,7 +461,7 @@ def download_template():
 
     # 状态下拉选项
     if status_col:
-        status_names = ['待处理', '处理中', '已解决']
+        status_names = ['待回应', '协调中', '已回应']
         dv = DataValidation(
             type='list',
             formula1='"' + ','.join(status_names) + '"',
@@ -592,6 +597,7 @@ def import_preview():
 
 @admin_demand_bp.route('/demand-import/execute', methods=['POST'])
 @dual_login_required
+@visitor_block
 def import_execute():
     """将预览通过的数据写入数据库"""
     data = request.get_json()
@@ -766,7 +772,7 @@ def demand_stats():
     by_type_level1 = sorted(level1_stats.values(), key=lambda x: x['count'], reverse=True)
 
     # ---- 按状态分布 ----
-    status_labels = {'pending': '待处理', 'processing': '处理中', 'resolved': '已解决'}
+    status_labels = {'pending': '待回应', 'processing': '协调中', 'resolved': '已回应'}
     status_colors = {'pending': '#f56c6c', 'processing': '#e6a23c', 'resolved': '#67c23a'}
     status_rows = demand_query().with_entities(
         EnterpriseDemand.status,

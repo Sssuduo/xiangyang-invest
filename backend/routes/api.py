@@ -214,7 +214,11 @@ def list_public_projects():
         ))
 
     if follow_status:
-        q = q.filter_by(follow_status_code=follow_status)
+        codes = [c.strip() for c in follow_status.split(',') if c.strip()]
+        if len(codes) == 1:
+            q = q.filter_by(follow_status_code=codes[0])
+        elif len(codes) > 1:
+            q = q.filter(InvestmentProject.follow_status_code.in_(codes))
     if meeting_status:
         q = q.filter_by(meeting_status_code=meeting_status)
     if project_type:
@@ -258,6 +262,12 @@ def list_public_projects():
         d['project_type_name'] = tu.name if tu else ''
         # 标签名称解析
         d['tag_names'] = [tag_map.get(tc, tc) for tc in (json.loads(p.tags) if p.tags else [])]
+        # 专班负责人名称解析
+        from models import Staff
+        leader_ids = json.loads(p.team_leader_ids) if p.team_leader_ids else []
+        staff_list = Staff.query.filter(Staff.id.in_(leader_ids)).all() if leader_ids else []
+        staff_map = {s.id: s.name for s in staff_list}
+        d['team_leader_names'] = [staff_map.get(sid, str(sid)) for sid in leader_ids]
         # 诉求字典名称（二级显示：一级：二级）
         for dd in d.get('demands', []) or []:
             codes = [c.strip() for c in (dd.get('demand_type_code') or '').split(',') if c.strip()]

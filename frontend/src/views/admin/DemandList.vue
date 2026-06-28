@@ -62,9 +62,9 @@
             </el-option-group>
           </el-select>
           <el-select v-model="filterStatus" placeholder="状态" clearable @change="currentPage = 1; fetchData()" style="width: 120px;">
-            <el-option label="待处理" value="pending" />
-            <el-option label="处理中" value="processing" />
-            <el-option label="已解决" value="resolved" />
+            <el-option label="待回应" value="pending" />
+            <el-option label="协调中" value="processing" />
+            <el-option label="已回应" value="resolved" />
           </el-select>
         </div>
 
@@ -198,9 +198,9 @@
           </el-row>
           <el-form-item label="状态">
             <el-select v-model="form.status" style="width: 200px;">
-              <el-option label="待处理" value="pending" />
-              <el-option label="处理中" value="processing" />
-              <el-option label="已解决" value="resolved" />
+              <el-option label="待回应" value="pending" />
+              <el-option label="协调中" value="processing" />
+              <el-option label="已回应" value="resolved" />
             </el-select>
           </el-form-item>
 
@@ -446,7 +446,7 @@ function statusColor(s) {
   return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399'
 }
 function statusName(s) {
-  return { pending: '待处理', processing: '处理中', resolved: '已解决' }[s] || s
+  return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s
 }
 
 function fmtDt(d) {

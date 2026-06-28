@@ -23,9 +23,9 @@
             @change="onFilterDemandTypeChange"
           />
           <el-select v-model="filterStatus" placeholder="状态" clearable @change="currentPage = 1; fetchData()" style="width: 120px;">
-            <el-option label="待处理" value="pending" />
-            <el-option label="处理中" value="processing" />
-            <el-option label="已解决" value="resolved" />
+            <el-option label="待回应" value="pending" />
+            <el-option label="协调中" value="processing" />
+            <el-option label="已回应" value="resolved" />
           </el-select>
           <el-button v-if="selectedIds.length > 0 && businessAuth.hasPermission('demand', 'batch_delete')" type="danger" @click="handleBatchDelete">
             <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
@@ -120,7 +120,7 @@
           <el-table-column label="项目" width="200">
             <template #default="{ row }">
               <el-tag class="project-name-tag" @click="handleProjectClick(row)">
-                {{ row.project_name }}
+                {{ dn(row.project_name) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -131,8 +131,8 @@
           </el-table-column>
           <el-table-column label="诉求内容" min-width="260">
             <template #default="{ row }">
-              <el-tooltip :content="row.demand_content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.demand_content, 50) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.demand_content" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ dc(truncate(row.demand_content, 50)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -180,7 +180,7 @@
       <template v-if="viewDemand">
         <el-descriptions :column="2" border size="small" class="detail-desc">
           <el-descriptions-item label="项目" :span="2">
-            <strong>{{ viewDemand.project_name }}</strong>
+            <strong>{{ dn(viewDemand.project_name) }}</strong>
           </el-descriptions-item>
           <el-descriptions-item label="诉求类型">
             {{ viewDemand.demand_type_name || viewDemand.demand_type_code || '-' }}
@@ -192,10 +192,10 @@
             <el-tag :color="statusColor(viewDemand.status)" effect="dark" size="small">{{ statusName(viewDemand.status) }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="诉求内容" :span="2">
-            <div class="text-block">{{ viewDemand.demand_content || '-' }}</div>
+            <div class="text-block">{{ dc(viewDemand.demand_content) || '-' }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="解决措施" :span="2">
-            <div class="text-block">{{ viewDemand.resolution || '暂无' }}</div>
+            <div class="text-block">{{ dc(viewDemand.resolution) || '暂无' }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="写入时间">{{ fmtDt(viewDemand.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="最后更新">{{ fmtDt(viewDemand.updated_at) }}</el-descriptions-item>
@@ -249,9 +249,9 @@
           </el-row>
           <el-form-item label="状态">
             <el-select v-model="form.status" style="width: 200px;">
-              <el-option label="待处理" value="pending" />
-              <el-option label="处理中" value="processing" />
-              <el-option label="已解决" value="resolved" />
+              <el-option label="待回应" value="pending" />
+              <el-option label="协调中" value="processing" />
+              <el-option label="已回应" value="resolved" />
             </el-select>
           </el-form-item>
 
@@ -356,8 +356,12 @@ import { getPublicDemands, getDemandDicts, createDemand, updateDemand, getDemand
 import { getTemplateProjects, downloadDemandImportTemplate, demandImportPreview, demandImportExecute } from '@/api/demand'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 const tableRef = ref(null)
 const demands = ref([])
 const loading = ref(false)
@@ -514,7 +518,7 @@ function statusColor(s) {
   return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399'
 }
 function statusName(s) {
-  return { pending: '待处理', processing: '处理中', resolved: '已解决' }[s] || s
+  return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s
 }
 
 function fmtDt(d) {

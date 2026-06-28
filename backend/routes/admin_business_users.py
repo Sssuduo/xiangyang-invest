@@ -8,8 +8,12 @@ from routes import admin_business_users_bp
 @admin_business_users_bp.route('/business-users', methods=['GET'])
 @login_required
 def list_users():
-    """获取业务用户列表"""
-    users = BusinessUser.query.order_by(BusinessUser.created_at.desc()).all()
+    """获取业务用户列表（可选按角色筛选）"""
+    role = request.args.get('role', '').strip()
+    q = BusinessUser.query
+    if role:
+        q = q.filter_by(role=role)
+    users = q.order_by(BusinessUser.created_at.desc()).all()
     return jsonify({'code': 0, 'data': [u.to_dict() for u in users]})
 
 
@@ -31,17 +35,25 @@ def create_user():
     if BusinessUser.query.filter_by(username=username).first():
         return jsonify({'code': 1, 'message': f'用户名「{username}」已存在'}), 409
 
+    role = data.get('role', 'user').strip()
+    if role not in ('user', 'visitor'):
+        role = 'user'
+
     user = BusinessUser(
         username=username,
         display_name=display_name or username,
-        is_active=data.get('is_active', True)
+        is_active=data.get('is_active', True),
+        role=role
     )
     user.set_password(password)
 
-    # 权限配置
-    permissions = data.get('permissions', {})
-    if isinstance(permissions, dict):
-        user.set_permissions(permissions)
+    # 游客自动清空权限，普通用户可配置权限
+    if role == 'visitor':
+        user.set_permissions({})
+    else:
+        permissions = data.get('permissions', {})
+        if isinstance(permissions, dict):
+            user.set_permissions(permissions)
 
     db.session.add(user)
     db.session.commit()
@@ -80,13 +92,21 @@ def update_user(user_id):
     if 'is_active' in data:
         user.is_active = bool(data['is_active'])
 
+    # 角色
+    if 'role' in data:
+        new_role = data['role'].strip()
+        if new_role in ('user', 'visitor'):
+            user.role = new_role
+            if new_role == 'visitor':
+                user.set_permissions({})  # 游客无操作权限
+
     # 密码（仅当提供时才修改）
     new_password = data.get('password', '')
     if new_password:
         user.set_password(new_password)
 
-    # 权限配置
-    if 'permissions' in data:
+    # 权限配置（非游客）
+    if 'permissions' in data and user.role != 'visitor':
         permissions = data['permissions']
         if isinstance(permissions, dict):
             user.set_permissions(permissions)

@@ -20,8 +20,11 @@
               <span class="video-title-link" @click="handlePreview(row)">{{ row.title }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="视频文件" min-width="280" show-overflow-tooltip>
+          <el-table-column label="视频文件" min-width="240" show-overflow-tooltip>
             <template #default="{ row }">{{ row.file_path }}</template>
+          </el-table-column>
+          <el-table-column label="文件大小" width="100" align="center">
+            <template #default="{ row }">{{ formatFileSize(row.file_size) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="260" align="center">
             <template #default="{ row }">
@@ -290,6 +293,16 @@ async function saveSort() {
   } catch (e) {
     ElMessage.error('排序失败')
   }
+}
+
+function formatFileSize(bytes) {
+  if (bytes == null || bytes < 0) return '-'
+  const gb = bytes / (1024 * 1024 * 1024)
+  if (gb >= 1) {
+    return gb.toFixed(2) + ' GB'
+  }
+  const mb = bytes / (1024 * 1024)
+  return mb.toFixed(2) + ' MB'
 }
 
 function handlePreview(row) {

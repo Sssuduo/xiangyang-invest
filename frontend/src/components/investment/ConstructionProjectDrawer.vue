@@ -9,7 +9,7 @@
       <div class="drawer-title-bar">
         <span class="drawer-title">
           <el-icon><View /></el-icon>
-          {{ project?.project_name || '项目详情' }}
+          {{ dn(project?.project_name) || '项目详情' }}
         </span>
       </div>
     </template>
@@ -24,14 +24,14 @@
             {{ project.dispatch_status_name || project.dispatch_status_code }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="建设单位">{{ project.construction_unit || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="责任单位">{{ project.responsible_unit_name || project.responsible_unit_code || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="责任人">{{ project.responsible_person || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="建设单位">{{ dn(project.construction_unit) || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="责任单位">{{ dn(project.responsible_unit_name || project.responsible_unit_code) || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="责任人">{{ dn(project.responsible_person) || '-' }}</el-descriptions-item>
       </el-descriptions>
 
       <div class="detail-section" v-if="project.construction_content">
         <h4>建设内容</h4>
-        <p>{{ project.construction_content }}</p>
+        <p>{{ dc(project.construction_content) }}</p>
       </div>
 
       <div class="detail-section" v-if="project.work_roadmap_items && project.work_roadmap_items.length > 0">
@@ -39,7 +39,7 @@
         <div v-for="(wri, i) in project.work_roadmap_items" :key="i" class="detail-sub-item">
           <div class="roadmap-detail-header">
             <span class="sub-index">{{ i + 1 }}.</span>
-            <span class="sub-text">{{ wri.content }}</span>
+            <span class="sub-text">{{ dc(wri.content) }}</span>
             <el-tag v-if="wri.status === 'completed'" type="success" size="small" effect="dark" style="margin-left:8px;">已完成</el-tag>
             <el-tag v-else-if="wri.status === 'cancelled'" type="info" size="small" effect="dark" style="margin-left:8px;">已作废</el-tag>
             <el-tag v-else :type="wri.is_delayed ? 'warning' : ''" size="small" effect="dark" style="margin-left:8px;">
@@ -51,8 +51,8 @@
             <span v-if="wri.actual_date" style="margin-left:12px;">实际：{{ wri.actual_date }}</span>
             <span v-if="!wri.planned_date" style="color:#909399;">预计：暂未明确</span>
           </div>
-          <p v-if="wri.delay_reason" style="color:#e6a23c;">延期原因：{{ wri.delay_reason }}</p>
-          <p v-if="wri.cancel_reason" style="color:#f56c6c;">作废原因：{{ wri.cancel_reason }}</p>
+          <p v-if="wri.delay_reason" style="color:#e6a23c;">延期原因：{{ dc(wri.delay_reason) }}</p>
+          <p v-if="wri.cancel_reason" style="color:#f56c6c;">作废原因：{{ dc(wri.cancel_reason) }}</p>
         </div>
       </div>
 
@@ -60,7 +60,7 @@
         <h4>工作进展 ({{ project.work_progresses.length }}条)</h4>
         <div v-for="(wp, i) in project.work_progresses" :key="i" class="detail-sub-item">
           <span class="sub-date">{{ wp.start_date }} ~ {{ wp.end_date }}</span>
-          <p>{{ wp.content }}</p>
+          <p>{{ dc(wp.content) }}</p>
         </div>
       </div>
 
@@ -69,8 +69,8 @@
         <div v-for="(iss, i) in project.issues" :key="i" class="detail-sub-item">
           <el-tag size="small" effect="plain">{{ iss.issue_type_name || iss.issue_type_code }}</el-tag>
           <el-tag size="small" effect="dark" :color="resolveColor(iss.resolution_status_code)" style="margin-left:8px;border:none;color:#fff;">{{ iss.resolution_status_name || iss.resolution_status_code }}</el-tag>
-          <p v-if="iss.issue_description" style="margin-top:6px;">{{ iss.issue_description }}</p>
-          <p v-if="iss.resolution_note" style="color:#909399;font-size:12px;">解决措施：{{ iss.resolution_note }}</p>
+          <p v-if="iss.issue_description" style="margin-top:6px;">{{ dc(iss.issue_description) }}</p>
+          <p v-if="iss.resolution_note" style="color:#909399;font-size:12px;">解决措施：{{ dc(iss.resolution_note) }}</p>
         </div>
       </div>
     </template>
@@ -81,6 +81,14 @@
 import { ref, computed } from 'vue'
 import { View } from '@element-plus/icons-vue'
 import { getProject } from '@/api/construction'
+import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent, maskPhone } from '@/utils/mask'
+
+const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
+function dp(v) { return businessAuth.isVisitor ? maskPhone(v) : (v || '') }
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

@@ -24,9 +24,16 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="角色" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.role === 'visitor' ? 'warning' : ''" size="small">
+                {{ row.role === 'visitor' ? '游客' : '普通用户' }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="权限概览" min-width="280">
             <template #default="{ row }">
-              <div class="perm-summary">
+              <div class="perm-summary" v-if="row.role !== 'visitor'">
                 <template v-for="mod in modules" :key="mod.key">
                   <span v-if="row.permissions?.[mod.key]" class="perm-module">
                     <span class="perm-module-name">{{ mod.label }}</span>
@@ -39,6 +46,7 @@
                   </span>
                 </template>
               </div>
+              <span v-else class="perm-visitor-hint">仅查看（数据脱敏）</span>
             </template>
           </el-table-column>
           <el-table-column label="创建时间" width="180">
@@ -84,13 +92,24 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="用户角色">
+              <el-radio-group v-model="form.role" @change="onRoleChange">
+                <el-radio value="user">普通用户</el-radio>
+                <el-radio value="visitor">游客</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
             <el-form-item label="启用状态">
               <el-switch v-model="form.is_active" active-text="启用" inactive-text="禁用" />
             </el-form-item>
           </el-col>
         </el-row>
 
-        <!-- 按钮权限配置 -->
+        <!-- 按钮权限配置（游客不可见） -->
+        <template v-if="form.role !== 'visitor'">
         <el-divider content-position="left">按钮权限配置</el-divider>
         <div class="perm-config">
           <div v-for="mod in modules" :key="mod.key" class="perm-module-row">
@@ -117,6 +136,7 @@
             >导入</el-checkbox>
           </div>
         </div>
+        </template>
       </el-form>
 
       <template #footer>
@@ -164,6 +184,7 @@ const defaultForm = () => ({
   display_name: '',
   password: '',
   is_active: true,
+  role: 'user',
   permissions: defaultPermissions()
 })
 
@@ -208,6 +229,7 @@ function openEdit(row) {
   form.display_name = row.display_name || ''
   form.password = ''
   form.is_active = row.is_active
+  form.role = row.role || 'user'
   // 合并权限（确保所有字段存在）
   const p = defaultPermissions()
   if (row.permissions) {
@@ -221,6 +243,14 @@ function openEdit(row) {
   // 编辑时密码选填
   rules.password = []
   dialogVisible.value = true
+}
+
+function onRoleChange(newRole) {
+  if (newRole === 'visitor') {
+    form.permissions = {}  // 游客无操作权限
+  } else if (!form.permissions || Object.keys(form.permissions).length === 0) {
+    form.permissions = defaultPermissions()
+  }
 }
 
 function resetForm() {
@@ -242,7 +272,8 @@ async function handleSave() {
       username: form.username,
       display_name: form.display_name,
       is_active: form.is_active,
-      permissions: form.permissions
+      role: form.role,
+      permissions: form.role === 'visitor' ? {} : form.permissions
     }
     if (form.password) {
       data.password = form.password
@@ -306,6 +337,7 @@ function formatDate(isoStr) {
   padding: 1px 6px; border-radius: 3px;
 }
 .perm-tag.perm-none { color: #c0c4cc; background: #f5f7fa; }
+.perm-visitor-hint { font-size: 12px; color: #e6a23c; }
 
 .perm-config { padding: 4px 0; }
 .perm-module-row {

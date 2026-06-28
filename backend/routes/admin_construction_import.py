@@ -14,7 +14,7 @@ from models import (
 )
 from extensions import db
 from routes import admin_construction_import_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 from routes.admin_construction import _renumber_projects
 
 
@@ -162,7 +162,7 @@ def parse_issue_text(text):
         resolution_raw = parts[2] if len(parts) > 2 and parts[2] else 'pending'
         resolution_status_code = _resolve_dict_name_to_code(ResolutionStatusDict, resolution_raw)
         if not resolution_status_code:
-            resolution_status_code = 'pending'  # 默认待处理
+            resolution_status_code = 'pending'  # 默认待回应
 
         resolution_note = parts[3] if len(parts) > 3 and parts[3] else ''
         main_department_code = parts[4] if len(parts) > 4 and parts[4] else ''
@@ -190,6 +190,7 @@ def get_import_fields():
 
 @admin_construction_import_bp.route('/construction-import/fields', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_import_fields():
     data = request.get_json()
     if not data or not isinstance(data, list):
@@ -276,7 +277,7 @@ def download_template():
         'responsible_person_phone': '示例：13800138000',
         'roadmap_text': '项目签约|2025-07-01|pending;选址确定|2025-08-15|pending;开工建设|2025-10-01|pending',
         'progress_text': '2025-06-01|2025-06-15|完成项目立项审批;2025-06-16|2025-07-01|完成初步设计',
-        'issue_text': '资金问题|项目资金缺口约500万|待处理||;用地问题|用地审批进度缓慢|处理中|已协调自然资源局加快审批|',
+        'issue_text': '资金问题|项目资金缺口约500万|待回应||;用地问题|用地审批进度缓慢|协调中|已协调自然资源局加快审批|',
     }
     for col_idx, field in enumerate(fields, 1):
         val = sample.get(field.field_key, '')
@@ -585,6 +586,7 @@ def import_preview():
 
 @admin_construction_import_bp.route('/construction-import/execute', methods=['POST'])
 @dual_login_required
+@visitor_block
 def import_execute():
     """将预览通过的数据写入数据库"""
     data = request.get_json()

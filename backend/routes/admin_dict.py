@@ -5,7 +5,7 @@ from models import (
     FollowStatusDict, MeetingStatusDict, OrganizationDict,
     ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict,
     ConstructionProjectTypeDict, DispatchStatusDict,
-    IssueTypeDict, ResolutionStatusDict
+    IssueTypeDict, ResolutionStatusDict, Staff
 )
 from extensions import db
 from routes import admin_dict_bp
@@ -23,6 +23,7 @@ DICT_REGISTRY = {
     'dispatch_statuses': (DispatchStatusDict, ['code', 'name', 'sort_order', 'is_active'], False),
     'issue_types': (IssueTypeDict, ['code', 'name', 'sort_order', 'is_active'], False),
     'resolution_statuses': (ResolutionStatusDict, ['code', 'name', 'display_color', 'sort_order', 'is_active'], True),
+    'staff': (Staff, ['name', 'position', 'user_id', 'sort_order', 'is_active'], False),
 }
 
 

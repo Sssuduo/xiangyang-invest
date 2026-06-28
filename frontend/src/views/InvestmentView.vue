@@ -6,7 +6,7 @@
       <div class="content-card">
         <div class="toolbar">
           <el-input v-model="searchText" placeholder="搜索项目名称、企业、内容..." :prefix-icon="Search" clearable class="search-input" @input="handleSearch" />
-          <el-select v-model="filterFollowStatus" placeholder="跟进状态" clearable @change="fetchData" style="width: 140px;">
+          <el-select v-model="filterFollowStatus" multiple placeholder="跟进状态" clearable collapse-tags collapse-tags-tooltip @change="fetchData" style="width: 160px;">
             <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
           <el-select v-model="filterMeetingStatus" placeholder="上会状态" clearable @change="fetchData" style="width: 140px;">
@@ -15,12 +15,37 @@
           <el-select v-model="filterProjectType" placeholder="项目类型" clearable @change="fetchData" style="width: 140px;">
             <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
-          <el-button v-if="selectedIds.length > 0" type="success" @click="openExportDialog">
-            <el-icon><Download /></el-icon> 导出Excel ({{ selectedIds.length }})
-          </el-button>
-          <el-button v-if="selectedIds.length > 0 && businessAuth.hasPermission('investment', 'batch_delete')" type="danger" @click="handleBatchDelete">
-            <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
-          </el-button>
+          <el-dropdown
+            v-if="selectedIds.length > 0"
+            trigger="hover"
+            @command="handleBatchCmd"
+          >
+            <el-button type="primary" plain>
+              <el-icon><Operation /></el-icon> 批量操作 ({{ selectedIds.length }})
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="print">
+                  <el-icon><Printer /></el-icon> 在线打印
+                </el-dropdown-item>
+                <el-dropdown-item command="export">
+                  <el-icon><Download /></el-icon> 导出文件
+                </el-dropdown-item>
+                <el-dropdown-item command="export-print" divided>
+                  <el-icon><Finished /></el-icon> 导出并打印
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="businessAuth.hasPermission('investment', 'batch_delete')"
+                  command="batch-delete"
+                  divided
+                  style="color: #f56c6c;"
+                >
+                  <el-icon><Delete /></el-icon> 批量删除
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-dropdown v-if="businessAuth.hasPermission('investment', 'import')" trigger="click" @command="handleImportCmd">
             <el-button type="default">
               <el-icon><Upload /></el-icon> 项目导入 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -70,19 +95,25 @@
                   <div class="expand-block">
                     <div class="expand-block-title">基础信息</div>
                     <div class="expand-grid">
-                      <div class="expand-item"><label>项目名称</label><span>{{ row.project_name }}</span></div>
-                      <div class="expand-item"><label>投资商名称</label><span>{{ row.invest_enterprise }}</span></div>
+                      <div class="expand-item"><label>项目名称</label><span>{{ displayName(row.project_name) }}</span></div>
+                      <div class="expand-item"><label>投资商名称</label><span>{{ displayName(row.invest_enterprise) }}</span></div>
                       <div class="expand-item"><label>推介单位</label><span>{{ row.recommend_unit_name || '-' }}</span></div>
                       <div class="expand-item"><label>首次对接</label><span>{{ row.first_contact_date || '-' }}</span></div>
+                      <div class="expand-item" v-if="row.team_leader_names && row.team_leader_names.length > 0">
+                        <label>专班负责人</label>
+                        <span>
+                          <el-tag v-for="(name, idx) in row.team_leader_names" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">{{ name }}</el-tag>
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div class="expand-block">
                     <div class="expand-block-title">企业简介</div>
-                    <p class="expand-text-block">{{ row.enterprise_info }}</p>
+                    <p class="expand-text-block">{{ displayContent(row.enterprise_info) }}</p>
                   </div>
                   <div class="expand-block">
                     <div class="expand-block-title">项目内容</div>
-                    <p class="expand-text-block">{{ row.project_content }}</p>
+                    <p class="expand-text-block">{{ displayContent(row.project_content) }}</p>
                   </div>
                 </template>
 
@@ -105,9 +136,9 @@
                     <div class="demand-summary-text">
                       企业诉求共 <strong>{{ row.demands.length }}</strong> 条，
                       涉及 <strong>{{ demandDeptCount(row) }}</strong> 个部门，
-                      已解决 <strong class="c-resolved">{{ demandStatusCount(row, 'resolved') }}</strong> 条，
-                      处理中 <strong class="c-processing">{{ demandStatusCount(row, 'processing') }}</strong> 条，
-                      待处理 <strong class="c-pending">{{ demandStatusCount(row, 'pending') }}</strong> 条
+                      已回应 <strong class="c-resolved">{{ demandStatusCount(row, 'resolved') }}</strong> 条，
+                      协调中 <strong class="c-processing">{{ demandStatusCount(row, 'processing') }}</strong> 条，
+                      待回应 <strong class="c-pending">{{ demandStatusCount(row, 'pending') }}</strong> 条
                     </div>
                     <el-button size="small" link type="primary" @click="toggleDemandExpand(row.id)">
                       <el-icon><ArrowUp v-if="expandedDemandIds.has(row.id)" /><ArrowDown v-else /></el-icon>
@@ -123,10 +154,10 @@
                         <div class="demand-top-spacer"></div>
                         <el-tag :color="demandStatusColor(d.status)" effect="dark" size="small">{{ demandStatusName(d.status) }}</el-tag>
                       </div>
-                      <div class="demand-row-body">{{ d.demand_content }}</div>
+                      <div class="demand-row-body">{{ displayContent(d.demand_content) }}</div>
                       <div v-if="d.resolution" class="demand-row-res">
                         <span class="res-divider"><el-icon><ArrowRight /></el-icon> 解决措施</span>
-                        <span class="res-text">{{ d.resolution }}</span>
+                        <span class="res-text">{{ displayContent(d.resolution) }}</span>
                       </div>
                     </div>
                   </div>
@@ -136,7 +167,9 @@
           </el-table-column>
 
           <el-table-column prop="order_no" label="序号" width="50" align="left" class-name="col-order-no" />
-          <el-table-column prop="project_name" label="项目名称" min-width="140" show-overflow-tooltip />
+          <el-table-column label="项目名称" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ displayName(row.project_name) }}</template>
+          </el-table-column>
           <el-table-column label="项目类型" width="120">
             <template #default="{ row }">
               <span class="project-type-tag">{{ row.project_type_name || row.project_type_code }}</span>
@@ -144,15 +177,15 @@
           </el-table-column>
           <el-table-column label="投资商名称" width="130">
             <template #default="{ row }">
-              <el-tooltip :content="row.enterprise_info" placement="top" :show-after="300" popper-class="enterprise-tooltip">
-                <span class="enterprise-name">{{ row.invest_enterprise }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.enterprise_info" placement="top" :show-after="300" popper-class="enterprise-tooltip">
+                <span class="enterprise-name">{{ displayName(row.invest_enterprise) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="项目内容" min-width="160">
             <template #default="{ row }">
-              <el-tooltip :content="row.project_content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.project_content, 40) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.project_content" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ displayContent(truncate(row.project_content, 40)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -172,12 +205,21 @@
             </template>
           </el-table-column>
           <el-table-column label="责任单位" width="120" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.responsible_unit_name || row.responsible_unit_code }}</template>
+            <template #default="{ row }">{{ displayName(row.responsible_unit_name || row.responsible_unit_code) }}</template>
           </el-table-column>
-          <el-table-column prop="person_in_charge" label="责任人" width="70" />
+          <el-table-column label="责任人" width="70">
+            <template #default="{ row }">{{ displayName(row.person_in_charge) }}</template>
+          </el-table-column>
           <el-table-column label="标签" width="160">
             <template #default="{ row }">
               <el-tag v-for="(name, idx) in (row.tag_names || [])" :key="idx" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                {{ name }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="专班负责人" width="130">
+            <template #default="{ row }">
+              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
                 {{ name }}
               </el-tag>
             </template>
@@ -429,6 +471,17 @@
             </el-select>
           </el-form-item>
 
+          <!-- 专班负责人 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><User /></el-icon></span>
+            <span class="section-title">专班负责人</span>
+          </div>
+          <el-form-item label="专班负责人">
+            <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
+              <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+          </el-form-item>
+
           <!-- 企业诉求 -->
           <div class="section-header">
             <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
@@ -463,9 +516,9 @@
               <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
               <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
               <el-select v-model="d.status" size="small" style="width: 120px;">
-                <el-option label="待处理" value="pending" />
-                <el-option label="处理中" value="processing" />
-                <el-option label="已解决" value="resolved" />
+                <el-option label="待回应" value="pending" />
+                <el-option label="协调中" value="processing" />
+                <el-option label="已回应" value="resolved" />
               </el-select>
             </div>
             <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
@@ -548,39 +601,12 @@
       </template>
     </el-dialog>
 
-    <!-- ========== 导出 Excel 弹窗 ========== -->
-    <el-dialog v-model="exportDialogVisible" title="导出Excel" width="500px" :close-on-click-modal="false">
-      <el-form label-width="100px">
-        <el-form-item label="选择模板">
-          <el-select v-model="exportTemplateId" placeholder="请选择导出模板" style="width: 100%;">
-            <el-option v-for="t in exportTemplates" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="导出动态范围">
-          <el-select v-model="exportActivityRange" placeholder="请选择" style="width: 100%;">
-            <el-option label="全部动态" value="" />
-            <el-option label="最近5条" value="last5" />
-            <el-option label="最近1个月" value="last1m" />
-            <el-option label="最近3个月" value="last3m" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="企业诉求导出">
-          <el-select v-model="exportDemandMode" placeholder="请选择" style="width: 100%;">
-            <el-option label="聚合导出" value="aggregate" />
-            <el-option label="按行导出" value="row" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <p style="color:#909399;font-size:13px;margin-top:12px;">">
-        将导出选中的 <strong>{{ selectedIds.length }}</strong> 个项目
-      </p>
-      <template #footer>
-        <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="exporting" @click="handleExport">
-          <el-icon><Download /></el-icon> 导出
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- 打印/导出弹窗 -->
+    <SimplePrintExportDialog
+      v-model="printExportDialogVisible"
+      entity-type="investment"
+      :project-ids="selectedIds"
+    />
   </div>
 </template>
 
@@ -590,27 +616,41 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Operation, Printer, Finished, User } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import ActivityTimelineDrawer from '@/components/investment/ActivityTimelineDrawer.vue'
+import SimplePrintExportDialog from '@/components/common/SimplePrintExportDialog.vue'
 import { getPublicProjects } from '@/api/investment'
 import { getDicts, createProject, updateProject, getProject, deleteProject, getMaxOrderNo } from '@/api/investment'
 import { downloadExcel, getExportTemplates } from '@/api/export'
+// print API now called from SimplePrintExportDialog
+// import { getPrintTemplates, downloadPrintExcel } from '@/api/print'
 import { batchDeleteProjects } from '@/api/investment'
 import { downloadImportTemplate, importPreviewApi, importExecute } from '@/api/import_api'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent, maskPhone } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function displayName(val) {
+  return businessAuth.isVisitor ? maskName(val) : (val || '')
+}
+function displayContent(val) {
+  return businessAuth.isVisitor ? maskContent(val) : (val || '')
+}
+function displayPhone(val) {
+  return businessAuth.isVisitor ? maskPhone(val) : (val || '')
+}
 const tableRef = ref(null)
 const projects = ref([])
 const loading = ref(false)
 const searchText = ref('')
-const filterFollowStatus = ref('')
+const filterFollowStatus = ref([])
 const filterMeetingStatus = ref('')
 const filterProjectType = ref('')
 const selectedIds = ref([])
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [], project_tags: [] })
+const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [], project_tags: [], staff: [] })
 
 const demandTypeTree = computed(() => {
   const types = dicts.demand_types || []
@@ -784,6 +824,7 @@ const defaultForm = () => ({
   person_in_charge_phone: '',
   first_contact_date: '',
   tags: [],
+  team_leader_ids: [],
   demands: []
 })
 
@@ -810,7 +851,7 @@ async function fetchData() {
   try {
     const params = {}
     if (searchText.value) params.search = searchText.value
-    if (filterFollowStatus.value) params.follow_status = filterFollowStatus.value
+    if (filterFollowStatus.value.length > 0) params.follow_status = filterFollowStatus.value.join(',')
     if (filterMeetingStatus.value) params.meeting_status = filterMeetingStatus.value
     if (filterProjectType.value) params.project_type = filterProjectType.value
     const res = await getPublicProjects(params)
@@ -841,7 +882,7 @@ function demandStatusColor(s) {
   return map[s] || '#909399'
 }
 function demandStatusName(s) {
-  const map = { pending: '待处理', processing: '处理中', resolved: '已解决' }
+  const map = { pending: '待回应', processing: '协调中', resolved: '已回应' }
   return map[s] || s
 }
 
@@ -871,50 +912,8 @@ function handleView(row) {
   viewDrawerVisible.value = true
 }
 
-// ---- 导出 ----
-const exportDialogVisible = ref(false)
-const exportTemplates = ref([])
-const exportTemplateId = ref(0)
-const exportActivityRange = ref('')
-const exportDemandMode = ref('aggregate')
-const exporting = ref(false)
-
-async function openExportDialog() {
-  exportDialogVisible.value = true
-  try {
-    const res = await getExportTemplates()
-    if (res.code === 0) {
-      exportTemplates.value = res.data || []
-      // 校验当前选中模板是否仍存在于列表中
-      const stillExists = exportTemplates.value.some(t => t.id === exportTemplateId.value)
-      if (!stillExists && exportTemplates.value.length > 0) {
-        exportTemplateId.value = exportTemplates.value[0].id
-      } else if (!exportTemplateId.value && exportTemplates.value.length > 0) {
-        exportTemplateId.value = exportTemplates.value[0].id
-      }
-    }
-  } catch { /* ignore */ }
-}
-
-async function handleExport() {
-  if (!exportTemplateId.value) {
-    ElMessage.warning('请选择导出模板')
-    return
-  }
-  exporting.value = true
-  try {
-    await downloadExcel(selectedIds.value, {
-      templateId: exportTemplateId.value,
-      activityRange: exportActivityRange.value,
-      demandMode: exportDemandMode.value
-    })
-    ElMessage.success('导出成功')
-    exportDialogVisible.value = false
-  } catch (err) {
-    ElMessage.error(err.message || '导出失败')
-  }
-  finally { exporting.value = false }
-}
+// ---- 打印 / 导出 ----
+const printExportDialogVisible = ref(false)
 
 // ---- 批量删除 ----
 async function handleBatchDelete() {
@@ -931,6 +930,15 @@ async function handleBatchDelete() {
       fetchData()
     }
   } catch { /* cancelled */ }
+}
+
+// ---- 批量操作 ----
+function handleBatchCmd(cmd) {
+  if (cmd === 'print' || cmd === 'export' || cmd === 'export-print') {
+    printExportDialogVisible.value = true
+  } else if (cmd === 'batch-delete') {
+    handleBatchDelete()
+  }
 }
 
 // ---- 导入 ----
@@ -1045,6 +1053,7 @@ async function openEdit(row) {
       form.person_in_charge_phone = d.person_in_charge_phone || ''
       form.first_contact_date = d.first_contact_date || ''
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
+      form.team_leader_ids = Array.isArray(d.team_leader_ids) ? [...d.team_leader_ids] : []
       form.demands = (d.demands || []).map(dd => {
         const code = dd.demand_type_code || ''
         let cascader = []
@@ -1154,6 +1163,7 @@ async function handleSave() {
       person_in_charge_phone: form.person_in_charge_phone,
       first_contact_date: form.first_contact_date || null,
       tags: form.tags,
+      team_leader_ids: form.team_leader_ids,
       demands: form.demands
     }
 

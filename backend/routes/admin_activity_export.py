@@ -85,7 +85,7 @@ def export_preview():
     q = InvestmentActivity.query.join(InvestmentProject)
     if activity_ids:
         q = q.filter(InvestmentActivity.id.in_(activity_ids))
-    activities = q.order_by(InvestmentActivity.date.desc()).limit(3).all()
+    activities = q.order_by(InvestmentActivity.date.asc()).limit(3).all()
 
     rows = [_resolve_activity_row(a) for a in activities]
 
@@ -107,7 +107,7 @@ def export_download():
     q = InvestmentActivity.query.join(InvestmentProject)
     if activity_ids:
         q = q.filter(InvestmentActivity.id.in_(activity_ids))
-    activities = q.order_by(InvestmentActivity.date.desc()).all()
+    activities = q.order_by(InvestmentActivity.date.asc()).all()
 
     wb = Workbook()
     ws = wb.active

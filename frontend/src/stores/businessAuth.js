@@ -91,5 +91,7 @@ export const useBusinessAuthStore = defineStore('businessAuth', () => {
     }
   }
 
-  return { user, isLoggedIn, permissions, loading, check, login, logout, hasPermission, updateProfile, changePassword }
+  const isVisitor = computed(() => user.value?.role === 'visitor')
+
+  return { user, isLoggedIn, isVisitor, permissions, loading, check, login, logout, hasPermission, updateProfile, changePassword }
 })

@@ -150,6 +150,12 @@ const routes = [
     component: () => import('@/views/DemandView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  {
+    path: '/investment-activity-ledger',
+    name: 'InvestmentActivityLedger',
+    component: () => import('@/views/ActivityLedgerView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
   // ---- 在建项目库 ----
   {
     path: '/construction-dashboard',
@@ -234,6 +240,12 @@ const routes = [
     path: '/admin/construction-export-config',
     name: 'AdminConstructionExportConfig',
     component: () => import('@/views/admin/ConstructionExportConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/print-templates',
+    name: 'AdminPrintTemplates',
+    component: () => import('@/views/admin/PrintTemplateManage.vue'),
     meta: { requiresAuth: true }
   },
   {

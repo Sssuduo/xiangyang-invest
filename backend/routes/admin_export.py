@@ -1,14 +1,24 @@
 import io
+import json
+import re as _re
 from datetime import date, datetime, timedelta
 from flask import request, jsonify, send_file
 from flask_login import login_required
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-from models import ExportTemplate, ExportFieldConfig, InvestmentProject, EnterpriseDemand, InvestmentActivity
+from models import ExportTemplate, ExportFieldConfig, PrintTemplate, PrintFieldConfig
+from models import InvestmentProject, EnterpriseDemand, InvestmentActivity
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict
 from extensions import db
 from routes import admin_export_bp
+
+
+def _sanitize_filename(name):
+    """移除文件名中的非法字符（仅去除 Windows 真正禁止的字符）"""
+    name = _re.sub(r'[\[\]*?"<>|\\/:]', '', name)
+    name = _re.sub(r'_+', '_', name)
+    return name.strip() or f'导出文件_{date.today().strftime("%Y%m%d")}'
 
 
 # ============================================================
@@ -18,34 +28,34 @@ from routes import admin_export_bp
 @admin_export_bp.route('/export/templates', methods=['GET'])
 @login_required
 def get_templates():
-    """列出所有导出模板"""
+    """列出所有打印模板（统一模板）"""
     entity_type = request.args.get('entity_type', 'investment').strip()
-    templates = ExportTemplate.query.filter_by(entity_type=entity_type)\
-        .order_by(ExportTemplate.id.asc()).all()
+    templates = PrintTemplate.query.filter_by(entity_type=entity_type)\
+        .order_by(PrintTemplate.id.asc()).all()
     return jsonify({'code': 0, 'data': [t.to_dict() for t in templates]})
 
 
 @admin_export_bp.route('/export/templates', methods=['POST'])
 @login_required
 def create_template():
-    """新建导出模板"""
+    """新建打印模板"""
     data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'code': 1, 'message': '模板名称不能为空'}), 400
     entity_type = data.get('entity_type', 'investment')
-    template = ExportTemplate(name=data['name'].strip(), entity_type=entity_type)
+    template = PrintTemplate(name=data['name'].strip(), entity_type=entity_type)
     db.session.add(template)
     db.session.flush()
 
     # 从已有模板（排除自身）复制字段配置
-    default_template = ExportTemplate.query.filter_by(entity_type=entity_type)\
-        .filter(ExportTemplate.id != template.id)\
-        .order_by(ExportTemplate.id.asc()).first()
+    default_template = PrintTemplate.query.filter_by(entity_type=entity_type)\
+        .filter(PrintTemplate.id != template.id)\
+        .order_by(PrintTemplate.id.asc()).first()
     if default_template:
-        default_fields = ExportFieldConfig.query.filter_by(template_id=default_template.id)\
-            .order_by(ExportFieldConfig.sort_order).all()
+        default_fields = PrintFieldConfig.query.filter_by(template_id=default_template.id)\
+            .order_by(PrintFieldConfig.sort_order).all()
         for f in default_fields:
-            db.session.add(ExportFieldConfig(
+            db.session.add(PrintFieldConfig(
                 template_id=template.id,
                 field_key=f.field_key,
                 field_label=f.field_label,
@@ -62,7 +72,7 @@ def create_template():
 @login_required
 def update_template(template_id):
     """重命名模板"""
-    tpl = ExportTemplate.query.get(template_id)
+    tpl = PrintTemplate.query.get(template_id)
     if not tpl:
         return jsonify({'code': 1, 'message': '模板不存在'}), 404
     data = request.get_json()
@@ -77,14 +87,14 @@ def update_template(template_id):
 @login_required
 def delete_template(template_id):
     """删除模板及其字段配置"""
-    tpl = ExportTemplate.query.get(template_id)
+    tpl = PrintTemplate.query.get(template_id)
     if not tpl:
         return jsonify({'code': 1, 'message': '模板不存在'}), 404
     # 至少保留一个模板
-    remaining = ExportTemplate.query.filter_by(entity_type=tpl.entity_type).count()
+    remaining = PrintTemplate.query.filter_by(entity_type=tpl.entity_type).count()
     if remaining <= 1:
-        return jsonify({'code': 1, 'message': '至少保留一个导出模板'}), 400
-    ExportFieldConfig.query.filter_by(template_id=template_id).delete()
+        return jsonify({'code': 1, 'message': '至少保留一个打印模板'}), 400
+    PrintFieldConfig.query.filter_by(template_id=template_id).delete()
     db.session.delete(tpl)
     db.session.commit()
     return jsonify({'code': 0, 'message': '模板已删除'})
@@ -96,24 +106,24 @@ def delete_template(template_id):
 
 def _get_default_template_id():
     """获取默认模板ID（entity_type='investment' 的第一个模板）"""
-    tpl = ExportTemplate.query.filter_by(entity_type='investment').order_by(ExportTemplate.id).first()
+    tpl = PrintTemplate.query.filter_by(entity_type='investment').order_by(PrintTemplate.id).first()
     return tpl.id if tpl else 1
 
 
 @admin_export_bp.route('/export/fields', methods=['GET'])
 @login_required
 def get_export_fields():
-    """获取指定模板的导出字段配置"""
+    """获取指定模板的打印字段配置"""
     template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
-    fields = ExportFieldConfig.query.filter_by(template_id=template_id)\
-        .order_by(ExportFieldConfig.sort_order).all()
+    fields = PrintFieldConfig.query.filter_by(template_id=template_id)\
+        .order_by(PrintFieldConfig.sort_order).all()
     return jsonify({'code': 0, 'data': [f.to_dict() for f in fields]})
 
 
 @admin_export_bp.route('/export/fields', methods=['PUT'])
 @login_required
 def update_export_fields():
-    """批量更新导出字段配置"""
+    """批量更新打印字段配置"""
     data = request.get_json()
     if not data or not isinstance(data, list):
         return jsonify({'code': 1, 'message': '请求数据格式错误'}), 400
@@ -124,13 +134,13 @@ def update_export_fields():
         field_id = item.get('id')
         if field_id and field_id > 0:
             saved_ids.add(field_id)
-            field = ExportFieldConfig.query.get(field_id)
+            field = PrintFieldConfig.query.get(field_id)
             if field:
                 template_id = field.template_id
         elif item.get('_new') and item.get('template_id'):
             # 新建字段（自定义列）
             template_id = int(item['template_id'])
-            field = ExportFieldConfig(
+            field = PrintFieldConfig(
                 template_id=template_id,
                 field_key=item.get('field_key', ''),
                 field_label=item.get('field_label', ''),
@@ -154,14 +164,14 @@ def update_export_fields():
 
     # 删除在前端被移除的自定义字段
     if template_id:
-        existing_ids = {f.id for f in ExportFieldConfig.query.filter_by(template_id=template_id).all()}
+        existing_ids = {f.id for f in PrintFieldConfig.query.filter_by(template_id=template_id).all()}
         to_delete = existing_ids - saved_ids
         if to_delete:
-            ExportFieldConfig.query.filter(ExportFieldConfig.id.in_(to_delete)).delete(synchronize_session=False)
+            PrintFieldConfig.query.filter(PrintFieldConfig.id.in_(to_delete)).delete(synchronize_session=False)
 
     db.session.commit()
-    fields = ExportFieldConfig.query.filter_by(template_id=template_id)\
-        .order_by(ExportFieldConfig.sort_order).all() if template_id else []
+    fields = PrintFieldConfig.query.filter_by(template_id=template_id)\
+        .order_by(PrintFieldConfig.sort_order).all() if template_id else []
     return jsonify({'code': 0, 'data': [f.to_dict() for f in fields], 'message': '配置已保存'})
 
 
@@ -170,7 +180,7 @@ def update_export_fields():
 # ============================================================
 
 def _aggregate_activities(project, activity_range=''):
-    """聚合项目招商动态，按日期倒序，序号分段"""
+    """聚合项目招商动态：按日期倒序抓取最新数据，输出时反转从远到近排列"""
     q = InvestmentActivity.query.filter_by(project_id=project.id)
     if activity_range == 'last1m':
         since = datetime.utcnow() - timedelta(days=30)
@@ -188,6 +198,9 @@ def _aggregate_activities(project, activity_range=''):
     if not activities:
         return ''
 
+    # 反转列表：从远到近输出
+    activities.reverse()
+
     lines = []
     for i, a in enumerate(activities, 1):
         content = a.content or ''
@@ -195,10 +208,15 @@ def _aggregate_activities(project, activity_range=''):
     return '\n'.join(lines)
 
 
-def _aggregate_demands(project):
-    """聚合企业诉求，按 sort_order，序号分段"""
-    demands = EnterpriseDemand.query.filter_by(project_id=project.id)\
-        .order_by(EnterpriseDemand.sort_order.asc()).all()
+def _aggregate_demands(project, demand_status=''):
+    """聚合企业诉求，按 sort_order，序号分段。
+    demand_status: 逗号分隔的状态码过滤，为空则不过滤（默认仅待回应+协调中）"""
+    q = EnterpriseDemand.query.filter_by(project_id=project.id)
+    if demand_status:
+        status_list = [s.strip() for s in demand_status.split(',') if s.strip()]
+        if status_list:
+            q = q.filter(EnterpriseDemand.status.in_(status_list))
+    demands = q.order_by(EnterpriseDemand.sort_order.asc()).all()
     if not demands:
         return ''
 
@@ -212,12 +230,17 @@ def _aggregate_demands(project):
     return '\n'.join(lines)
 
 
-def _aggregate_resolution(project):
-    """聚合解决措施，按 sort_order，仅含 resolution 非空的诉求"""
-    demands = EnterpriseDemand.query.filter_by(project_id=project.id)\
+def _aggregate_resolution(project, demand_status=''):
+    """聚合解决措施，按 sort_order，仅含 resolution 非空的诉求。
+    demand_status: 逗号分隔的状态码过滤，为空则不过滤"""
+    q = EnterpriseDemand.query.filter_by(project_id=project.id)\
         .filter(EnterpriseDemand.resolution != '')\
-        .filter(EnterpriseDemand.resolution.isnot(None))\
-        .order_by(EnterpriseDemand.sort_order.asc()).all()
+        .filter(EnterpriseDemand.resolution.isnot(None))
+    if demand_status:
+        status_list = [s.strip() for s in demand_status.split(',') if s.strip()]
+        if status_list:
+            q = q.filter(EnterpriseDemand.status.in_(status_list))
+    demands = q.order_by(EnterpriseDemand.sort_order.asc()).all()
     if not demands:
         return ''
 
@@ -227,12 +250,32 @@ def _aggregate_resolution(project):
     return '\n'.join(lines)
 
 
-def _resolve_project_row(p, activity_range=''):
-    """将项目对象解析为展示用 dict（含字典名称 + 聚合字段）"""
+def _resolve_team_leader_names(p):
+    """解析专班负责人 ID 列表为中文名列表"""
+    _team_names = []
+    try:
+        _leader_ids = json.loads(getattr(p, 'team_leader_ids', '[]') or '[]')
+        if _leader_ids:
+            from models import Staff
+            _staff_list = Staff.query.filter(Staff.id.in_(_leader_ids)).all()
+            _staff_map = {s.id: s.name for s in _staff_list}
+            _team_names = [_staff_map.get(sid, str(sid)) for sid in _leader_ids]
+    except Exception:
+        pass
+    return '、'.join(_team_names)
+
+
+def _resolve_project_row(p, activity_range='', demand_status=''):
+    """将项目对象解析为展示用 dict（含字典名称 + 聚合字段）
+    demand_status: 逗号分隔的状态码过滤诉求，默认不过滤"""
     follow_map = {d.code: d.name for d in FollowStatusDict.query.all()}
     meeting_map = {d.code: d.name for d in MeetingStatusDict.query.all()}
     org_map = {d.code: d.name for d in OrganizationDict.query.all()}
     type_map = {d.code: d.name for d in ProjectTypeDict.query.all()}
+
+    responsible_unit = org_map.get(p.responsible_unit_code, p.responsible_unit_code)
+    person_in_charge = p.person_in_charge or ''
+    person_in_charge_phone = getattr(p, 'person_in_charge_phone', '') or ''
 
     return {
         'order_no': p.order_no,
@@ -246,16 +289,21 @@ def _resolve_project_row(p, activity_range=''):
         'follow_status_code': follow_map.get(p.follow_status_code, p.follow_status_code),
         'meeting_status_code': meeting_map.get(p.meeting_status_code, p.meeting_status_code),
         'recommend_unit_code': org_map.get(p.recommend_unit_code, p.recommend_unit_code or ''),
-        'responsible_unit_code': org_map.get(p.responsible_unit_code, p.responsible_unit_code),
-        'person_in_charge': p.person_in_charge or '',
+        'responsible_unit_code': responsible_unit,
+        'person_in_charge': person_in_charge,
+        'person_in_charge_phone': person_in_charge_phone,
+        # V3 组合字段
+        '_combined_contact': '\n'.join([responsible_unit, person_in_charge, person_in_charge_phone]),
         'project_doc': p.project_doc or '',
         'investment_plan': p.investment_plan or '',
         'conclusion': p.conclusion or '',
         'first_contact_date': p.first_contact_date.isoformat() if p.first_contact_date else '',
         # 聚合字段
         'activities': _aggregate_activities(p, activity_range),
-        'demands': _aggregate_demands(p),
-        'resolution': _aggregate_resolution(p),
+        'demands': _aggregate_demands(p, demand_status),
+        'resolution': _aggregate_resolution(p, demand_status),
+        # A3 模板字段——专班跟进人
+        '_team_followers': _resolve_team_leader_names(p),
     }
 
 
@@ -267,8 +315,8 @@ def export_preview():
     project_ids = data.get('project_ids', [])
     template_id = data.get('template_id', 0) or _get_default_template_id()
 
-    fields = ExportFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
-        .order_by(ExportFieldConfig.sort_order).all()
+    fields = PrintFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
+        .order_by(PrintFieldConfig.sort_order).all()
 
     headers = [{'field_key': f.field_key, 'field_label': f.field_label, 'column_width': f.column_width}
                for f in fields]
@@ -286,21 +334,21 @@ def export_preview():
 @admin_export_bp.route('/export/download', methods=['GET'])
 @login_required
 def export_download():
-    """生成并下载 Excel 文件"""
+    """生成并下载 Excel 文件（使用统一打印模板）"""
     ids_str = request.args.get('project_ids', '')
     project_ids = [int(x) for x in ids_str.split(',') if x.strip().isdigit()] if ids_str else []
 
     template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
     activity_range = request.args.get('activity_range', '').strip()
-    demand_mode = request.args.get('demand_mode', 'aggregate').strip()  # 'aggregate' | 'row'
+    demand_mode = request.args.get('demand_mode', 'aggregate').strip()
 
-    template = ExportTemplate.query.get(template_id)
+    template = PrintTemplate.query.get(template_id)
     template_name = template.name if template else '招商项目库'
 
-    fields = ExportFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
-        .order_by(ExportFieldConfig.sort_order).all()
+    fields = PrintFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
+        .order_by(PrintFieldConfig.sort_order).all()
     if not fields:
-        return jsonify({'code': 1, 'message': '未配置导出字段'}), 400
+        return jsonify({'code': 1, 'message': '未配置打印字段'}), 400
 
     q = InvestmentProject.query.filter_by(is_deleted=False)
     if project_ids:
@@ -313,22 +361,29 @@ def export_download():
     org_map = {d.code: d.name for d in OrganizationDict.query.all()}
     demand_type_map = DemandTypeDict.build_display_name_map()
 
-    # ---- 样式定义 ----
-    title_font = Font(name='微软雅黑', size=14, bold=True, color='1A3A5C')
+    # ---- 样式定义（使用打印模板的字体设置） ----
+    _tf = template.title_font_family or template.font_family or '微软雅黑'
+    _ts = template.title_font_size or template.header_font_size or 14
+    _hf = template.table_header_font_family or template.font_family or '微软雅黑'
+    _hs = template.table_header_font_size or template.font_size or 10
+    _cf = template.cell_font_family or template.font_family or '微软雅黑'
+    _cs = template.cell_font_size or template.font_size or 10
+
+    title_font = Font(name=_tf, size=_ts, bold=True, color='1A3A5C')
     title_align = Alignment(horizontal='center', vertical='center')
-    header_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1A3A5C', end_color='1A3A5C', fill_type='solid')
+    header_font = Font(name=_hf, size=_hs, bold=True, color='000000')
+    header_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
     header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    cell_font = Font(name='微软雅黑', size=10)
+    cell_font = Font(name=_cf, size=_cs)
     cell_align = Alignment(vertical='top', wrap_text=True)
     cell_align_center = Alignment(horizontal='center', vertical='top', wrap_text=True)
     thin_border = Border(
-        left=Side(style='thin', color='D0D0D0'),
-        right=Side(style='thin', color='D0D0D0'),
-        top=Side(style='thin', color='D0D0D0'),
-        bottom=Side(style='thin', color='D0D0D0'),
+        left=Side(style='thin', color='333333'),
+        right=Side(style='thin', color='333333'),
+        top=Side(style='thin', color='333333'),
+        bottom=Side(style='thin', color='333333'),
     )
-    title_fill = PatternFill(start_color='F5F7FA', end_color='F5F7FA', fill_type='solid')
+    title_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
 
     wb = Workbook()
     ws = wb.active
@@ -469,7 +524,7 @@ def export_download():
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=f'{template_name}.xlsx'
+        download_name=f'{_sanitize_filename(template_name)}.xlsx'
     )
 
 

@@ -65,7 +65,7 @@
           <el-table-column label="项目" width="210">
             <template #default="{ row }">
               <el-tag class="project-name-tag" @click="handleProjectClick(row)">
-                {{ row.project_name }}
+                {{ dn(row.project_name) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -76,8 +76,8 @@
           </el-table-column>
           <el-table-column label="动态内容" min-width="210">
             <template #default="{ row }">
-              <el-tooltip :content="row.content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ truncate(row.content, 50) }}</span>
+              <el-tooltip :content="businessAuth.isVisitor ? '' : row.content" placement="top" :show-after="300" popper-class="content-tooltip">
+                <span class="content-preview">{{ dc(truncate(row.content, 50)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -172,6 +172,7 @@
                 :on-error="handleUploadError"
                 :before-upload="beforeUpload"
                 :on-remove="handleFileRemove"
+                :show-file-list="false"
                 multiple
                 drag
                 accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
@@ -182,6 +183,25 @@
                   <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
                 </template>
               </el-upload>
+              <!-- 文件缩略图网格 -->
+              <div v-if="fileList.length > 0" class="file-thumbnail-grid">
+                <div v-for="(file, idx) in fileList" :key="file.uid || idx" class="file-thumb-card">
+                  <div class="thumb-preview">
+                    <img v-if="isImageFile(file)" :src="getFilePreviewUrl(file)" class="thumb-img" />
+                    <div v-else-if="isPdfFile(file)" class="thumb-pdf">
+                      <el-icon :size="32"><Document /></el-icon>
+                      <span>PDF</span>
+                    </div>
+                    <div v-else class="thumb-generic">
+                      <el-icon :size="28"><Document /></el-icon>
+                    </div>
+                    <div class="thumb-remove" @click="handleThumbRemove(idx)">
+                      <el-icon><Close /></el-icon>
+                    </div>
+                  </div>
+                  <div class="thumb-name" :title="getFileName(file)">{{ getFileName(file) }}</div>
+                </div>
+              </div>
             </div>
           </el-form-item>
 
@@ -381,7 +401,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag, Close } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
@@ -391,8 +411,12 @@ import { downloadActivityExcel } from '@/api/activity_export'
 import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+
+function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
+function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 const tableRef = ref(null)
 const activities = ref([])
 const loading = ref(false)
@@ -766,6 +790,41 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 
+// ---- 文件缩略图辅助 ----
+function getFileExtension(file) {
+  const name = getFileName(file)
+  return name.split('.').pop().toLowerCase()
+}
+function getFileName(file) {
+  return file.name || (file.url ? file.url.split('/').pop() : '未知文件')
+}
+function isImageFile(file) {
+  const ext = getFileExtension(file)
+  const query = (file.url || '').split('?')[0]
+  const urlExt = query.split('.').pop().toLowerCase()
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext) ||
+         ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(urlExt)
+}
+function isPdfFile(file) {
+  return getFileExtension(file) === 'pdf' || (file.url || '').toLowerCase().includes('.pdf')
+}
+function getFilePreviewUrl(file) {
+  if (file.url) return file.url
+  if (file.raw) return URL.createObjectURL(file.raw)
+  return ''
+}
+function handleThumbRemove(idx) {
+  const file = fileList.value[idx]
+  if (file) {
+    // 如果文件已有 URL (服务端已有)，仍需保留在数组中供后续删除标记
+    // 这里直接从列表中移除
+    if (file.previewUrl && file.raw) {
+      URL.revokeObjectURL(file.previewUrl)
+    }
+  }
+  fileList.value.splice(idx, 1)
+}
+
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
@@ -867,6 +926,79 @@ async function handleDelete(row) {
 .upload-wrapper { width: 100%; }
 .upload-wrapper :deep(.el-upload-dragger) { padding: 16px 0; }
 .upload-wrapper :deep(.el-upload__text) { font-size: 13px; }
+
+/* 文件缩略图网格 */
+.file-thumbnail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.file-thumb-card {
+  width: 120px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+.file-thumb-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.thumb-preview {
+  width: 100%;
+  height: 90px;
+  position: relative;
+  background: #f5f7fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumb-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #e6a23c;
+}
+.thumb-pdf span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #e6a23c;
+}
+.thumb-generic {
+  color: #909399;
+}
+.thumb-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.thumb-preview:hover .thumb-remove { opacity: 1; }
+.thumb-name {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #606266;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---- 导入对话框 ---- */
 .import-summary { display: flex; gap: 24px; margin-bottom: 8px; font-size: 14px; flex-wrap: wrap; }

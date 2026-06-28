@@ -8,7 +8,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from models import ImportFieldConfigWorkProgress, WorkProgress, ConstructionProject
 from extensions import db
 from routes import admin_construction_progress_import_bp
-from routes.business_auth import dual_login_required
+from routes.business_auth import dual_login_required, visitor_block
 
 
 def _parse_date(val):
@@ -34,6 +34,7 @@ def get_import_fields():
 
 @admin_construction_progress_import_bp.route('/construction-progress-import/fields', methods=['PUT'])
 @dual_login_required
+@visitor_block
 def update_import_fields():
     data = request.get_json()
     if not data or not isinstance(data, list):
@@ -322,6 +323,7 @@ def import_preview():
 
 @admin_construction_progress_import_bp.route('/construction-progress-import/execute', methods=['POST'])
 @dual_login_required
+@visitor_block
 def import_execute():
     """将预览通过的数据写入数据库"""
     data = request.get_json()

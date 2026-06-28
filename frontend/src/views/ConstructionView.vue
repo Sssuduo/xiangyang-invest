@@ -283,10 +283,10 @@
           <el-table-column label="建设地点" width="140" show-overflow-tooltip>
             <template #default="{ row }">{{ dn(row.construction_location) || '-' }}</template>
           </el-table-column>
-          <el-table-column label="开工时间" width="100" align="center">
+          <el-table-column label="开工时间" width="110" align="center">
             <template #default="{ row }">{{ row.start_date || '-' }}</template>
           </el-table-column>
-          <el-table-column label="完工时间" width="100" align="center">
+          <el-table-column label="完工时间" width="110" align="center">
             <template #default="{ row }">{{ row.end_date || '-' }}</template>
           </el-table-column>
           <el-table-column label="资金来源" width="140" show-overflow-tooltip>
@@ -294,13 +294,6 @@
           </el-table-column>
           <el-table-column label="五化平台" width="80" align="center">
             <template #default="{ row }">{{ row.wuhua_platform || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="专班负责人" width="130">
-            <template #default="{ row }">
-              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
-                {{ name }}
-              </el-tag>
-            </template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
@@ -450,12 +443,26 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="开工时间">
-                <el-input v-model="form.start_date" placeholder="年-月，如 2025-08" maxlength="64" />
+                <el-date-picker
+                  v-model="form.start_date"
+                  type="date"
+                  placeholder="选择开工日期"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
+                  style="width:100%"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="完工时间">
-                <el-input v-model="form.end_date" placeholder="年-月，如 2026-12" maxlength="64" />
+                <el-date-picker
+                  v-model="form.end_date"
+                  type="date"
+                  placeholder="选择完工日期"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
+                  style="width:100%"
+                />
               </el-form-item>
             </el-col>
           </el-row>

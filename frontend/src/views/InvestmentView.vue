@@ -99,12 +99,6 @@
                       <div class="expand-item"><label>投资商名称</label><span>{{ displayName(row.invest_enterprise) }}</span></div>
                       <div class="expand-item"><label>推介单位</label><span>{{ row.recommend_unit_name || '-' }}</span></div>
                       <div class="expand-item"><label>首次对接</label><span>{{ row.first_contact_date || '-' }}</span></div>
-                      <div class="expand-item" v-if="row.team_leader_names && row.team_leader_names.length > 0">
-                        <label>专班负责人</label>
-                        <span>
-                          <el-tag v-for="(name, idx) in row.team_leader_names" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">{{ name }}</el-tag>
-                        </span>
-                      </div>
                     </div>
                   </div>
                   <div class="expand-block">
@@ -213,13 +207,6 @@
           <el-table-column label="标签" width="160">
             <template #default="{ row }">
               <el-tag v-for="(name, idx) in (row.tag_names || [])" :key="idx" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
-                {{ name }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="专班负责人" width="130">
-            <template #default="{ row }">
-              <el-tag v-for="(name, idx) in (row.team_leader_names || [])" :key="idx" size="small" type="warning" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
                 {{ name }}
               </el-tag>
             </template>

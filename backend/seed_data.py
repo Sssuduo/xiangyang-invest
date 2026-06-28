@@ -468,9 +468,11 @@ def _seed_print_fields():
     """初始化招商项目打印模板字段配置（使用统一 PrintTemplate）"""
     from models import PrintTemplate, PrintFieldConfig
 
-    # ---- 模板1：默认打印模板（A4，通用） ----
-    template1 = PrintTemplate.query.filter_by(name='默认打印模板', entity_type='investment').first()
-    if not template1:
+    # ---- 模板1：默认打印模板（A4，通用） —— 仅当 investment 无任何模板时创建 ----
+    template1 = PrintTemplate.query.filter_by(entity_type='investment').first()
+    if template1:
+        template1 = template1  # 已有模板，不创建默认模板
+    else:
         template1 = PrintTemplate(name='默认打印模板', entity_type='investment')
         db.session.add(template1)
         db.session.flush()
@@ -514,9 +516,10 @@ def _seed_print_fields():
             ))
 
     # ---- 模板2：内置 A3 模板 [(附件1)襄州农高区招商引资项目清单] ----
-    BUILTIN_A3_NAME = '[(附件1)襄州农高区招商引资项目清单]'
+    BUILTIN_A3_NAME = '(附件1)襄州农高区招商引资项目清单'
+    BUILTIN_A3_NAME_ALT = '[(附件1)襄州农高区招商引资项目清单]'
     template2 = PrintTemplate.query.filter_by(entity_type='investment').filter(
-        (PrintTemplate.name == BUILTIN_A3_NAME) | (PrintTemplate.name == 'A3 招商项目清单')
+        PrintTemplate.name.in_([BUILTIN_A3_NAME, BUILTIN_A3_NAME_ALT, 'A3 招商项目清单'])
     ).first()
     if not template2:
         template2 = PrintTemplate(
@@ -691,9 +694,10 @@ def _seed_construction_print_fields():
 
     # ---- 内置 A3 模板 [(附件2)农高区2026年在建项目统计表] ----
     from models import TemplateFieldMapping
-    BUILTIN_CONSTRUCTION_NAME = '[(附件2)农高区2026年在建项目统计表]'
+    BUILTIN_CONSTRUCTION_NAME = '(附件2)农高区2026年在建项目统计表'
+    BUILTIN_CONSTRUCTION_NAME_ALT = '[(附件2)农高区2026年在建项目统计表]'
     template_cons = PrintTemplate.query.filter_by(entity_type='construction').filter(
-        PrintTemplate.name == BUILTIN_CONSTRUCTION_NAME
+        PrintTemplate.name.in_([BUILTIN_CONSTRUCTION_NAME, BUILTIN_CONSTRUCTION_NAME_ALT])
     ).first()
     if not template_cons:
         template_cons = PrintTemplate(

@@ -465,14 +465,14 @@ def get_print_data():
                     # 子表字段附加到行
                     row['_demand_type'] = type_name
                     row['_demand_unit'] = d.demand_unit or ''
-                    row['_demand_content'] = d.demand_content or ''
-                    row['_demand_resolution'] = d.resolution or ''
+                    row['_demand_content'] = d.demand_content or '暂无'
+                    row['_demand_resolution'] = d.resolution or '暂无'
                     rows.append(row)
             else:
-                base['_demand_type'] = ''
+                base['_demand_type'] = '暂无'
                 base['_demand_unit'] = ''
-                base['_demand_content'] = ''
-                base['_demand_resolution'] = ''
+                base['_demand_content'] = '暂无'
+                base['_demand_resolution'] = '暂无'
                 rows.append(base)
     else:
         # 聚合模式

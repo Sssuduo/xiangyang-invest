@@ -39,7 +39,7 @@ class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(64), nullable=False)
     position = db.Column(db.String(128), default='农高区创建专班工作人员')
-    user_id = db.Column(db.Integer, db.ForeignKey('admin_users.id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('business_users.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1063,8 +1063,8 @@ class ConstructionProject(db.Model):
     dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
     construction_content = db.Column(db.Text, default='')
     construction_location = db.Column(db.String(255), default='')
-    start_date = db.Column(db.String(7), default='')     # 年-月 格式
-    end_date = db.Column(db.String(7), default='')       # 年-月 格式
+    start_date = db.Column(db.String(10), default='')    # 年-月-日 格式
+    end_date = db.Column(db.String(10), default='')      # 年-月-日 格式
     funding_source = db.Column(db.String(255), default='')
     wuhua_platform = db.Column(db.String(8), default='')  # 是 / 否
     construction_unit = db.Column(db.String(255), default='')

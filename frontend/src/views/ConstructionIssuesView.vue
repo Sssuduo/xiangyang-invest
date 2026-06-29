@@ -76,11 +76,11 @@
           empty-text="暂无调度问题数据"
           style="width: 100%"
         >
-          <el-table-column label="所属项目" min-width="140" show-overflow-tooltip>
+          <el-table-column label="所属项目" min-width="200">
             <template #default="{ row }">
-              <el-tag class="project-name-tag" @click="handleProjectClick(row)">
+              <span class="project-name-card" @click="handleProjectClick(row)">
                 {{ dn(row.project_name) }}
-              </el-tag>
+              </span>
             </template>
           </el-table-column>
           <el-table-column label="问题类型" width="110">
@@ -490,8 +490,25 @@ async function handleDelete(row) {
 .search-input { width: 320px; }
 
 .content-preview { cursor: default; color: #606266; }
-.project-name-tag { cursor: pointer; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-name-tag:hover { opacity: 0.8; }
+.project-name-card {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a3a5c;
+  background: #e0ecf6;
+  border: 1px solid #b8d4ec;
+  border-radius: 6px;
+  transition: all 0.2s;
+  vertical-align: middle;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.project-name-card:hover { background: #d0e0f0; border-color: #90bcd8; }
 .type-tag {
   display: inline-block;
   padding: 2px 8px;

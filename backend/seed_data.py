@@ -692,7 +692,7 @@ def _seed_construction_print_fields():
     db.session.commit()
     print('[种子数据] 在建项目打印模板字段已初始化')
 
-    # ---- 内置 A4 模板 [(附件2)农高区2026年在建项目统计表] ----
+    # ---- 内置 A3 模板 [(附件2)农高区2026年在建项目统计表] ----
     from models import TemplateFieldMapping
     BUILTIN_CONSTRUCTION_NAME = '(附件2)农高区2026年在建项目统计表'
     BUILTIN_CONSTRUCTION_NAME_ALT = '[(附件2)农高区2026年在建项目统计表]'
@@ -703,33 +703,31 @@ def _seed_construction_print_fields():
         template_cons = PrintTemplate(
             name=BUILTIN_CONSTRUCTION_NAME,
             entity_type='construction',
-            paper_size='A4',
+            paper_size='A3',
             orientation='landscape',
-            font_family='宋体',
+            font_family='微软雅黑',
             font_size=12,
-            title_font_family='宋体',
+            title_font_family='微软雅黑',
             title_font_size=14,
-            table_header_font_family='宋体',
+            table_header_font_family='微软雅黑',
             table_header_font_size=12,
-            cell_font_family='宋体',
+            cell_font_family='微软雅黑',
             cell_font_size=12,
         )
         db.session.add(template_cons)
         db.session.flush()
 
-    # 模板文件映射 — 用户上传的实际 Excel 模板
-    template_cons_file = '/static/uploads/templates/农高区2026年在建项目统计表.xlsx'
+    # 模板文件映射
+    template_cons_file = '/static/uploads/templates/A3_在建项目_模板.xlsx'
     template_cons.name = BUILTIN_CONSTRUCTION_NAME
     template_cons.template_file = template_cons_file
-    template_cons.paper_size = 'A4'
     template_cons.data_start_row = 4
     template_cons.header_row = 3
     template_cons.title_row = 2
     template_cons.has_group_title = True
-    template_cons.font_family = '宋体'
-    template_cons.cell_font_family = '宋体'
+    template_cons.cell_font_family = '微软雅黑'
     template_cons.cell_font_size = 12
-    template_cons.table_header_font_family = '宋体'
+    template_cons.table_header_font_family = '微软雅黑'
     template_cons.table_header_font_size = 12
 
     # 列映射：模板列字母 → field_key（14列 A-N）
@@ -738,14 +736,14 @@ def _seed_construction_print_fields():
         ('B', '项目名称', 'project_name'),
         ('C', '建设地点', 'construction_location'),
         ('D', '开工时间', 'start_date'),
-        ('E', '完工时间', 'end_date'),
+        ('E', '竣工时间', 'end_date'),
         ('F', '资金来源', 'funding_source'),
         ('G', '建设内容', 'construction_content'),
-        ('H', '工作路径图（关键时间节点）', 'work_roadmap'),
-        ('I', '总工作进展', 'work_progresses'),
+        ('H', '工作路径图（具体时间节点）', 'work_roadmap'),
+        ('I', '周工作进展', 'work_progresses'),
         ('J', '建设单位', 'construction_unit'),
         ('K', '责任单位/责任人', '_combined_contact'),
-        ('L', '备注（当前问题）', 'issues'),
+        ('L', '备注（存在的问题）', 'issues'),
         ('M', '五化平台', 'wuhua_platform'),
         ('N', '专班负责人', '_team_follower_names'),
     ]
@@ -799,7 +797,7 @@ def _seed_construction_print_fields():
             ))
 
     db.session.commit()
-    print('[种子数据] 在建项目 A4 打印模板已初始化（含文件映射 + 字段配置，14列）')
+    print('[种子数据] 在建项目 A3 打印模板已初始化（含文件映射 + 字段配置，14列）')
 
 
 def _seed_import_fields():

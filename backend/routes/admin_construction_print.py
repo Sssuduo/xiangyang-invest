@@ -466,17 +466,25 @@ def _fill_template_file_from_mappings(abs_path, template, mappings, groups, temp
     def _build_last2_rich_text(text):
         """将最近2条进展文本解析为 CellRichText，实现混排字体
         输入格式: '上周：xxx\\n本周：yyy'
-        换行符嵌入末个 TextBlock 的 text 末尾，避免 CellRichText 中出现裸字符串"""
+        换行符嵌入末个 TextBlock 的 text 末尾，避免 CellRichText 中出现裸字符串
+        本周内容内部的换行也保持宋体14号加粗"""
         blocks = []
         lines = text.split('\n')
+        current_section = None  # 'last' | 'this'
         for idx, line in enumerate(lines):
             tail = '\n' if idx < len(lines) - 1 else ''
             if line.startswith('上周：'):
+                current_section = 'last'
                 blocks.append(TextBlock(font=last2_label_font, text='上周：'))
                 blocks.append(TextBlock(font=last2_last_content_font, text=line[3:] + tail))
             elif line.startswith('本周：'):
+                current_section = 'this'
                 blocks.append(TextBlock(font=last2_label_font, text='本周：'))
                 blocks.append(TextBlock(font=last2_this_content_font, text=line[3:] + tail))
+            elif current_section == 'this':
+                blocks.append(TextBlock(font=last2_this_content_font, text=line + tail))
+            elif current_section == 'last':
+                blocks.append(TextBlock(font=last2_last_content_font, text=line + tail))
             else:
                 blocks.append(TextBlock(font=last2_other_inline_font, text=line + tail))
         return CellRichText(*blocks)
@@ -638,21 +646,29 @@ def print_download():
 
     def _build_last2_rich_text_prog(text):
         """将最近2条进展文本解析为 CellRichText（程序化生成路径用）
-        换行符嵌入末个 TextBlock 的 text 末尾，避免 CellRichText 中出现裸字符串"""
+        换行符嵌入末个 TextBlock 的 text 末尾，避免 CellRichText 中出现裸字符串
+        本周内容内部的换行也保持宋体14号加粗"""
         label_font = InlineFont(rFont='宋体', sz=14.0, b=True, color='000000')
         this_content_font = InlineFont(rFont='宋体', sz=14.0, b=True, color='000000')
         last_content_font = InlineFont(rFont='宋体', sz=12.0, b=False, color='000000')
         other_font = InlineFont(rFont='宋体', sz=12.0, b=False, color='000000')
         blocks = []
         lines_text = text.split('\n')
+        current_section = None  # 'last' | 'this'
         for idx, line in enumerate(lines_text):
             tail = '\n' if idx < len(lines_text) - 1 else ''
             if line.startswith('上周：'):
+                current_section = 'last'
                 blocks.append(TextBlock(font=label_font, text='上周：'))
                 blocks.append(TextBlock(font=last_content_font, text=line[3:] + tail))
             elif line.startswith('本周：'):
+                current_section = 'this'
                 blocks.append(TextBlock(font=label_font, text='本周：'))
                 blocks.append(TextBlock(font=this_content_font, text=line[3:] + tail))
+            elif current_section == 'this':
+                blocks.append(TextBlock(font=this_content_font, text=line + tail))
+            elif current_section == 'last':
+                blocks.append(TextBlock(font=last_content_font, text=line + tail))
             else:
                 blocks.append(TextBlock(font=other_font, text=line + tail))
         return CellRichText(*blocks)

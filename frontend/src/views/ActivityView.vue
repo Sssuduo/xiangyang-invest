@@ -162,7 +162,7 @@
             <el-input v-model="form.content" type="textarea" :rows="4" placeholder="请输入动态内容..." maxlength="5000" show-word-limit />
           </el-form-item>
           <el-form-item label="附件">
-            <div class="upload-wrapper">
+            <div class="upload-wrapper" @paste="handleClipboardPaste">
               <el-upload
                 ref="uploadRef"
                 v-model:file-list="fileList"
@@ -180,7 +180,7 @@
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传；也可 <kbd>Ctrl+V</kbd> 粘贴图片</div>
                 </template>
               </el-upload>
               <!-- 文件缩略图网格 -->
@@ -788,6 +788,40 @@ function beforeUpload(file) {
 function handleFileRemove(file) {
   const idx = fileList.value.findIndex(f => f.url === file.url || f.uid === file.uid)
   if (idx > -1) fileList.value.splice(idx, 1)
+}
+
+// ---- 剪贴板粘贴图片 ----
+async function handleClipboardPaste(event) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      event.preventDefault()
+      const blob = item.getAsFile()
+      if (!blob) continue
+      const ext = item.type.split('/')[1] || 'png'
+      const filename = `paste-${Date.now()}.${ext}`
+      const file = new File([blob], filename, { type: item.type })
+      const formData = new FormData()
+      formData.append('file', file)
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (data.code === 0) {
+          fileList.value.push({
+            name: filename,
+            url: data.data.url,
+            uid: Date.now() + Math.random()
+          })
+          ElMessage.success('图片已粘贴上传')
+        } else {
+          ElMessage.error(data.message || '图片上传失败')
+        }
+      } catch {
+        ElMessage.error('图片上传失败')
+      }
+    }
+  }
 }
 
 // ---- 文件缩略图辅助 ----

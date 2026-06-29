@@ -916,6 +916,7 @@ def _seed_construction_dicts():
     dispatch_statuses = [
         ('dispatching', '调度中', 1),
         ('no_dispatch', '不予调度', 2),
+        ('exited', '退出调度', 3),
     ]
     for code, name, order in dispatch_statuses:
         if not DispatchStatusDict.query.filter_by(code=code).first():
@@ -929,11 +930,11 @@ def _seed_construction_dicts():
         if not IssueTypeDict.query.filter_by(code=code).first():
             db.session.add(IssueTypeDict(code=code, name=name, sort_order=order))
 
-    # 解决状态
+    # 调度问题状态（独立于项目调度状态）
     resolution_statuses = [
-        ('pending', '待回应', '#f56c6c', 1),
-        ('processing', '协调中', '#e6a23c', 2),
-        ('resolved', '已回应', '#67c23a', 3),
+        ('pending', '待处理', '#f56c6c', 1),
+        ('processing', '处理中', '#e6a23c', 2),
+        ('resolved', '已完成', '#67c23a', 3),
     ]
     for code, name, color, order in resolution_statuses:
         existing = ResolutionStatusDict.query.filter_by(code=code).first()

@@ -316,7 +316,8 @@ def get_print_data():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置打印字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()
@@ -514,26 +515,17 @@ def _fill_template_file_from_mappings(abs_path, template, mappings, groups, temp
             continue
 
         if group.get('title'):
-            if group.get('is_section'):
-                # 先设所有列的边框（包括 L 列右侧线），再合并
-                for c in range(1, total_cols + 1):
-                    ws.cell(row=current_row, column=c).border = thin_border
-                ws.merge_cells(start_row=current_row, start_column=1,
-                               end_row=current_row, end_column=total_cols)
-                title_cell = ws.cell(row=current_row, column=1)
-                title_cell.value = group['title']
-                title_cell.font = section_font
-                title_cell.alignment = section_align
-            else:
-                # 先设所有列的边框（包括 L 列右侧线），再合并
-                for c in range(1, total_cols + 1):
-                    ws.cell(row=current_row, column=c).border = thin_border
-                ws.merge_cells(start_row=current_row, start_column=1,
-                               end_row=current_row, end_column=total_cols)
-                sub_cell = ws.cell(row=current_row, column=1)
-                sub_cell.value = group['title']
-                sub_cell.font = section_font
-                sub_cell.alignment = section_align
+            # 子标题合并 A-L 列（前12列），M、N 列不参与合并，保留独立单元格
+            merge_end_col = total_cols - 2 if total_cols > 2 else total_cols
+            # 所有列设置边框
+            for c in range(1, total_cols + 1):
+                ws.cell(row=current_row, column=c).border = thin_border
+            ws.merge_cells(start_row=current_row, start_column=1,
+                           end_row=current_row, end_column=merge_end_col)
+            title_cell = ws.cell(row=current_row, column=1)
+            title_cell.value = group['title']
+            title_cell.font = section_font
+            title_cell.alignment = section_align
             ws.row_dimensions[current_row].height = 34
             current_row += 1
 
@@ -604,7 +596,8 @@ def print_download():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置打印字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()
@@ -779,11 +772,12 @@ def print_download():
         current_row = 3
         for group in groups:
             if group.get('title'):
-                # 先设所有列的边框（包括 L 列右侧线），再合并
+                # 子标题合并 A-L 列（前12列），M、N 列不参与合并
+                merge_end_col = total_cols - 2 if total_cols > 2 else total_cols
                 for c in range(1, total_cols + 1):
                     ws.cell(row=current_row, column=c).border = thin_border
                 ws.merge_cells(start_row=current_row, start_column=1,
-                               end_row=current_row, end_column=total_cols)
+                               end_row=current_row, end_column=merge_end_col)
                 sub_cell = ws.cell(row=current_row, column=1, value=group['title'])
                 if group.get('is_section'):
                     sub_cell.font = section_font

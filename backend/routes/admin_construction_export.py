@@ -252,24 +252,17 @@ def _aggregate_work_progresses_last2(project, last2_windows):
 
 
 def _aggregate_issues(project):
-    """聚合调度问题，按创建时间倒序，序号分段"""
+    """聚合调度问题，按创建时间倒序，只输出问题描述内容"""
     issues = ProjectIssue.query.filter_by(project_id=project.id)\
         .order_by(ProjectIssue.created_at.desc()).all()
     if not issues:
         return ''
 
-    issue_type_map = {d.code: d.name for d in IssueTypeDict.query.all()}
-    resolution_map = {d.code: d.name for d in ResolutionStatusDict.query.all()}
-    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
-
     lines = []
     for i, iss in enumerate(issues, 1):
-        type_name = issue_type_map.get(iss.issue_type_code, iss.issue_type_code or '')
-        status_name = resolution_map.get(iss.resolution_status_code, iss.resolution_status_code)
         desc = iss.issue_description or ''
-        resolution = f' | 措施: {iss.resolution_note}' if iss.resolution_note else ''
-        dept = f' | 责任部门: {org_map.get(iss.main_department_code, iss.main_department_code or "")}' if iss.main_department_code else ''
-        lines.append(f'{i}、[{type_name}][{status_name}] {desc}{dept}{resolution}')
+        if desc:
+            lines.append(f'{i}、{desc}')
     return '\n'.join(lines)
 
 
@@ -375,7 +368,8 @@ def export_preview():
     headers = [{'field_key': f.field_key, 'field_label': f.field_label, 'column_width': f.column_width}
                for f in fields]
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).limit(3).all()
@@ -412,7 +406,8 @@ def export_download():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置导出字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()

@@ -1,7 +1,7 @@
 import json
-from datetime import date
+from datetime import date, datetime, timedelta
 from flask import request, jsonify
-from models import InvestmentProject, EnterpriseDemand
+from models import InvestmentProject, InvestmentActivity, EnterpriseDemand
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict, Staff
 from extensions import db
 from routes import admin_investment_bp
@@ -75,6 +75,7 @@ def list_projects():
     follow_status = request.args.get('follow_status', '').strip()
     meeting_status = request.args.get('meeting_status', '').strip()
     project_type = request.args.get('project_type', '').strip()
+    recent_activity_days = request.args.get('recent_activity_days', '').strip()
 
     q = InvestmentProject.query.filter_by(is_deleted=False)
 
@@ -97,6 +98,17 @@ def list_projects():
         q = q.filter_by(meeting_status_code=meeting_status)
     if project_type:
         q = q.filter_by(project_type_code=project_type)
+
+    # 近期动态筛选：只返回在指定天数内有招商动态的项目
+    if recent_activity_days:
+        try:
+            days = int(recent_activity_days)
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            q = q.filter(InvestmentProject.activities.any(
+                InvestmentActivity.date >= cutoff
+            ))
+        except (ValueError, TypeError):
+            pass
 
     # 排序：重点跟进优先 → 顺序号升序
     q = q.order_by(

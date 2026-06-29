@@ -183,10 +183,13 @@ def update_export_fields():
 # 导出预览 & 下载 — 辅助函数
 # ============================================================
 
-def _get_last2_windows():
-    """全局查询最近2条工作进展的时间窗口，返回 (本周窗口, 上周窗口) 元组
+def _get_last2_windows(project_ids=None):
+    """查询最近2条工作进展的时间窗口（限定在勾选项目范围内），返回 (本周窗口, 上周窗口) 元组
     每个窗口为 (start_date, end_date)，无进展时对应窗口为 None"""
-    recent = WorkProgress.query.order_by(WorkProgress.start_date.desc()).limit(2).all()
+    q = WorkProgress.query
+    if project_ids:
+        q = q.filter(WorkProgress.project_id.in_(project_ids))
+    recent = q.order_by(WorkProgress.start_date.desc()).limit(2).all()
     this_week = (recent[0].start_date, recent[0].end_date) if len(recent) >= 1 else None
     last_week = (recent[1].start_date, recent[1].end_date) if len(recent) >= 2 else None
     return this_week, last_week
@@ -359,8 +362,8 @@ def export_preview():
     progress_range = data.get('progress_range', '').strip()
     work_path_range = data.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     fields = PrintFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
         .order_by(PrintFieldConfig.sort_order).all()
@@ -395,8 +398,8 @@ def export_download():
     progress_mode = request.args.get('progress_mode', 'aggregate').strip()  # 'aggregate' | 'progress'
     work_path_range = request.args.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     template = PrintTemplate.query.get(template_id)
     template_name = template.name if template else '在建项目库'

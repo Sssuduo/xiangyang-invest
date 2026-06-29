@@ -63,6 +63,11 @@
               :value="d.code"
             />
           </el-select>
+          <el-radio-group v-model="recentProgressDays" size="small" @change="currentPage = 1; fetchData()">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="7">7日内更新</el-radio-button>
+            <el-radio-button value="15">15日内更新</el-radio-button>
+          </el-radio-group>
           <div class="toolbar-spacer" />
           <el-dropdown
             v-if="businessAuth.hasPermission('construction', 'import')"
@@ -1034,8 +1039,9 @@ const dicts = reactive({
 
 // 分页
 const currentPage = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(15)
 const showAll = ref(false)
+const recentProgressDays = ref('')
 
 const pagedProjects = computed(() => {
   if (showAll.value) return projects.value
@@ -1150,6 +1156,7 @@ async function fetchData() {
     if (filterDispatchStatus.value) params.dispatch_status = filterDispatchStatus.value
     if (filterProjectType.value) params.project_type = filterProjectType.value
     if (filterResponsibleUnit.value) params.responsible_unit = filterResponsibleUnit.value
+    if (recentProgressDays.value) params.recent_progress_days = recentProgressDays.value
     const res = await getProjects(params)
     projects.value = res.data || []
     currentPage.value = 1

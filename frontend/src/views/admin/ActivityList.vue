@@ -414,7 +414,10 @@ async function handleClipboardPaste(event) {
 
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('请填写必填字段（项目、动态内容不能为空）')
+    return
+  }
 
   saving.value = true
   try {

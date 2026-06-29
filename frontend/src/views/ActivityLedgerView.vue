@@ -125,22 +125,25 @@
             </el-tag>
             <span v-if="!viewItem.tags || viewItem.tags.length === 0" class="no-data">-</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="viewItem.files && viewItem.files.length > 0" label="附件" :span="2">
-            <div class="file-thumbnail-grid">
-              <div v-for="(url, idx) in viewItem.files" :key="idx" class="file-thumb-card" @click="openFile(url)">
-                <div class="thumb-preview">
-                  <img v-if="isImageUrl(url)" :src="url" class="thumb-img" />
-                  <div v-else-if="isPdfUrl(url)" class="thumb-pdf">
-                    <el-icon :size="32"><Document /></el-icon>
-                    <span>PDF</span>
+          <el-descriptions-item label="附件" :span="2">
+            <template v-if="viewItem.files && viewItem.files.length > 0">
+              <div class="file-thumbnail-grid">
+                <div v-for="(url, idx) in viewItem.files" :key="idx" class="file-thumb-card" @click="openFile(url)">
+                  <div class="thumb-preview">
+                    <img v-if="isImageUrl(url)" :src="url" class="thumb-img" />
+                    <div v-else-if="isPdfUrl(url)" class="thumb-pdf">
+                      <el-icon :size="32"><Document /></el-icon>
+                      <span>PDF</span>
+                    </div>
+                    <div v-else class="thumb-generic">
+                      <el-icon :size="28"><Document /></el-icon>
+                    </div>
                   </div>
-                  <div v-else class="thumb-generic">
-                    <el-icon :size="28"><Document /></el-icon>
-                  </div>
+                  <div class="thumb-name" :title="getViewFileName(url)">{{ getViewFileName(url) }}</div>
                 </div>
-                <div class="thumb-name" :title="getViewFileName(url)">{{ getViewFileName(url) }}</div>
               </div>
-            </div>
+            </template>
+            <span v-else class="no-data">暂无附件</span>
           </el-descriptions-item>
           <el-descriptions-item label="关联项目" :span="2">
             <template v-if="viewItem.linked_project_id">
@@ -606,7 +609,10 @@ function handleThumbRemove(idx) {
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('请填写必填字段（活动内容不能为空）')
+    return
+  }
 
   saving.value = true
   try {

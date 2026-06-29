@@ -42,7 +42,7 @@
               </div>
             </div>
           </template>
-          <span v-else class="no-data">-</span>
+          <span v-else class="no-data">暂无附件</span>
         </el-descriptions-item>
         <el-descriptions-item label="写入时间">{{ fmtDt(activity.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="最后更新">{{ fmtDt(activity.updated_at) }}</el-descriptions-item>

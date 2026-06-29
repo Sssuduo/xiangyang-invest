@@ -32,13 +32,7 @@
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="print">
-                  <el-icon><Printer /></el-icon> 在线打印
-                </el-dropdown-item>
-                <el-dropdown-item command="export">
-                  <el-icon><Download /></el-icon> 导出文件
-                </el-dropdown-item>
-                <el-dropdown-item command="export-print" divided>
+                <el-dropdown-item command="export-print">
                   <el-icon><Finished /></el-icon> 导出并打印
                 </el-dropdown-item>
                 <el-dropdown-item
@@ -929,7 +923,7 @@ async function handleBatchDelete() {
 
 // ---- 批量操作 ----
 function handleBatchCmd(cmd) {
-  if (cmd === 'print' || cmd === 'export' || cmd === 'export-print') {
+  if (cmd === 'export-print') {
     printExportDialogVisible.value = true
   } else if (cmd === 'batch-delete') {
     handleBatchDelete()

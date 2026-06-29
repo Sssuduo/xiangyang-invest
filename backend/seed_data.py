@@ -729,6 +729,8 @@ def _seed_construction_print_fields():
     template_cons.cell_font_size = 12
     template_cons.table_header_font_family = '微软雅黑'
     template_cons.table_header_font_size = 12
+    template_cons.sub_title_font_size = 20
+    template_cons.subtitle_bold = True
 
     # 列映射：模板列字母 → field_key（14列 A-N）
     cons_column_mappings = [

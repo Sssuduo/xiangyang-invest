@@ -391,7 +391,8 @@ def _fill_template_file_from_mappings(abs_path, template, mappings, groups, temp
         left=Side(style='thin', color='333333'), right=Side(style='thin', color='333333'),
         top=Side(style='thin', color='333333'), bottom=Side(style='thin', color='333333'),
     )
-    section_font = Font(name='宋体', size=28, bold=True, color='000000')
+    _ss = template.sub_title_font_size or 20
+    section_font = Font(name='微软雅黑', size=_ss, bold=True, color='000000')
     section_align = Alignment(horizontal='center', vertical='center')
 
     # 缓存样式（显式复制，避免 openpyxl copy 不完整）

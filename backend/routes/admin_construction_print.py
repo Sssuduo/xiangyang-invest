@@ -304,8 +304,8 @@ def get_print_data():
     progress_mode = request.args.get('progress_mode', 'aggregate').strip()
     work_path_range = request.args.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     template = PrintTemplate.query.get(template_id)
     if not template:
@@ -585,8 +585,8 @@ def print_download():
     progress_mode = request.args.get('progress_mode', 'aggregate').strip()
     work_path_range = request.args.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     template = PrintTemplate.query.get(template_id)
     template_name = template.name if template else '在建项目库'

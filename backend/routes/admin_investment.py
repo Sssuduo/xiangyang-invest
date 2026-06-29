@@ -521,7 +521,8 @@ def investment_stats():
     # 获取符合条件的项目，用于按类型聚合项目清单（含投资金额）
     all_projects = InvestmentProject.query.filter(*base_filters).with_entities(
         InvestmentProject.id, InvestmentProject.project_name,
-        InvestmentProject.project_type_code, InvestmentProject.invest_amount
+        InvestmentProject.project_type_code, InvestmentProject.invest_amount,
+        InvestmentProject.team_leader_ids
     ).order_by(InvestmentProject.order_no).all()
 
     # 按类型分组项目清单

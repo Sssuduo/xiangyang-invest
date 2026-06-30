@@ -673,6 +673,14 @@ class InvestmentActivity(db.Model):
 
     project = db.relationship('InvestmentProject', backref=db.backref('activities', lazy='dynamic'))
 
+    # 多对多关联 EnterpriseDemand（通过 activity_demand_link 表）
+    linked_demands = db.relationship(
+        'EnterpriseDemand',
+        secondary='activity_demand_link',
+        lazy='dynamic',
+        backref=db.backref('linked_activities', lazy='dynamic')
+    )
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -685,6 +693,19 @@ class InvestmentActivity(db.Model):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }
+
+
+class ActivityDemandLink(db.Model):
+    """招商动态 ↔ 企业诉求 多对多关联"""
+    __tablename__ = 'activity_demand_link'
+    __table_args__ = (
+        db.UniqueConstraint('activity_id', 'demand_id', name='uq_activity_demand'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    activity_id = db.Column(db.Integer, db.ForeignKey('investment_activities.id', ondelete='CASCADE'), nullable=False)
+    demand_id = db.Column(db.Integer, db.ForeignKey('enterprise_demands.id', ondelete='CASCADE'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class ActivityLedger(db.Model):

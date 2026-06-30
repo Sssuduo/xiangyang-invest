@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from flask import request, jsonify
-from models import InvestmentActivity, InvestmentProject
+from models import InvestmentActivity, InvestmentProject, EnterpriseDemand, ActivityDemandLink
 from extensions import db
 from routes import admin_activity_bp
 from routes.business_auth import dual_login_required, visitor_block
@@ -19,6 +19,31 @@ def _parse_datetime(val):
         return datetime.fromisoformat(str(val).strip())
     except (ValueError, TypeError):
         return None
+
+
+def _sync_activity_demands(activity, demand_ids):
+    """同步活动关联的诉求：先清旧关联，再批量插入新关联"""
+    ActivityDemandLink.query.filter_by(activity_id=activity.id).delete()
+    if demand_ids:
+        for did in demand_ids:
+            db.session.add(ActivityDemandLink(activity_id=activity.id, demand_id=int(did)))
+
+
+def _enrich_activity_dict(item):
+    """为活动 dict 添加 linked_demands 字段"""
+    activity = InvestmentActivity.query.get(item['id'])
+    if activity:
+        item['linked_demands'] = [
+            {
+                'id': d.id,
+                'demand_content': d.demand_content[:80] if d.demand_content else '',
+                'status': d.status
+            }
+            for d in activity.linked_demands.all()
+        ]
+    else:
+        item['linked_demands'] = []
+    return item
 
 
 # ============================================================
@@ -61,7 +86,8 @@ def list_activities():
     total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
     activities = q.offset((page - 1) * page_size).limit(page_size).all()
-    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities], 'total': total})
+    result = [_enrich_activity_dict(a.to_dict()) for a in activities]
+    return jsonify({'code': 0, 'data': result, 'total': total})
 
 
 @admin_activity_bp.route('/activity/activities', methods=['POST'])
@@ -90,6 +116,11 @@ def create_activity():
     db.session.add(activity)
     db.session.flush()
 
+    # 同步关联诉求
+    demand_ids = data.get('demand_ids', [])
+    if demand_ids:
+        _sync_activity_demands(activity, demand_ids)
+
     # 审计日志
     user_info = get_current_user_info()
     if user_info:
@@ -98,20 +129,23 @@ def create_activity():
             'date': (None, activity.date.isoformat() if activity.date else None),
             'content': (None, activity.content),
             'files': (None, activity.files),
-            'tags': (None, activity.tags)
+            'tags': (None, activity.tags),
+            'demand_ids': (None, json.dumps(demand_ids))
         }
         log_changes('investment_activities', activity.id, changes, 'create', user_info)
 
     db.session.commit()
-    return jsonify({'code': 0, 'data': activity.to_dict(), 'message': '动态创建成功'})
+    result = _enrich_activity_dict(activity.to_dict())
+    return jsonify({'code': 0, 'data': result, 'message': '动态创建成功'})
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['GET'])
 @dual_login_required
 def get_activity(activity_id):
-    """获取动态详情（含项目名称）"""
+    """获取动态详情（含项目名称 + 关联诉求）"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
-    return jsonify({'code': 0, 'data': activity.to_dict()})
+    result = _enrich_activity_dict(activity.to_dict())
+    return jsonify({'code': 0, 'data': result})
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['PUT'])
@@ -149,6 +183,10 @@ def update_activity(activity_id):
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             setattr(activity, field, val)
 
+    # 同步关联诉求
+    if 'demand_ids' in data:
+        _sync_activity_demands(activity, data['demand_ids'])
+
     # 审计日志：对比变更
     if user_info:
         changes = {}
@@ -161,10 +199,17 @@ def update_activity(activity_id):
                 new_val = new_val if new_val else '[]'
             if str(old_val) != str(new_val):
                 changes[field] = (old_val, new_val)
-        log_changes('investment_activities', activity_id, changes, 'update', user_info)
+        if 'demand_ids' in data:
+            old_dids = [link.demand_id for link in ActivityDemandLink.query.filter_by(activity_id=activity_id).all()]
+            new_dids = data['demand_ids']
+            if sorted(old_dids) != sorted(new_dids):
+                changes['demand_ids'] = (old_dids, new_dids)
+        if changes:
+            log_changes('investment_activities', activity_id, changes, 'update', user_info)
 
     db.session.commit()
-    return jsonify({'code': 0, 'data': activity.to_dict(), 'message': '更新成功'})
+    result = _enrich_activity_dict(activity.to_dict())
+    return jsonify({'code': 0, 'data': result, 'message': '更新成功'})
 
 
 @admin_activity_bp.route('/activity/activities/<int:activity_id>', methods=['DELETE'])

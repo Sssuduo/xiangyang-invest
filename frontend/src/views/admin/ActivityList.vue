@@ -167,6 +167,16 @@
               <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
             </el-select>
           </el-form-item>
+          <el-form-item label="关联诉求">
+            <el-select v-model="form.demand_ids" multiple placeholder="选择关联的诉求（可选）" filterable style="width: 100%;" :disabled="!form.project_id">
+              <el-option v-for="d in projectDemands" :key="d.id" :label="d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}`" :value="d.id">
+                <span style="float:left">{{ d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}` }}</span>
+                <el-tag size="small" effect="plain" style="float:right; margin-left:8px" :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'warning' : 'info'">
+                  {{ d.status === 'pending' ? '待回应' : d.status === 'processing' ? '协调中' : '已回应' }}
+                </el-tag>
+              </el-option>
+            </el-select>
+          </el-form-item>
 
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
@@ -179,7 +189,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, PriceTag } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
@@ -187,6 +197,7 @@ import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
 import { getPublicProjects, getProject, getPublicDemandDicts } from '@/api/investment'
+import { getDemands } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 
 const activities = ref([])
@@ -232,10 +243,12 @@ const defaultForm = () => ({
   date: '',
   content: '',
   files: [],
-  tags: []
+  tags: [],
+  demand_ids: []
 })
 
 const form = reactive(defaultForm())
+const projectDemands = ref([])
 
 const rules = {
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -243,6 +256,18 @@ const rules = {
 }
 
 onMounted(async () => { await loadProjects(); loadActivityTags(); fetchData() })
+
+watch(() => form.project_id, () => {
+  if (editDrawerVisible.value) loadProjectDemands()
+})
+
+async function loadProjectDemands() {
+  if (!form.project_id) { projectDemands.value = []; return }
+  try {
+    const res = await getDemands({ project_id: form.project_id, page_size: 999 })
+    if (res.code === 0) projectDemands.value = res.data || []
+  } catch { projectDemands.value = [] }
+}
 
 async function loadActivityTags() {
   try {
@@ -346,9 +371,11 @@ async function openEdit(row) {
       form.content = d.content || ''
       form.files = d.files || []
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
+      form.demand_ids = d.linked_demands ? d.linked_demands.map(dm => dm.id) : []
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
+      if (form.project_id) loadProjectDemands()
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -427,7 +454,8 @@ async function handleSave() {
       date: form.date,
       content: form.content,
       files: docUrls,
-      tags: form.tags
+      tags: form.tags,
+      demand_ids: form.demand_ids || []
     }
     if (editMode.value === 'create') {
       await createActivity(data)

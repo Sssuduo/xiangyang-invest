@@ -230,6 +230,16 @@
             <el-option v-for="d in activityTags" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关联诉求">
+          <el-select v-model="form.demand_ids" multiple placeholder="选择关联的诉求（可选）" filterable style="width: 100%;" :disabled="!props.projectId">
+            <el-option v-for="d in projectDemands" :key="d.id" :label="d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}`" :value="d.id">
+              <span style="float:left">{{ d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}` }}</span>
+              <el-tag size="small" effect="plain" style="float:right; margin-left:8px" :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'warning' : 'info'">
+                {{ d.status === 'pending' ? '待回应' : d.status === 'processing' ? '协调中' : '已回应' }}
+              </el-tag>
+            </el-option>
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
@@ -246,6 +256,7 @@ import { ref, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, Plus, UploadFilled } from '@element-plus/icons-vue'
 import { getPublicActivities, createActivity, updateActivity, deleteActivity } from '@/api/activity'
+import { getDemands } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
@@ -273,11 +284,12 @@ const editMode = ref('create') // 'create' | 'edit'
 const editingId = ref(null)
 const saving = ref(false)
 const formRef = ref(null)
-const form = ref({ date: '', content: '', tags: [] })
+const form = ref({ date: '', content: '', tags: [], demand_ids: [] })
 const editFileList = ref([])
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 const activityTags = ref([])
+const projectDemands = ref([])
 
 async function loadActivityTags() {
   try {
@@ -286,8 +298,16 @@ async function loadActivityTags() {
   } catch { /* ignore */ }
 }
 
+async function loadProjectDemands() {
+  if (!props.projectId) { projectDemands.value = []; return }
+  try {
+    const res = await getDemands({ project_id: props.projectId, page_size: 999 })
+    if (res.code === 0) projectDemands.value = res.data || []
+  } catch { projectDemands.value = [] }
+}
+
 function resetForm() {
-  form.value = { date: '', content: '', tags: [] }
+  form.value = { date: '', content: '', tags: [], demand_ids: [] }
   editFileList.value = []
   editingId.value = null
   formRef.value?.clearValidate()
@@ -323,6 +343,7 @@ function openCreateDialog() {
   editMode.value = 'create'
   resetForm()
   loadActivityTags()
+  loadProjectDemands()
   editDialogVisible.value = true
 }
 
@@ -333,12 +354,14 @@ function openEditDialog(act) {
   form.value = {
     date: act.date || '',
     content: act.content || '',
-    tags: Array.isArray(act.tags) ? [...act.tags] : []
+    tags: Array.isArray(act.tags) ? [...act.tags] : [],
+    demand_ids: act.linked_demands ? act.linked_demands.map(d => d.id) : []
   }
   editFileList.value = (act.files || []).map((url, i) => ({
     name: url.split('/').pop() || `文件${i + 1}`,
     url
   }))
+  loadProjectDemands()
   editDialogVisible.value = true
 }
 
@@ -355,7 +378,8 @@ async function handleSave() {
       date: form.value.date || null,
       content: form.value.content,
       files: docUrls,
-      tags: form.value.tags
+      tags: form.value.tags,
+      demand_ids: form.value.demand_ids || []
     }
 
     if (editMode.value === 'create') {

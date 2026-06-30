@@ -88,6 +88,14 @@ def init_database(app):
         "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
         "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
         "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+        # V13.4: 招商动态 ↔ 企业诉求 多对多关联表
+        "CREATE TABLE IF NOT EXISTS activity_demand_link ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "activity_id INTEGER NOT NULL REFERENCES investment_activities(id) ON DELETE CASCADE, "
+        "demand_id INTEGER NOT NULL REFERENCES enterprise_demands(id) ON DELETE CASCADE, "
+        "created_at DATETIME DEFAULT (datetime('now')), "
+        "UNIQUE(activity_id, demand_id)"
+        ")",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [

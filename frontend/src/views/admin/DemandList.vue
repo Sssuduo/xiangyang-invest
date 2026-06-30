@@ -149,6 +149,20 @@
           <el-descriptions-item label="写入时间">{{ fmtDt(viewDemand.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="最后更新">{{ fmtDt(viewDemand.updated_at) }}</el-descriptions-item>
         </el-descriptions>
+        <div style="margin-top: 16px">
+          <div class="section-header">
+            <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
+            <span class="section-title">关联动态</span>
+            <el-tag size="small" effect="plain" style="margin-left: 8px">{{ (viewDemand.linked_activities || []).length }} 条</el-tag>
+          </div>
+          <div v-if="viewDemand.linked_activities && viewDemand.linked_activities.length" class="linked-activities">
+            <div v-for="act in viewDemand.linked_activities" :key="act.id" class="linked-activity-item">
+              <div class="la-date">{{ act.date || '-' }}</div>
+              <div class="la-content">{{ act.content }}</div>
+            </div>
+          </div>
+          <div v-else style="color: #909399; font-size: 13px; padding: 12px 0">暂无关联动态</div>
+        </div>
       </template>
     </el-drawer>
 
@@ -298,7 +312,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, View, Upload, Download, ArrowDown } from '@element-plus/icons-vue'
+import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, View, Upload, Download, ArrowDown, ChatLineSquare } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getDemands, createDemand, updateDemand, getDemand, deleteDemand, batchDeleteDemands } from '@/api/demand'
@@ -724,6 +738,25 @@ async function handleImportExecute() {
 .import-table-wrap { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
 :deep(.import-error-row) { background-color: #fef0f0 !important; }
 :deep(.import-error-row:hover > td) { background-color: #fde2e2 !important; }
+
+.linked-activities { margin-top: 8px; }
+.linked-activity-item {
+  padding: 10px 12px;
+  border-left: 3px solid #409EFF;
+  background: #f5f7fa;
+  margin-bottom: 8px;
+  border-radius: 0 4px 4px 0;
+}
+.linked-activity-item .la-date {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+.linked-activity-item .la-content {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.5;
+}
 </style>
 
 <style>

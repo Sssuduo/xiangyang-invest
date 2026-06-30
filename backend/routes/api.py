@@ -340,6 +340,11 @@ def list_public_activities():
         item = a.to_dict()
         raw_tags = item.get('tags', []) or []
         item['tag_names'] = [tag_map.get(tc, tc) for tc in raw_tags]
+        # 关联诉求
+        item['linked_demands'] = [
+            {'id': d.id, 'demand_content': d.demand_content[:80] if d.demand_content else '', 'status': d.status}
+            for d in a.linked_demands.all()
+        ]
         result.append(item)
     return jsonify({'code': 0, 'data': result, 'total': total})
 
@@ -396,6 +401,11 @@ def list_public_demands():
         codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
         item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
+        # 关联动态
+        item['linked_activities'] = [
+            {'id': a.id, 'date': a.date.strftime('%Y-%m-%d') if a.date else None, 'content': a.content[:80] if a.content else ''}
+            for a in d.linked_activities.order_by(InvestmentActivity.date.desc()).all()
+        ]
         result.append(item)
 
     return jsonify({'code': 0, 'data': result, 'total': total})

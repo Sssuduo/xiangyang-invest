@@ -6,12 +6,29 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
-from models import EnterpriseDemand, InvestmentProject, DemandTypeDict, OrganizationDict, FollowStatusDict
+from models import EnterpriseDemand, InvestmentProject, InvestmentActivity, DemandTypeDict, OrganizationDict, FollowStatusDict
 from models import ImportFieldConfigDemand
 from extensions import db
 from routes import admin_demand_bp
 from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
+
+
+def _enrich_demand_dict(item):
+    """为诉求 dict 添加 linked_activities 字段"""
+    demand = EnterpriseDemand.query.get(item['id'])
+    if demand:
+        item['linked_activities'] = [
+            {
+                'id': a.id,
+                'date': a.date.strftime('%Y-%m-%d') if a.date else None,
+                'content': a.content[:80] if a.content else ''
+            }
+            for a in demand.linked_activities.order_by(InvestmentActivity.date.desc()).all()
+        ]
+    else:
+        item['linked_activities'] = []
+    return item
 
 
 # ============================================================
@@ -68,7 +85,7 @@ def list_demands():
         codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
         item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
-        result.append(item)
+        result.append(_enrich_demand_dict(item))
 
     return jsonify({'code': 0, 'data': result, 'total': total})
 
@@ -117,16 +134,18 @@ def create_demand():
         log_changes('enterprise_demands', demand.id, changes, 'create', user_info)
 
     db.session.commit()
-    return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '诉求已创建'})
+    result = _enrich_demand_dict(demand.to_dict())
+    return jsonify({'code': 0, 'data': result, 'message': '诉求已创建'})
 
 
 @admin_demand_bp.route('/demand/demands/<int:demand_id>', methods=['GET'])
 @dual_login_required
 def get_demand(demand_id):
-    """获取诉求详情"""
+    """获取诉求详情（含关联动态）"""
     demand = EnterpriseDemand.query.filter_by(id=demand_id).first_or_404()
     data = demand.to_dict()
     data['project_name'] = demand.project.project_name if demand.project else ''
+    data = _enrich_demand_dict(data)
     return jsonify({'code': 0, 'data': data})
 
 
@@ -164,7 +183,8 @@ def update_demand(demand_id):
         log_changes('enterprise_demands', demand_id, changes, 'update', user_info)
 
     db.session.commit()
-    return jsonify({'code': 0, 'data': demand.to_dict(), 'message': '诉求已更新'})
+    result = _enrich_demand_dict(demand.to_dict())
+    return jsonify({'code': 0, 'data': result, 'message': '诉求已更新'})
 
 
 @admin_demand_bp.route('/demand/demands/<int:demand_id>', methods=['DELETE'])

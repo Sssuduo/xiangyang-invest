@@ -447,6 +447,7 @@ class InvestmentProject(db.Model):
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     demands = db.relationship('EnterpriseDemand', backref='project', lazy='dynamic',
                               order_by='EnterpriseDemand.sort_order')
@@ -1075,6 +1076,7 @@ class ConstructionProject(db.Model):
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     work_progresses = db.relationship('WorkProgress', backref='project', lazy='dynamic',
                                        order_by='WorkProgress.start_date.desc()')

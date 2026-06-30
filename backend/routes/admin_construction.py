@@ -247,14 +247,15 @@ def list_projects():
     if responsible_unit:
         q = q.filter(ConstructionProject.responsible_unit_code == responsible_unit)
 
-    # 近期进展筛选：只返回在指定天数内有工作进展更新的项目
+    # 近期更新筛选：项目自身 / 工作进展 任一在 N 天内有更新
     recent_progress_days = request.args.get('recent_progress_days', '').strip()
     if recent_progress_days:
         try:
             days = int(recent_progress_days)
             cutoff = datetime.utcnow() - timedelta(days=days)
-            q = q.filter(ConstructionProject.work_progresses.any(
-                WorkProgress.created_at >= cutoff
+            q = q.filter(db.or_(
+                ConstructionProject.last_updated_at >= cutoff,
+                ConstructionProject.work_progresses.any(WorkProgress.created_at >= cutoff)
             ))
         except (ValueError, TypeError):
             pass

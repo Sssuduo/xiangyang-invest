@@ -99,13 +99,15 @@ def list_projects():
     if project_type:
         q = q.filter_by(project_type_code=project_type)
 
-    # 近期动态筛选：只返回在指定天数内有招商动态的项目
+    # 近期更新筛选：项目自身 / 招商动态 / 企业诉求 任一在 N 天内有更新
     if recent_activity_days:
         try:
             days = int(recent_activity_days)
             cutoff = datetime.utcnow() - timedelta(days=days)
-            q = q.filter(InvestmentProject.activities.any(
-                InvestmentActivity.date >= cutoff
+            q = q.filter(db.or_(
+                InvestmentProject.last_updated_at >= cutoff,
+                InvestmentProject.activities.any(InvestmentActivity.date >= cutoff),
+                InvestmentProject.demands.any(EnterpriseDemand.updated_at >= cutoff)
             ))
         except (ValueError, TypeError):
             pass

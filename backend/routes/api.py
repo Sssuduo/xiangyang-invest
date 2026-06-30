@@ -332,7 +332,16 @@ def list_public_activities():
     total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
     activities = q.offset((page - 1) * page_size).limit(page_size).all()
-    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities], 'total': total})
+
+    # 解析标签 code → 名称
+    tag_map = {d.code: d.name for d in ActivityTagDict.query.all()}
+    result = []
+    for a in activities:
+        item = a.to_dict()
+        raw_tags = item.get('tags', []) or []
+        item['tag_names'] = [tag_map.get(tc, tc) for tc in raw_tags]
+        result.append(item)
+    return jsonify({'code': 0, 'data': result, 'total': total})
 
 
 # ============================================================

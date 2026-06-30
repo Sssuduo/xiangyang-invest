@@ -89,9 +89,16 @@
           </el-table-column>
           <el-table-column label="标签" width="160">
             <template #default="{ row }">
-              <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
-                {{ getTagName(tag) }}
-              </el-tag>
+              <template v-if="row.tag_names && row.tag_names.length">
+                <el-tag v-for="tag_name in row.tag_names" :key="tag_name" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                  {{ tag_name }}
+                </el-tag>
+              </template>
+              <template v-else>
+                <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                  {{ getTagName(tag) }}
+                </el-tag>
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
@@ -563,9 +570,13 @@ function truncate(text, max) { if (!text) return ''; return text.length > max ? 
 
 // ---- 查看 ----
 function handleView(row) {
-  const tagMap = {}
-  activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
-  row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
+  if (row.tag_names) {
+    row._tagNames = row.tag_names
+  } else {
+    const tagMap = {}
+    activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
+    row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
+  }
   viewActivity.value = row
   viewDrawerVisible.value = true
 }

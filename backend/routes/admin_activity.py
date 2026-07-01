@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from flask import request, jsonify
-from models import InvestmentActivity, InvestmentProject, EnterpriseDemand, ActivityDemandLink
+from models import InvestmentActivity, InvestmentProject, EnterpriseDemand, ActivityDemandLink, DemandTypeDict
 from extensions import db
 from routes import admin_activity_bp
 from routes.business_auth import dual_login_required, visitor_block
@@ -30,14 +30,19 @@ def _sync_activity_demands(activity, demand_ids):
 
 
 def _enrich_activity_dict(item):
-    """为活动 dict 添加 linked_demands 字段"""
+    """为活动 dict 添加 linked_demands 字段（含完整诉求信息）"""
     activity = InvestmentActivity.query.get(item['id'])
     if activity:
+        demand_type_map = DemandTypeDict.build_display_name_map()
         item['linked_demands'] = [
             {
                 'id': d.id,
-                'demand_content': d.demand_content[:80] if d.demand_content else '',
-                'status': d.status
+                'demand_content': d.demand_content or '',
+                'demand_type_code': d.demand_type_code or '',
+                'demand_type_name': demand_type_map.get(d.demand_type_code, d.demand_type_code or ''),
+                'status': d.status,
+                'unit_code': d.unit_code or '',
+                'resolution': d.resolution or ''
             }
             for d in activity.linked_demands.all()
         ]

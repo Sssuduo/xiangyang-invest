@@ -155,10 +155,24 @@
             <span class="section-title">关联动态</span>
             <el-tag size="small" effect="plain" style="margin-left: 8px">{{ (viewDemand.linked_activities || []).length }} 条</el-tag>
           </div>
-          <div v-if="viewDemand.linked_activities && viewDemand.linked_activities.length" class="linked-activities">
-            <div v-for="act in viewDemand.linked_activities" :key="act.id" class="linked-activity-item">
-              <div class="la-date">{{ act.date || '-' }}</div>
-              <div class="la-content">{{ act.content }}</div>
+          <!-- 流式时间轴样式 -->
+          <div v-if="viewDemand.linked_activities && viewDemand.linked_activities.length" class="linked-activities-timeline">
+            <div v-for="(act, ai) in viewDemand.linked_activities" :key="act.id" class="lat-item">
+              <div class="lat-node">
+                <div class="lat-dot" />
+                <div v-if="ai < viewDemand.linked_activities.length - 1" class="lat-line" />
+              </div>
+              <div class="lat-card">
+                <div class="lat-date">
+                  <el-icon><Clock /></el-icon>
+                  <span>{{ act.date || '-' }}</span>
+                </div>
+                <div class="lat-content">{{ act.content }}</div>
+                <div v-if="act.project_name" class="lat-project">
+                  <el-icon><OfficeBuilding /></el-icon>
+                  <span>{{ act.project_name }}</span>
+                </div>
+              </div>
             </div>
           </div>
           <div v-else style="color: #909399; font-size: 13px; padding: 12px 0">暂无关联动态</div>
@@ -310,9 +324,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, View, Upload, Download, ArrowDown, ChatLineSquare } from '@element-plus/icons-vue'
+import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, View, Upload, Download, ArrowDown, ChatLineSquare, Clock, OfficeBuilding } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getDemands, createDemand, updateDemand, getDemand, deleteDemand, batchDeleteDemands } from '@/api/demand'
@@ -407,11 +422,26 @@ const importing = ref(false)
 const importValidCount = ref(0)
 const importErrorCount = ref(0)
 
+const route = useRoute()
+
 onMounted(async () => {
   await loadDicts()
   await loadProjects()
   fetchData()
 })
+
+// 从 query 参数自动打开诉求查看抽屉（供其他页面跳转使用）
+watch(() => route.query.view, async (demandId) => {
+  if (demandId) {
+    try {
+      const res = await getDemand(Number(demandId))
+      if (res.code === 0) {
+        viewDemand.value = res.data
+        viewDrawerVisible.value = true
+      }
+    } catch { /* ignore */ }
+  }
+}, { immediate: true })
 
 async function loadDicts() {
   try {
@@ -465,7 +495,7 @@ function statusName(s) {
 
 function fmtDt(d) {
   if (!d) return '-'
-  return new Date(d).toLocaleString('zh-CN', { hour12: false })
+  return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false })
 }
 
 function resolveDemandTypePath(code) {
@@ -739,23 +769,79 @@ async function handleImportExecute() {
 :deep(.import-error-row) { background-color: #fef0f0 !important; }
 :deep(.import-error-row:hover > td) { background-color: #fde2e2 !important; }
 
-.linked-activities { margin-top: 8px; }
-.linked-activity-item {
-  padding: 10px 12px;
-  border-left: 3px solid #409EFF;
-  background: #f5f7fa;
-  margin-bottom: 8px;
-  border-radius: 0 4px 4px 0;
+/* 关联动态 — 流式时间轴 */
+.linked-activities-timeline {
+  position: relative;
+  padding-left: 4px;
+  margin-top: 8px;
 }
-.linked-activity-item .la-date {
+.lat-item {
+  display: flex;
+  gap: 0;
+  position: relative;
+}
+.lat-node {
+  position: relative;
+  width: 28px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.lat-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #409eff;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #409eff;
+  z-index: 1;
+  margin-top: 18px;
+  flex-shrink: 0;
+}
+.lat-line {
+  width: 2px;
+  background: #d9dde4;
+  flex: 1;
+  min-height: 100%;
+  margin-top: 6px;
+}
+.lat-card {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid #e8ecf1;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 6px;
+  margin-left: 10px;
+}
+.lat-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
-  color: #909399;
-  margin-bottom: 4px;
+  color: #409eff;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  background: #ecf5ff;
+  border-radius: 4px;
 }
-.linked-activity-item .la-content {
+.lat-content {
   font-size: 13px;
   color: #303133;
-  line-height: 1.5;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lat-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>
 

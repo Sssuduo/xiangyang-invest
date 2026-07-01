@@ -523,7 +523,7 @@ function statusName(s) {
 
 function fmtDt(d) {
   if (!d) return '-'
-  return new Date(d).toLocaleString('zh-CN', { hour12: false })
+  return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false })
 }
 
 function resolveDemandTypePath(code) {

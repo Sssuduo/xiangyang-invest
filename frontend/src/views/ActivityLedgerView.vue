@@ -421,7 +421,7 @@ function handlePageSizeChange(size) { pageSize.value = size; currentPage.value =
 function handleSelectionChange(selection) { selectedIds.value = selection.map(s => s.id) }
 
 function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
-function fmtDt(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN', { hour12: false }) }
+function fmtDt(d) { if (!d) return '-'; return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false }) }
 
 // ---- 查看抽屉文件辅助 ----
 function getViewFileName(url) {

@@ -15,14 +15,17 @@ from utils import get_current_user_info, log_changes
 
 
 def _enrich_demand_dict(item):
-    """为诉求 dict 添加 linked_activities 字段"""
+    """为诉求 dict 添加 linked_activities 字段（含完整动态信息）"""
     demand = EnterpriseDemand.query.get(item['id'])
     if demand:
+        import json as _json
         item['linked_activities'] = [
             {
                 'id': a.id,
                 'date': a.date.strftime('%Y-%m-%d') if a.date else None,
-                'content': a.content[:80] if a.content else ''
+                'content': a.content or '',
+                'project_name': a.project.project_name if a.project else '',
+                'tags': _json.loads(a.tags) if a.tags else []
             }
             for a in demand.linked_activities.order_by(InvestmentActivity.date.desc()).all()
         ]

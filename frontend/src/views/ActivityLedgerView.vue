@@ -164,7 +164,10 @@
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
       <template #header>
         <div class="drawer-title-bar">
-          <span class="drawer-title">{{ editMode === 'create' ? '新建活动台账' : '编辑活动台账' }}</span>
+          <span class="drawer-title">
+            <el-icon><Edit /></el-icon>
+            {{ editMode === 'create' ? '新建活动台账' : '编辑活动台账' }}
+          </span>
         </div>
       </template>
       <div class="drawer-form">
@@ -290,7 +293,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject } from '@/api/activityLedger'
@@ -841,4 +844,14 @@ async function handleDelete(row) {
   width: 100%;
 }
 .link-hint { font-size: 12px; color: #909399; }
+</style>
+
+<style>
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
+}
 </style>

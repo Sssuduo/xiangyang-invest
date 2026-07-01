@@ -184,14 +184,15 @@ def update_export_fields():
 # ============================================================
 
 def _get_last2_windows(project_ids=None):
-    """查询最近2条工作进展的时间窗口（限定在勾选项目范围内），返回 (本周窗口, 上周窗口) 元组
-    每个窗口为 (start_date, end_date)，无进展时对应窗口为 None"""
-    q = WorkProgress.query
+    """查询最近2条工作进展的唯一时间窗口（限定在勾选项目范围内），返回 (本周窗口, 上周窗口) 元组
+    每个窗口为 (start_date, end_date)，无进展时对应窗口为 None
+    使用 DISTINCT 避免多个项目同一天更新时，limit(2) 返回相同日期窗口导致上周=本周"""
+    q = db.session.query(WorkProgress.start_date, WorkProgress.end_date)
     if project_ids:
         q = q.filter(WorkProgress.project_id.in_(project_ids))
-    recent = q.order_by(WorkProgress.start_date.desc()).limit(2).all()
-    this_week = (recent[0].start_date, recent[0].end_date) if len(recent) >= 1 else None
-    last_week = (recent[1].start_date, recent[1].end_date) if len(recent) >= 2 else None
+    recent = q.distinct().order_by(WorkProgress.start_date.desc()).limit(2).all()
+    this_week = (recent[0][0], recent[0][1]) if len(recent) >= 1 else None
+    last_week = (recent[1][0], recent[1][1]) if len(recent) >= 2 else None
     return this_week, last_week
 
 

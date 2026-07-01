@@ -331,7 +331,7 @@ function demandStatusName(s) {
 
 function openDemandDrawer(demandId) {
   if (businessAuth.isVisitor) return
-  router.push({ path: '/admin/demand', query: { view: String(demandId) } })
+  router.push({ path: '/investment-demand', query: { view: String(demandId) } })
 }
 
 const props = defineProps({

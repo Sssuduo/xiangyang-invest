@@ -347,7 +347,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, Edit, View } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
@@ -464,11 +465,26 @@ const importing = ref(false)
 const importValidCount = ref(0)
 const importErrorCount = ref(0)
 
+const route = useRoute()
+
 onMounted(async () => {
   await loadDicts()
   await loadProjects()
   fetchData()
 })
+
+// 从 query 参数自动打开诉求查看抽屉（供其他页面跳转使用，如动态关联诉求卡片）
+watch(() => route.query.view, async (demandId) => {
+  if (demandId) {
+    try {
+      const res = await getDemand(Number(demandId))
+      if (res.code === 0) {
+        viewDemand.value = res.data
+        viewDrawerVisible.value = true
+      }
+    } catch { /* ignore */ }
+  }
+}, { immediate: true })
 
 async function loadDicts() {
   try {

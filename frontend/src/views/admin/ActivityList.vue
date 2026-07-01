@@ -533,7 +533,7 @@ async function handleDelete(row) {
 .drawer-title-bar {
   background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
   margin: 0 -20px 0 -20px;
-  padding: 20px 20px 20px 40px;
+  padding: 30px 20px 26px 40px;
 }
 .drawer-title {
   color: #fff;
@@ -569,5 +569,10 @@ async function handleDelete(row) {
 }
 .el-drawer__body {
   padding: 12px 20px 20px !important;
+}
+/* 编辑抽屉标题蓝条 */
+.drawer-title-bar {
+  padding-top: 30px !important;
+  padding-bottom: 26px !important;
 }
 </style>

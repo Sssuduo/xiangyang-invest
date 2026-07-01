@@ -200,6 +200,31 @@
           <el-descriptions-item label="写入时间">{{ fmtDt(viewDemand.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="最后更新">{{ fmtDt(viewDemand.updated_at) }}</el-descriptions-item>
         </el-descriptions>
+
+        <!-- 关联动态（流式时间轴） -->
+        <template v-if="viewDemand.linked_activities && viewDemand.linked_activities.length > 0">
+          <div class="linked-section">
+            <div class="section-header">
+              <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
+              <span class="section-title">关联动态 ({{ viewDemand.linked_activities.length }})</span>
+            </div>
+            <div class="linked-timeline">
+              <div v-for="(act, ai) in viewDemand.linked_activities" :key="act.id" class="tl-item">
+                <div class="tl-node">
+                  <div class="tl-dot" />
+                  <div v-if="ai < viewDemand.linked_activities.length - 1" class="tl-line" />
+                </div>
+                <div class="tl-card">
+                  <div class="tl-date">
+                    <el-icon><Clock /></el-icon>
+                    <span>{{ act.date || '-' }}</span>
+                  </div>
+                  <div class="tl-content">{{ dc(act.content) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </template>
     </el-drawer>
 
@@ -350,7 +375,7 @@
 import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, Edit, View } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, Edit, View, ChatLineSquare, Clock } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getPublicDemands, getDemandDicts, createDemand, updateDemand, getDemand, deleteDemand, batchDeleteDemands } from '@/api/demand'
@@ -855,6 +880,39 @@ async function handleImportExecute() {
 /* 查看详情 */
 .detail-desc :deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
 .text-block { white-space: pre-wrap; line-height: 1.7; font-size: 13px; color: #303133; max-height: 300px; overflow-y: auto; }
+
+/* 关联动态 - 流式时间轴 */
+.linked-section { margin-top: 20px; }
+.linked-timeline { padding-left: 2px; }
+.tl-item { display: flex; gap: 0; position: relative; }
+.tl-node {
+  position: relative; width: 28px; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center;
+}
+.tl-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #409eff; border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #409eff; z-index: 1;
+  margin-top: 21px; flex-shrink: 0;
+}
+.tl-line { width: 2px; background: #d9dde4; flex: 1; min-height: 100%; margin-top: 4px; }
+.tl-card {
+  flex: 1; min-width: 0; background: #fff;
+  border: 1px solid #e8ecf1; border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 4px; margin-left: 10px;
+  transition: box-shadow 0.25s;
+}
+.tl-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.tl-date {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #409eff; font-weight: 600;
+  margin-bottom: 8px; padding: 2px 8px;
+  background: #ecf5ff; border-radius: 4px;
+}
+.tl-content {
+  font-size: 13px; color: #303133; line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+}
 
 /* 导入对话框 */
 .import-summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 14px; }

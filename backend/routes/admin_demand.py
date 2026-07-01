@@ -15,10 +15,27 @@ from utils import get_current_user_info, log_changes
 
 
 def _enrich_demand_dict(item):
-    """为诉求 dict 添加 linked_activities 字段（含完整动态信息）"""
+    """为诉求 dict 添加 demand_type_name、unit_name 和 linked_activities 字段"""
     demand = EnterpriseDemand.query.get(item['id'])
     if demand:
         import json as _json
+
+        # 解析诉求类型名称（支持逗号分隔的多值编码）
+        codes = [c.strip() for c in (demand.demand_type_code or '').split(',') if c.strip()]
+        item['demand_type_name'] = '、'.join([
+            DemandTypeDict.query.filter_by(code=c, is_active=True).first().name
+            if DemandTypeDict.query.filter_by(code=c, is_active=True).first() else c
+            for c in codes
+        ]) if codes else ''
+
+        # 解析对接单位名称
+        if demand.unit_code:
+            org = OrganizationDict.query.filter_by(code=demand.unit_code, is_active=True).first()
+            item['unit_name'] = org.name if org else ''
+        else:
+            item['unit_name'] = ''
+
+        # 关联动态
         item['linked_activities'] = [
             {
                 'id': a.id,

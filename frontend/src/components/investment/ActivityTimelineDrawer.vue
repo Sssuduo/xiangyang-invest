@@ -222,6 +222,47 @@
       </div>
     </div>
 
+    <!-- 诉求详情抽屉（点击关联诉求卡片弹出） -->
+    <el-drawer
+      v-model="demandDrawerVisible"
+      direction="rtl"
+      size="560px"
+      @closed="demandDrawerData = null"
+    >
+      <template #header>
+        <div class="drawer-title-bar">
+          <span class="drawer-title">
+            <el-icon><View /></el-icon>
+            诉求详情
+          </span>
+        </div>
+      </template>
+      <template v-if="demandDrawerData">
+        <el-descriptions :column="2" border size="small" class="detail-desc">
+          <el-descriptions-item label="项目" :span="2">
+            <strong>{{ dn(demandDrawerData.project_name) }}</strong>
+          </el-descriptions-item>
+          <el-descriptions-item label="诉求类型">
+            {{ demandDrawerData.demand_type_name || demandDrawerData.demand_type_code || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="对接单位">
+            {{ demandDrawerData.unit_name || demandDrawerData.unit_code || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态" :span="2">
+            <el-tag :color="demandStatusColor(demandDrawerData.status)" effect="dark" size="small">
+              {{ demandStatusName(demandDrawerData.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="诉求内容" :span="2">
+            <div class="text-block">{{ dc(demandDrawerData.demand_content) || '-' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="解决措施" :span="2">
+            <div class="text-block">{{ dc(demandDrawerData.resolution) || '暂无' }}</div>
+          </el-descriptions-item>
+        </el-descriptions>
+      </template>
+    </el-drawer>
+
     <!-- 编辑/新建动态弹窗 -->
     <el-dialog
       v-model="editDialogVisible"
@@ -302,7 +343,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, Plus, UploadFilled, ArrowRight } from '@element-plus/icons-vue'
 import { getPublicActivities, createActivity, updateActivity, deleteActivity } from '@/api/activity'
-import { getDemands } from '@/api/demand'
+import { getDemands, getDemand } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
@@ -329,9 +370,19 @@ function demandStatusName(s) {
   return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s
 }
 
-function openDemandDrawer(demandId) {
+// 诉求详情抽屉
+const demandDrawerVisible = ref(false)
+const demandDrawerData = ref(null)
+
+async function openDemandDrawer(demandId) {
   if (businessAuth.isVisitor) return
-  router.push({ path: '/investment-demand', query: { view: String(demandId) } })
+  try {
+    const res = await getDemand(demandId)
+    if (res.code === 0) {
+      demandDrawerData.value = res.data
+      demandDrawerVisible.value = true
+    }
+  } catch { /* ignore */ }
 }
 
 const props = defineProps({
@@ -1034,5 +1085,20 @@ function downloadFile(url) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- 诉求详情抽屉 ---- */
+.detail-desc :deep(.el-descriptions__label) {
+  width: 100px;
+  font-weight: 500;
+  color: #606266;
+}
+.text-block {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 13px;
+  color: #303133;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>

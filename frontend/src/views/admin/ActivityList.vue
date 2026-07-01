@@ -375,7 +375,7 @@ async function openEdit(row) {
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
-      if (form.project_id) loadProjectDemands()
+      if (form.project_id) await loadProjectDemands()
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }

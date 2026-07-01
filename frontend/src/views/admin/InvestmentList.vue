@@ -22,6 +22,12 @@
           <el-select v-model="filterType" placeholder="项目类型" clearable @change="fetchData" style="width: 140px;">
             <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
+          <div style="flex:1" />
+          <el-radio-group v-model="recentActivityDays" size="small" @change="fetchData">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="7">7日内更新</el-radio-button>
+            <el-radio-button value="15">15日内更新</el-radio-button>
+          </el-radio-group>
         </div>
 
         <!-- 表格 -->
@@ -298,6 +304,7 @@ const searchText = ref('')
 const filterFollow = ref([])
 const filterMeeting = ref('')
 const filterType = ref('')
+const recentActivityDays = ref('')
 const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], project_tags: [], staff: [] })
 
 // 查看抽屉
@@ -366,6 +373,7 @@ async function fetchData() {
     if (filterFollow.value.length > 0) params.follow_status = filterFollow.value.join(',')
     if (filterMeeting.value) params.meeting_status = filterMeeting.value
     if (filterType.value) params.project_type = filterType.value
+    if (recentActivityDays.value) params.recent_activity_days = recentActivityDays.value
     const res = await getProjects(params)
     projects.value = res.data || []
   } catch { projects.value = [] }

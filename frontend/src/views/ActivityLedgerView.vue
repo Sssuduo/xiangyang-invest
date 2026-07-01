@@ -125,22 +125,25 @@
             </el-tag>
             <span v-if="!viewItem.tags || viewItem.tags.length === 0" class="no-data">-</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="viewItem.files && viewItem.files.length > 0" label="附件" :span="2">
-            <div class="file-thumbnail-grid">
-              <div v-for="(url, idx) in viewItem.files" :key="idx" class="file-thumb-card" @click="openFile(url)">
-                <div class="thumb-preview">
-                  <img v-if="isImageUrl(url)" :src="url" class="thumb-img" />
-                  <div v-else-if="isPdfUrl(url)" class="thumb-pdf">
-                    <el-icon :size="32"><Document /></el-icon>
-                    <span>PDF</span>
+          <el-descriptions-item label="附件" :span="2">
+            <template v-if="viewItem.files && viewItem.files.length > 0">
+              <div class="file-thumbnail-grid">
+                <div v-for="(url, idx) in viewItem.files" :key="idx" class="file-thumb-card" @click="openFile(url)">
+                  <div class="thumb-preview">
+                    <img v-if="isImageUrl(url)" :src="url" class="thumb-img" />
+                    <div v-else-if="isPdfUrl(url)" class="thumb-pdf">
+                      <el-icon :size="32"><Document /></el-icon>
+                      <span>PDF</span>
+                    </div>
+                    <div v-else class="thumb-generic">
+                      <el-icon :size="28"><Document /></el-icon>
+                    </div>
                   </div>
-                  <div v-else class="thumb-generic">
-                    <el-icon :size="28"><Document /></el-icon>
-                  </div>
+                  <div class="thumb-name" :title="getViewFileName(url)">{{ getViewFileName(url) }}</div>
                 </div>
-                <div class="thumb-name" :title="getViewFileName(url)">{{ getViewFileName(url) }}</div>
               </div>
-            </div>
+            </template>
+            <span v-else class="no-data">暂无附件</span>
           </el-descriptions-item>
           <el-descriptions-item label="关联项目" :span="2">
             <template v-if="viewItem.linked_project_id">
@@ -161,7 +164,10 @@
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
       <template #header>
         <div class="drawer-title-bar">
-          <span class="drawer-title">{{ editMode === 'create' ? '新建活动台账' : '编辑活动台账' }}</span>
+          <span class="drawer-title">
+            <el-icon><Edit /></el-icon>
+            {{ editMode === 'create' ? '新建活动台账' : '编辑活动台账' }}
+          </span>
         </div>
       </template>
       <div class="drawer-form">
@@ -191,7 +197,7 @@
             <el-input v-model="form.content" type="textarea" :rows="4" placeholder="请输入活动内容..." maxlength="5000" show-word-limit />
           </el-form-item>
           <el-form-item label="附件">
-            <div class="upload-wrapper">
+            <div class="upload-wrapper" @paste="handleClipboardPaste">
               <el-upload
                 ref="uploadRef"
                 v-model:file-list="fileList"
@@ -209,7 +215,7 @@
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传；也可 <kbd>Ctrl+V</kbd> 粘贴图片</div>
                 </template>
               </el-upload>
               <!-- 文件缩略图网格 -->
@@ -287,7 +293,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject } from '@/api/activityLedger'
@@ -418,7 +424,7 @@ function handlePageSizeChange(size) { pageSize.value = size; currentPage.value =
 function handleSelectionChange(selection) { selectedIds.value = selection.map(s => s.id) }
 
 function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
-function fmtDt(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN', { hour12: false }) }
+function fmtDt(d) { if (!d) return '-'; return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false }) }
 
 // ---- 查看抽屉文件辅助 ----
 function getViewFileName(url) {
@@ -536,6 +542,40 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 
+// ---- 剪贴板粘贴图片 ----
+async function handleClipboardPaste(event) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      event.preventDefault()
+      const blob = item.getAsFile()
+      if (!blob) continue
+      const ext = item.type.split('/')[1] || 'png'
+      const filename = `paste-${Date.now()}.${ext}`
+      const file = new File([blob], filename, { type: item.type })
+      const formData = new FormData()
+      formData.append('file', file)
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (data.code === 0) {
+          fileList.value.push({
+            name: filename,
+            url: data.data.url,
+            uid: Date.now() + Math.random()
+          })
+          ElMessage.success('图片已粘贴上传')
+        } else {
+          ElMessage.error(data.message || '图片上传失败')
+        }
+      } catch {
+        ElMessage.error('图片上传失败')
+      }
+    }
+  }
+}
+
 // ---- 文件缩略图辅助 ----
 function getFileExtension(file) {
   const name = getFileName(file)
@@ -572,7 +612,10 @@ function handleThumbRemove(idx) {
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('请填写必填字段（活动内容不能为空）')
+    return
+  }
 
   saving.value = true
   try {
@@ -801,4 +844,14 @@ async function handleDelete(row) {
   width: 100%;
 }
 .link-hint { font-size: 12px; color: #909399; }
+</style>
+
+<style>
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
+}
 </style>

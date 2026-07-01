@@ -1,7 +1,7 @@
 import json
-from datetime import date
+from datetime import date, datetime, timedelta
 from flask import request, jsonify
-from models import InvestmentProject, EnterpriseDemand
+from models import InvestmentProject, InvestmentActivity, EnterpriseDemand
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict, Staff
 from extensions import db
 from routes import admin_investment_bp
@@ -75,6 +75,7 @@ def list_projects():
     follow_status = request.args.get('follow_status', '').strip()
     meeting_status = request.args.get('meeting_status', '').strip()
     project_type = request.args.get('project_type', '').strip()
+    recent_activity_days = request.args.get('recent_activity_days', '').strip()
 
     q = InvestmentProject.query.filter_by(is_deleted=False)
 
@@ -97,6 +98,19 @@ def list_projects():
         q = q.filter_by(meeting_status_code=meeting_status)
     if project_type:
         q = q.filter_by(project_type_code=project_type)
+
+    # 近期更新筛选：项目自身 / 招商动态 / 企业诉求 任一在 N 天内有更新
+    if recent_activity_days:
+        try:
+            days = int(recent_activity_days)
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            q = q.filter(db.or_(
+                InvestmentProject.last_updated_at >= cutoff,
+                InvestmentProject.activities.any(InvestmentActivity.date >= cutoff),
+                InvestmentProject.demands.any(EnterpriseDemand.updated_at >= cutoff)
+            ))
+        except (ValueError, TypeError):
+            pass
 
     # 排序：重点跟进优先 → 顺序号升序
     q = q.order_by(
@@ -521,7 +535,8 @@ def investment_stats():
     # 获取符合条件的项目，用于按类型聚合项目清单（含投资金额）
     all_projects = InvestmentProject.query.filter(*base_filters).with_entities(
         InvestmentProject.id, InvestmentProject.project_name,
-        InvestmentProject.project_type_code, InvestmentProject.invest_amount
+        InvestmentProject.project_type_code, InvestmentProject.invest_amount,
+        InvestmentProject.team_leader_ids
     ).order_by(InvestmentProject.order_no).all()
 
     # 按类型分组项目清单

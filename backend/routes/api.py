@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
 from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
@@ -201,6 +202,7 @@ def list_public_projects():
     follow_status = request.args.get('follow_status', '').strip()
     meeting_status = request.args.get('meeting_status', '').strip()
     project_type = request.args.get('project_type', '').strip()
+    recent_activity_days = request.args.get('recent_activity_days', '').strip()
 
     q = InvestmentProject.query.filter_by(is_deleted=False)
 
@@ -223,6 +225,19 @@ def list_public_projects():
         q = q.filter_by(meeting_status_code=meeting_status)
     if project_type:
         q = q.filter_by(project_type_code=project_type)
+
+    # 近期更新筛选：项目自身 / 招商动态 / 企业诉求 任一在 N 天内有更新
+    if recent_activity_days:
+        try:
+            days = int(recent_activity_days)
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            q = q.filter(db.or_(
+                InvestmentProject.last_updated_at >= cutoff,
+                InvestmentProject.activities.any(InvestmentActivity.date >= cutoff),
+                InvestmentProject.demands.any(EnterpriseDemand.updated_at >= cutoff)
+            ))
+        except (ValueError, TypeError):
+            pass
 
     # 排序：重点跟进优先 → 顺序号升序
     q = q.order_by(
@@ -317,7 +332,30 @@ def list_public_activities():
     total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
     activities = q.offset((page - 1) * page_size).limit(page_size).all()
-    return jsonify({'code': 0, 'data': [a.to_dict() for a in activities], 'total': total})
+
+    # 解析标签 code → 名称
+    tag_map = {d.code: d.name for d in ActivityTagDict.query.all()}
+    result = []
+    for a in activities:
+        item = a.to_dict()
+        raw_tags = item.get('tags', []) or []
+        item['tag_names'] = [tag_map.get(tc, tc) for tc in raw_tags]
+        # 关联诉求（完整信息）
+        demand_type_map = DemandTypeDict.build_display_name_map()
+        item['linked_demands'] = [
+            {
+                'id': d.id,
+                'demand_content': d.demand_content or '',
+                'demand_type_code': d.demand_type_code or '',
+                'demand_type_name': demand_type_map.get(d.demand_type_code, d.demand_type_code or ''),
+                'status': d.status,
+                'unit_code': d.unit_code or '',
+                'resolution': d.resolution or ''
+            }
+            for d in a.linked_demands.all()
+        ]
+        result.append(item)
+    return jsonify({'code': 0, 'data': result, 'total': total})
 
 
 # ============================================================
@@ -372,6 +410,17 @@ def list_public_demands():
         codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
         item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
+        # 关联动态（完整信息）
+        item['linked_activities'] = [
+            {
+                'id': a.id,
+                'date': a.date.strftime('%Y-%m-%d') if a.date else None,
+                'content': a.content or '',
+                'project_name': a.project.project_name if a.project else '',
+                'tags': json.loads(a.tags) if a.tags else []
+            }
+            for a in d.linked_activities.order_by(InvestmentActivity.date.desc()).all()
+        ]
         result.append(item)
 
     return jsonify({'code': 0, 'data': result, 'total': total})

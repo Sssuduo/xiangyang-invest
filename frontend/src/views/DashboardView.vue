@@ -157,14 +157,6 @@
           <div ref="typeChartRef" class="chart-box"></div>
         </div>
 
-        <!-- 项目对接分工（饼状图） -->
-        <div class="chart-panel">
-          <div class="chart-panel-header">
-            <h3>项目对接分工</h3>
-          </div>
-          <div ref="teamPieChartRef" class="chart-box" style="height:400px"></div>
-        </div>
-
         <!-- 对接单位分布（横向柱状图，支持下钻至类型） -->
         <div class="chart-panel chart-panel-full">
           <div class="chart-panel-header">
@@ -180,6 +172,14 @@
             </div>
           </div>
           <div ref="unitChartRef" class="chart-box"></div>
+        </div>
+
+        <!-- 项目对接分工（饼状图，按专班负责人） -->
+        <div class="chart-panel">
+          <div class="chart-panel-header">
+            <h3>项目对接分工（专班负责人）</h3>
+          </div>
+          <div ref="teamPieChartRef" class="chart-box" style="height:400px"></div>
         </div>
       </div>
     </div>

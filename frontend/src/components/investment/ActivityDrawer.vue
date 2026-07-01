@@ -24,6 +24,24 @@
             {{ name }}
           </el-tag>
         </el-descriptions-item>
+        <template v-if="activity.linked_demands && activity.linked_demands.length > 0">
+          <el-descriptions-item
+            v-for="(demand, idx) in activity.linked_demands"
+            :key="demand.id"
+            :label="`关联诉求${activity.linked_demands.length > 1 ? idx + 1 : ''}`"
+            :span="2"
+          >
+            <div class="demand-cell">
+              <div class="demand-cell-header">
+                <el-tag size="small" effect="dark" :color="demandStatusColor(demand.status)">
+                  {{ demandStatusName(demand.status) }}
+                </el-tag>
+                <span class="demand-cell-type">{{ demand.demand_type_name || demand.demand_type_code || '诉求' }}</span>
+              </div>
+              <div class="demand-cell-content">{{ dc(demand.demand_content) || '-' }}</div>
+            </div>
+          </el-descriptions-item>
+        </template>
         <el-descriptions-item label="附件" :span="2">
           <template v-if="activity.files && activity.files.length > 0">
             <div class="file-thumbnail-grid">
@@ -42,7 +60,7 @@
               </div>
             </div>
           </template>
-          <span v-else class="no-data">-</span>
+          <span v-else class="no-data">暂无附件</span>
         </el-descriptions-item>
         <el-descriptions-item label="写入时间">{{ fmtDt(activity.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="最后更新">{{ fmtDt(activity.updated_at) }}</el-descriptions-item>
@@ -62,6 +80,13 @@ const businessAuth = useBusinessAuthStore()
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
 
+function demandStatusColor(s) {
+  return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399'
+}
+function demandStatusName(s) {
+  return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s
+}
+
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   activity: { type: Object, default: null }
@@ -74,7 +99,8 @@ function handleClose() { emit('update:modelValue', false) }
 
 function fmtDt(d) {
   if (!d) return '-'
-  return new Date(d).toLocaleString('zh-CN', { hour12: false })
+  // DB 存储 UTC 时间，加 'Z' 后缀让 JS 按 UTC 解析，toLocaleString 自动转 UTC+8
+  return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false })
 }
 
 function getFileName(url) {
@@ -123,6 +149,28 @@ function openFile(url) {
   color: #303133; max-height: 300px; overflow-y: auto;
 }
 .no-data { color: #909399; }
+
+/* 关联诉求 */
+.demand-cell {
+  padding: 2px 0;
+}
+.demand-cell-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.demand-cell-type {
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+}
+.demand-cell-content {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 
 /* 文件缩略图网格 */
 .file-thumbnail-grid {

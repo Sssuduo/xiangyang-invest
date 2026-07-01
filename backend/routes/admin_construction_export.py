@@ -183,12 +183,16 @@ def update_export_fields():
 # 导出预览 & 下载 — 辅助函数
 # ============================================================
 
-def _get_last2_windows():
-    """全局查询最近2条工作进展的时间窗口，返回 (本周窗口, 上周窗口) 元组
-    每个窗口为 (start_date, end_date)，无进展时对应窗口为 None"""
-    recent = WorkProgress.query.order_by(WorkProgress.start_date.desc()).limit(2).all()
-    this_week = (recent[0].start_date, recent[0].end_date) if len(recent) >= 1 else None
-    last_week = (recent[1].start_date, recent[1].end_date) if len(recent) >= 2 else None
+def _get_last2_windows(project_ids=None):
+    """查询最近2条工作进展的唯一时间窗口（限定在勾选项目范围内），返回 (本周窗口, 上周窗口) 元组
+    每个窗口为 (start_date, end_date)，无进展时对应窗口为 None
+    使用 DISTINCT 避免多个项目同一天更新时，limit(2) 返回相同日期窗口导致上周=本周"""
+    q = db.session.query(WorkProgress.start_date, WorkProgress.end_date)
+    if project_ids:
+        q = q.filter(WorkProgress.project_id.in_(project_ids))
+    recent = q.distinct().order_by(WorkProgress.start_date.desc()).limit(2).all()
+    this_week = (recent[0][0], recent[0][1]) if len(recent) >= 1 else None
+    last_week = (recent[1][0], recent[1][1]) if len(recent) >= 2 else None
     return this_week, last_week
 
 
@@ -252,24 +256,17 @@ def _aggregate_work_progresses_last2(project, last2_windows):
 
 
 def _aggregate_issues(project):
-    """聚合调度问题，按创建时间倒序，序号分段"""
+    """聚合调度问题，按创建时间倒序，只输出问题描述内容"""
     issues = ProjectIssue.query.filter_by(project_id=project.id)\
         .order_by(ProjectIssue.created_at.desc()).all()
     if not issues:
         return ''
 
-    issue_type_map = {d.code: d.name for d in IssueTypeDict.query.all()}
-    resolution_map = {d.code: d.name for d in ResolutionStatusDict.query.all()}
-    org_map = {d.code: d.name for d in OrganizationDict.query.all()}
-
     lines = []
     for i, iss in enumerate(issues, 1):
-        type_name = issue_type_map.get(iss.issue_type_code, iss.issue_type_code or '')
-        status_name = resolution_map.get(iss.resolution_status_code, iss.resolution_status_code)
         desc = iss.issue_description or ''
-        resolution = f' | 措施: {iss.resolution_note}' if iss.resolution_note else ''
-        dept = f' | 责任部门: {org_map.get(iss.main_department_code, iss.main_department_code or "")}' if iss.main_department_code else ''
-        lines.append(f'{i}、[{type_name}][{status_name}] {desc}{dept}{resolution}')
+        if desc:
+            lines.append(f'{i}、{desc}')
     return '\n'.join(lines)
 
 
@@ -366,8 +363,8 @@ def export_preview():
     progress_range = data.get('progress_range', '').strip()
     work_path_range = data.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     fields = PrintFieldConfig.query.filter_by(template_id=template_id, is_visible=True)\
         .order_by(PrintFieldConfig.sort_order).all()
@@ -375,7 +372,8 @@ def export_preview():
     headers = [{'field_key': f.field_key, 'field_label': f.field_label, 'column_width': f.column_width}
                for f in fields]
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).limit(3).all()
@@ -401,8 +399,8 @@ def export_download():
     progress_mode = request.args.get('progress_mode', 'aggregate').strip()  # 'aggregate' | 'progress'
     work_path_range = request.args.get('work_path_range', 'pending').strip()
 
-    # 最近2条：预计算全局时间窗口
-    last2_windows = _get_last2_windows() if progress_range == 'last2' else None
+    # 最近2条：预计算时间窗口（限定在勾选项目范围内）
+    last2_windows = _get_last2_windows(project_ids) if progress_range == 'last2' else None
 
     template = PrintTemplate.query.get(template_id)
     template_name = template.name if template else '在建项目库'
@@ -412,7 +410,8 @@ def export_download():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置导出字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False)
+    q = ConstructionProject.query.filter_by(is_deleted=False) \
+        .filter(ConstructionProject.dispatch_status_code != 'exited')
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()

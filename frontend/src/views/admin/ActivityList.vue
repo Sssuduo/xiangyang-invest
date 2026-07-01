@@ -134,7 +134,7 @@
             <el-input v-model="form.content" type="textarea" :rows="4" placeholder="请输入动态内容..." maxlength="5000" show-word-limit />
           </el-form-item>
           <el-form-item label="附件">
-            <div class="upload-wrapper">
+            <div class="upload-wrapper" @paste="handleClipboardPaste">
               <el-upload
                 ref="uploadRef"
                 v-model:file-list="fileList"
@@ -151,7 +151,7 @@
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传；也可 <kbd>Ctrl+V</kbd> 粘贴图片</div>
                 </template>
               </el-upload>
             </div>
@@ -167,6 +167,16 @@
               <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
             </el-select>
           </el-form-item>
+          <el-form-item label="关联诉求">
+            <el-select v-model="form.demand_ids" multiple placeholder="选择关联的诉求（可选）" filterable style="width: 100%;" :disabled="!form.project_id">
+              <el-option v-for="d in projectDemands" :key="d.id" :label="d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}`" :value="d.id">
+                <span style="float:left">{{ d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}` }}</span>
+                <el-tag size="small" effect="plain" style="float:right; margin-left:8px" :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'warning' : 'info'">
+                  {{ d.status === 'pending' ? '待回应' : d.status === 'processing' ? '协调中' : '已回应' }}
+                </el-tag>
+              </el-option>
+            </el-select>
+          </el-form-item>
 
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
@@ -179,7 +189,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, InfoFilled, Document, UploadFilled, Delete, Edit, PriceTag } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
@@ -187,6 +197,7 @@ import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
 import { getPublicProjects, getProject, getPublicDemandDicts } from '@/api/investment'
+import { getDemands } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 
 const activities = ref([])
@@ -232,10 +243,12 @@ const defaultForm = () => ({
   date: '',
   content: '',
   files: [],
-  tags: []
+  tags: [],
+  demand_ids: []
 })
 
 const form = reactive(defaultForm())
+const projectDemands = ref([])
 
 const rules = {
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -243,6 +256,18 @@ const rules = {
 }
 
 onMounted(async () => { await loadProjects(); loadActivityTags(); fetchData() })
+
+watch(() => form.project_id, () => {
+  if (editDrawerVisible.value) loadProjectDemands()
+})
+
+async function loadProjectDemands() {
+  if (!form.project_id) { projectDemands.value = []; return }
+  try {
+    const res = await getDemands({ project_id: form.project_id, page_size: 999 })
+    if (res.code === 0) projectDemands.value = res.data || []
+  } catch { projectDemands.value = [] }
+}
 
 async function loadActivityTags() {
   try {
@@ -346,9 +371,11 @@ async function openEdit(row) {
       form.content = d.content || ''
       form.files = d.files || []
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
+      form.demand_ids = d.linked_demands ? d.linked_demands.map(dm => dm.id) : []
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
+      if (form.project_id) await loadProjectDemands()
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -378,9 +405,46 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 
+// ---- 剪贴板粘贴图片 ----
+async function handleClipboardPaste(event) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      event.preventDefault()
+      const blob = item.getAsFile()
+      if (!blob) continue
+      const ext = item.type.split('/')[1] || 'png'
+      const filename = `paste-${Date.now()}.${ext}`
+      const file = new File([blob], filename, { type: item.type })
+      const formData = new FormData()
+      formData.append('file', file)
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (data.code === 0) {
+          fileList.value.push({
+            name: filename,
+            url: data.data.url,
+            uid: Date.now() + Math.random()
+          })
+          ElMessage.success('图片已粘贴上传')
+        } else {
+          ElMessage.error(data.message || '图片上传失败')
+        }
+      } catch {
+        ElMessage.error('图片上传失败')
+      }
+    }
+  }
+}
+
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('请填写必填字段（项目、动态内容不能为空）')
+    return
+  }
 
   saving.value = true
   try {
@@ -390,7 +454,8 @@ async function handleSave() {
       date: form.date,
       content: form.content,
       files: docUrls,
-      tags: form.tags
+      tags: form.tags,
+      demand_ids: form.demand_ids || []
     }
     if (editMode.value === 'create') {
       await createActivity(data)
@@ -468,7 +533,7 @@ async function handleDelete(row) {
 .drawer-title-bar {
   background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
   margin: 0 -20px 0 -20px;
-  padding: 20px 20px 20px 40px;
+  padding: 30px 20px 26px 40px;
 }
 .drawer-title {
   color: #fff;
@@ -504,5 +569,10 @@ async function handleDelete(row) {
 }
 .el-drawer__body {
   padding: 12px 20px 20px !important;
+}
+/* 编辑抽屉标题蓝条 */
+.drawer-title-bar {
+  padding-top: 30px !important;
+  padding-bottom: 26px !important;
 }
 </style>

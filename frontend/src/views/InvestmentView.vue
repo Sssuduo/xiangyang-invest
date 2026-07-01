@@ -15,6 +15,12 @@
           <el-select v-model="filterProjectType" placeholder="项目类型" clearable @change="fetchData" style="width: 140px;">
             <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
+          <el-radio-group v-model="recentActivityDays" size="small" @change="fetchData">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="7">7日内更新</el-radio-button>
+            <el-radio-button value="15">15日内更新</el-radio-button>
+          </el-radio-group>
+          <div class="toolbar-spacer" />
           <el-dropdown
             v-if="selectedIds.length > 0"
             trigger="hover"
@@ -26,13 +32,7 @@
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="print">
-                  <el-icon><Printer /></el-icon> 在线打印
-                </el-dropdown-item>
-                <el-dropdown-item command="export">
-                  <el-icon><Download /></el-icon> 导出文件
-                </el-dropdown-item>
-                <el-dropdown-item command="export-print" divided>
+                <el-dropdown-item command="export-print">
                   <el-icon><Finished /></el-icon> 导出并打印
                 </el-dropdown-item>
                 <el-dropdown-item
@@ -654,8 +654,9 @@ const demandTypeTree = computed(() => {
 
 // 分页
 const currentPage = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(15)
 const showAll = ref(false)
+const recentActivityDays = ref('')
 
 const pagedProjects = computed(() => {
   if (showAll.value) return projects.value
@@ -841,6 +842,7 @@ async function fetchData() {
     if (filterFollowStatus.value.length > 0) params.follow_status = filterFollowStatus.value.join(',')
     if (filterMeetingStatus.value) params.meeting_status = filterMeetingStatus.value
     if (filterProjectType.value) params.project_type = filterProjectType.value
+    if (recentActivityDays.value) params.recent_activity_days = recentActivityDays.value
     const res = await getPublicProjects(params)
     projects.value = res.data || []
     currentPage.value = 1
@@ -921,7 +923,7 @@ async function handleBatchDelete() {
 
 // ---- 批量操作 ----
 function handleBatchCmd(cmd) {
-  if (cmd === 'print' || cmd === 'export' || cmd === 'export-print') {
+  if (cmd === 'export-print') {
     printExportDialogVisible.value = true
   } else if (cmd === 'batch-delete') {
     handleBatchDelete()

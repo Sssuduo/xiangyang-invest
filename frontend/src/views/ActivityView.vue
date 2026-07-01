@@ -89,9 +89,16 @@
           </el-table-column>
           <el-table-column label="标签" width="160">
             <template #default="{ row }">
-              <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
-                {{ getTagName(tag) }}
-              </el-tag>
+              <template v-if="row.tag_names && row.tag_names.length">
+                <el-tag v-for="tag_name in row.tag_names" :key="tag_name" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                  {{ tag_name }}
+                </el-tag>
+              </template>
+              <template v-else>
+                <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">
+                  {{ getTagName(tag) }}
+                </el-tag>
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
@@ -162,7 +169,7 @@
             <el-input v-model="form.content" type="textarea" :rows="4" placeholder="请输入动态内容..." maxlength="5000" show-word-limit />
           </el-form-item>
           <el-form-item label="附件">
-            <div class="upload-wrapper">
+            <div class="upload-wrapper" @paste="handleClipboardPaste">
               <el-upload
                 ref="uploadRef"
                 v-model:file-list="fileList"
@@ -180,7 +187,7 @@
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传；也可 <kbd>Ctrl+V</kbd> 粘贴图片</div>
                 </template>
               </el-upload>
               <!-- 文件缩略图网格 -->
@@ -213,6 +220,16 @@
           <el-form-item label="标签">
             <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
               <el-option v-for="d in activityTagDicts" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="关联诉求">
+            <el-select v-model="form.demand_ids" multiple placeholder="选择关联的诉求（可选）" filterable style="width: 100%;" :disabled="!form.project_id">
+              <el-option v-for="d in projectDemands" :key="d.id" :label="d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}`" :value="d.id">
+                <span style="float:left">{{ d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}` }}</span>
+                <el-tag size="small" effect="plain" style="float:right; margin-left:8px" :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'warning' : 'info'">
+                  {{ d.status === 'pending' ? '待回应' : d.status === 'processing' ? '协调中' : '已回应' }}
+                </el-tag>
+              </el-option>
             </el-select>
           </el-form-item>
 
@@ -399,7 +416,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag, Close } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
@@ -410,6 +427,7 @@ import { getPublicProjects, getProject } from '@/api/investment'
 import { downloadActivityExcel } from '@/api/activity_export'
 import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
 import { getDictItems } from '@/api/dict'
+import { getDemands } from '@/api/demand'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
 
@@ -458,6 +476,7 @@ const saving = ref(false)
 const fileList = ref([])
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
+const projectDemands = ref([])
 
 // ---- 下载导入模板对话框 ----
 const templateDialogVisible = ref(false)
@@ -486,7 +505,8 @@ const defaultForm = () => ({
   date: '',
   content: '',
   files: [],
-  tags: []
+  tags: [],
+  demand_ids: []
 })
 
 const form = reactive(defaultForm())
@@ -501,6 +521,18 @@ onMounted(async () => {
   await loadDicts()
   fetchData()
 })
+
+watch(() => form.project_id, () => {
+  if (editDrawerVisible.value) loadProjectDemands()
+})
+
+async function loadProjectDemands() {
+  if (!form.project_id) { projectDemands.value = []; return }
+  try {
+    const res = await getDemands({ project_id: form.project_id, page_size: 999 })
+    if (res.code === 0) projectDemands.value = res.data || []
+  } catch { projectDemands.value = [] }
+}
 
 async function loadDicts() {
   try {
@@ -563,9 +595,13 @@ function truncate(text, max) { if (!text) return ''; return text.length > max ? 
 
 // ---- 查看 ----
 function handleView(row) {
-  const tagMap = {}
-  activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
-  row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
+  if (row.tag_names) {
+    row._tagNames = row.tag_names
+  } else {
+    const tagMap = {}
+    activityTagDicts.value.forEach(t => { tagMap[t.code] = t.name })
+    row._tagNames = (row.tags || []).map(tc => tagMap[tc] || tc)
+  }
   viewActivity.value = row
   viewDrawerVisible.value = true
 }
@@ -757,9 +793,11 @@ async function openEdit(row) {
       form.content = d.content || ''
       form.files = d.files || []
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
+      form.demand_ids = d.linked_demands ? d.linked_demands.map(dm => dm.id) : []
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
+      if (form.project_id) await loadProjectDemands()
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -788,6 +826,40 @@ function beforeUpload(file) {
 function handleFileRemove(file) {
   const idx = fileList.value.findIndex(f => f.url === file.url || f.uid === file.uid)
   if (idx > -1) fileList.value.splice(idx, 1)
+}
+
+// ---- 剪贴板粘贴图片 ----
+async function handleClipboardPaste(event) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      event.preventDefault()
+      const blob = item.getAsFile()
+      if (!blob) continue
+      const ext = item.type.split('/')[1] || 'png'
+      const filename = `paste-${Date.now()}.${ext}`
+      const file = new File([blob], filename, { type: item.type })
+      const formData = new FormData()
+      formData.append('file', file)
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (data.code === 0) {
+          fileList.value.push({
+            name: filename,
+            url: data.data.url,
+            uid: Date.now() + Math.random()
+          })
+          ElMessage.success('图片已粘贴上传')
+        } else {
+          ElMessage.error(data.message || '图片上传失败')
+        }
+      } catch {
+        ElMessage.error('图片上传失败')
+      }
+    }
+  }
 }
 
 // ---- 文件缩略图辅助 ----
@@ -828,7 +900,10 @@ function handleThumbRemove(idx) {
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('请填写必填字段（项目、动态内容不能为空）')
+    return
+  }
 
   saving.value = true
   try {
@@ -838,7 +913,8 @@ async function handleSave() {
       date: form.date,
       content: form.content,
       files: docUrls,
-      tags: form.tags
+      tags: form.tags,
+      demand_ids: form.demand_ids || []
     }
 
     if (editMode.value === 'create') {
@@ -903,10 +979,18 @@ async function handleDelete(row) {
 /* ---- 编辑抽屉样式 ---- */
 .drawer-title-bar {
   background: linear-gradient(135deg, #3a7abd 0%, #6ba3d6 100%);
-  margin: -20px -20px 0 -20px;
-  padding: 10px 20px;
+  margin: 0 -20px 0 -20px;
+  padding: 28px 20px 24px 40px;
 }
-.drawer-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+.drawer-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .drawer-form { padding: 0 4px; }
 .drawer-form :deep(.el-form-item) { margin-bottom: 16px; }
 .drawer-form :deep(.el-input-number .el-input__inner) { text-align: left; }
@@ -1054,7 +1138,7 @@ async function handleDelete(row) {
 .template-table { margin-bottom: 4px; }
 </style>
 
-<!-- 非 scoped 样式：用于 Element Plus teleported popper -->
+<!-- 非 scoped 样式：用于 Element Plus teleported popper + drawer header -->
 <style>
 .import-content-tooltip {
   max-width: 600px !important;
@@ -1063,5 +1147,12 @@ async function handleDelete(row) {
   white-space: pre-wrap;
   line-height: 1.7;
   font-size: 13px;
+}
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
 }
 </style>

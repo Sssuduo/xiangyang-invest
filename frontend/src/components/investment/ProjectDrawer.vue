@@ -99,7 +99,7 @@ const visible = computed({ get: () => props.modelValue, set: v => emit('update:m
 function handleClose() { emit('update:modelValue', false) }
 
 function formatAmount(a) { if (!a && a !== 0) return '暂未明确'; const n = Number(a); if (n === 0) return '暂未明确'; return n >= 10000 ? (n / 10000).toFixed(2) + ' 亿元' : n.toLocaleString('zh-CN') + ' 万元' }
-function fmtDt(d) { if (!d) return '-'; return new Date(d).toLocaleString('zh-CN', { hour12: false }) }
+function fmtDt(d) { if (!d) return '-'; return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false }) }
 function dStatusColor(s) { return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399' }
 function dStatusName(s) { return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s }
 </script>

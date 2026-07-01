@@ -71,6 +71,29 @@
               <span>{{ act.date || act.created_at?.slice(0, 10) || '-' }}</span>
             </div>
             <div class="card-body">{{ dc(act.content) }}</div>
+            <!-- 关联诉求（流式） -->
+            <div v-if="act.linked_demands && act.linked_demands.length > 0" class="card-demands">
+              <div class="demands-toggle" @click="toggleDemands(act.id)">
+                <el-icon :class="{ rotated: expandedDemands.has(act.id) }"><ArrowRight /></el-icon>
+                <span>关联诉求 ({{ act.linked_demands.length }})</span>
+              </div>
+              <div v-show="expandedDemands.has(act.id)" class="demands-list">
+                <div
+                  v-for="demand in act.linked_demands"
+                  :key="demand.id"
+                  class="demand-card"
+                  @click="openDemandDrawer(demand.id)"
+                >
+                  <div class="demand-card-header">
+                    <el-tag size="small" effect="dark" :color="demandStatusColor(demand.status)">
+                      {{ demandStatusName(demand.status) }}
+                    </el-tag>
+                    <span class="demand-card-type">{{ demand.demand_type_name || demand.demand_type_code || '诉求' }}</span>
+                  </div>
+                  <div class="demand-card-content">{{ dc(demand.demand_content) }}</div>
+                </div>
+              </div>
+            </div>
             <!-- 附件 -->
             <div v-if="act.files && act.files.length > 0" class="card-files">
               <div
@@ -143,6 +166,28 @@
             </div>
           </div>
           <div class="simple-content">{{ dc(act.content) }}</div>
+          <!-- 关联诉求（极简 - 表格） -->
+          <div v-if="act.linked_demands && act.linked_demands.length > 0" class="simple-demands">
+            <table class="demands-table">
+              <thead>
+                <tr><th>诉求类型</th><th>诉求内容</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="demand in act.linked_demands" :key="demand.id">
+                  <td class="td-type">{{ demand.demand_type_name || demand.demand_type_code || '-' }}</td>
+                  <td class="td-content">{{ dc(demand.demand_content) }}</td>
+                  <td class="td-status">
+                    <el-tag size="small" effect="dark" :color="demandStatusColor(demand.status)">
+                      {{ demandStatusName(demand.status) }}
+                    </el-tag>
+                  </td>
+                  <td class="td-action">
+                    <el-button size="small" link type="primary" @click="openDemandDrawer(demand.id)">查看</el-button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <!-- 附件 -->
           <div v-if="act.files && act.files.length > 0" class="simple-files">
             <div
@@ -176,6 +221,47 @@
         </div>
       </div>
     </div>
+
+    <!-- 诉求详情抽屉（点击关联诉求卡片弹出） -->
+    <el-drawer
+      v-model="demandDrawerVisible"
+      direction="rtl"
+      size="560px"
+      @closed="demandDrawerData = null"
+    >
+      <template #header>
+        <div class="drawer-title-bar">
+          <span class="drawer-title">
+            <el-icon><View /></el-icon>
+            诉求详情
+          </span>
+        </div>
+      </template>
+      <template v-if="demandDrawerData">
+        <el-descriptions :column="2" border size="small" class="detail-desc">
+          <el-descriptions-item label="项目" :span="2">
+            <strong>{{ dn(demandDrawerData.project_name) }}</strong>
+          </el-descriptions-item>
+          <el-descriptions-item label="诉求类型">
+            {{ demandDrawerData.demand_type_name || demandDrawerData.demand_type_code || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="对接单位">
+            {{ demandDrawerData.unit_name || demandDrawerData.unit_code || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态" :span="2">
+            <el-tag :color="demandStatusColor(demandDrawerData.status)" effect="dark" size="small">
+              {{ demandStatusName(demandDrawerData.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="诉求内容" :span="2">
+            <div class="text-block">{{ dc(demandDrawerData.demand_content) || '-' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="解决措施" :span="2">
+            <div class="text-block">{{ dc(demandDrawerData.resolution) || '暂无' }}</div>
+          </el-descriptions-item>
+        </el-descriptions>
+      </template>
+    </el-drawer>
 
     <!-- 编辑/新建动态弹窗 -->
     <el-dialog
@@ -230,6 +316,16 @@
             <el-option v-for="d in activityTags" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关联诉求">
+          <el-select v-model="form.demand_ids" multiple placeholder="选择关联的诉求（可选）" filterable style="width: 100%;" :disabled="!props.projectId">
+            <el-option v-for="d in projectDemands" :key="d.id" :label="d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}`" :value="d.id">
+              <span style="float:left">{{ d.demand_content ? d.demand_content.slice(0, 50) : `诉求#${d.id}` }}</span>
+              <el-tag size="small" effect="plain" style="float:right; margin-left:8px" :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'warning' : 'info'">
+                {{ d.status === 'pending' ? '待回应' : d.status === 'processing' ? '协调中' : '已回应' }}
+              </el-tag>
+            </el-option>
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
@@ -243,17 +339,51 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, Plus, UploadFilled } from '@element-plus/icons-vue'
+import { ChatLineSquare, Clock, ZoomIn, Download, View, Document, Edit, Delete, Plus, UploadFilled, ArrowRight } from '@element-plus/icons-vue'
 import { getPublicActivities, createActivity, updateActivity, deleteActivity } from '@/api/activity'
+import { getDemands, getDemand } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
 
 const businessAuth = useBusinessAuthStore()
+const router = useRouter()
 
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
+
+// 关联诉求展开/折叠
+const expandedDemands = ref(new Set())
+function toggleDemands(actId) {
+  const s = new Set(expandedDemands.value)
+  if (s.has(actId)) s.delete(actId)
+  else s.add(actId)
+  expandedDemands.value = s
+}
+
+function demandStatusColor(s) {
+  return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399'
+}
+function demandStatusName(s) {
+  return { pending: '待回应', processing: '协调中', resolved: '已回应' }[s] || s
+}
+
+// 诉求详情抽屉
+const demandDrawerVisible = ref(false)
+const demandDrawerData = ref(null)
+
+async function openDemandDrawer(demandId) {
+  if (businessAuth.isVisitor) return
+  try {
+    const res = await getDemand(demandId)
+    if (res.code === 0) {
+      demandDrawerData.value = res.data
+      demandDrawerVisible.value = true
+    }
+  } catch { /* ignore */ }
+}
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -273,11 +403,12 @@ const editMode = ref('create') // 'create' | 'edit'
 const editingId = ref(null)
 const saving = ref(false)
 const formRef = ref(null)
-const form = ref({ date: '', content: '', tags: [] })
+const form = ref({ date: '', content: '', tags: [], demand_ids: [] })
 const editFileList = ref([])
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 const activityTags = ref([])
+const projectDemands = ref([])
 
 async function loadActivityTags() {
   try {
@@ -286,8 +417,16 @@ async function loadActivityTags() {
   } catch { /* ignore */ }
 }
 
+async function loadProjectDemands() {
+  if (!props.projectId) { projectDemands.value = []; return }
+  try {
+    const res = await getDemands({ project_id: props.projectId, page_size: 999 })
+    if (res.code === 0) projectDemands.value = res.data || []
+  } catch { projectDemands.value = [] }
+}
+
 function resetForm() {
-  form.value = { date: '', content: '', tags: [] }
+  form.value = { date: '', content: '', tags: [], demand_ids: [] }
   editFileList.value = []
   editingId.value = null
   formRef.value?.clearValidate()
@@ -323,6 +462,7 @@ function openCreateDialog() {
   editMode.value = 'create'
   resetForm()
   loadActivityTags()
+  loadProjectDemands()
   editDialogVisible.value = true
 }
 
@@ -333,12 +473,14 @@ function openEditDialog(act) {
   form.value = {
     date: act.date || '',
     content: act.content || '',
-    tags: Array.isArray(act.tags) ? [...act.tags] : []
+    tags: Array.isArray(act.tags) ? [...act.tags] : [],
+    demand_ids: act.linked_demands ? act.linked_demands.map(d => d.id) : []
   }
   editFileList.value = (act.files || []).map((url, i) => ({
     name: url.split('/').pop() || `文件${i + 1}`,
     url
   }))
+  loadProjectDemands()
   editDialogVisible.value = true
 }
 
@@ -355,7 +497,8 @@ async function handleSave() {
       date: form.value.date || null,
       content: form.value.content,
       files: docUrls,
-      tags: form.value.tags
+      tags: form.value.tags,
+      demand_ids: form.value.demand_ids || []
     }
 
     if (editMode.value === 'create') {
@@ -843,5 +986,119 @@ function downloadFile(url) {
 }
 .sfile-doc:hover {
   background: #d9ecff;
+}
+
+/* ---- 关联诉求（流式）---- */
+.card-demands {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #e4e7ed;
+}
+.demands-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #1a3a5c;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #ecf5ff;
+  transition: background 0.2s;
+  user-select: none;
+}
+.demands-toggle:hover { background: #d9ecff; }
+.demands-toggle .el-icon {
+  font-size: 14px;
+  transition: transform 0.25s;
+}
+.demands-toggle .el-icon.rotated { transform: rotate(90deg); }
+
+.demands-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.demand-card {
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.demand-card:hover {
+  border-color: #409eff;
+  box-shadow: 0 2px 8px rgba(64,158,255,0.12);
+}
+.demand-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.demand-card-type {
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+}
+.demand-card-content {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- 关联诉求（极简 - 表格）---- */
+.simple-demands {
+  margin-top: 12px;
+}
+.demands-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.demands-table th {
+  background: #f5f7fa;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #606266;
+  border: 1px solid #e4e7ed;
+}
+.demands-table td {
+  padding: 8px 10px;
+  border: 1px solid #e4e7ed;
+  color: #303133;
+  vertical-align: middle;
+}
+.td-type { width: 80px; white-space: nowrap; }
+.td-status { width: 80px; text-align: center; }
+.td-action { width: 60px; text-align: center; }
+.td-content {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 诉求详情抽屉 ---- */
+.detail-desc :deep(.el-descriptions__label) {
+  width: 100px;
+  font-weight: 500;
+  color: #606266;
+}
+.text-block {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 13px;
+  color: #303133;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>

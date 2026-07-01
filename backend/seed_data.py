@@ -88,6 +88,14 @@ def init_database(app):
         "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
         "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
         "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+        # V13.4: 招商动态 ↔ 企业诉求 多对多关联表
+        "CREATE TABLE IF NOT EXISTS activity_demand_link ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "activity_id INTEGER NOT NULL REFERENCES investment_activities(id) ON DELETE CASCADE, "
+        "demand_id INTEGER NOT NULL REFERENCES enterprise_demands(id) ON DELETE CASCADE, "
+        "created_at DATETIME DEFAULT (datetime('now')), "
+        "UNIQUE(activity_id, demand_id)"
+        ")",
     ]
     # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
     drop_index_sqls = [
@@ -729,6 +737,8 @@ def _seed_construction_print_fields():
     template_cons.cell_font_size = 12
     template_cons.table_header_font_family = '微软雅黑'
     template_cons.table_header_font_size = 12
+    template_cons.sub_title_font_size = 20
+    template_cons.subtitle_bold = True
 
     # 列映射：模板列字母 → field_key（14列 A-N）
     cons_column_mappings = [
@@ -914,6 +924,7 @@ def _seed_construction_dicts():
     dispatch_statuses = [
         ('dispatching', '调度中', 1),
         ('no_dispatch', '不予调度', 2),
+        ('exited', '退出调度', 3),
     ]
     for code, name, order in dispatch_statuses:
         if not DispatchStatusDict.query.filter_by(code=code).first():
@@ -927,11 +938,11 @@ def _seed_construction_dicts():
         if not IssueTypeDict.query.filter_by(code=code).first():
             db.session.add(IssueTypeDict(code=code, name=name, sort_order=order))
 
-    # 解决状态
+    # 调度问题状态（独立于项目调度状态）
     resolution_statuses = [
-        ('pending', '待回应', '#f56c6c', 1),
-        ('processing', '协调中', '#e6a23c', 2),
-        ('resolved', '已回应', '#67c23a', 3),
+        ('pending', '待处理', '#f56c6c', 1),
+        ('processing', '处理中', '#e6a23c', 2),
+        ('resolved', '已完成', '#67c23a', 3),
     ]
     for code, name, color, order in resolution_statuses:
         existing = ResolutionStatusDict.query.filter_by(code=code).first()

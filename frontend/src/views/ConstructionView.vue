@@ -63,6 +63,11 @@
               :value="d.code"
             />
           </el-select>
+          <el-radio-group v-model="recentProgressDays" size="small" @change="currentPage = 1; fetchData()">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="7">7日内更新</el-radio-button>
+            <el-radio-button value="15">15日内更新</el-radio-button>
+          </el-radio-group>
           <div class="toolbar-spacer" />
           <el-dropdown
             v-if="businessAuth.hasPermission('construction', 'import')"
@@ -101,14 +106,16 @@
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="print">
-                  <el-icon><Printer /></el-icon> 在线打印
-                </el-dropdown-item>
-                <el-dropdown-item command="export">
-                  <el-icon><Download /></el-icon> 导出文件
-                </el-dropdown-item>
-                <el-dropdown-item command="export-print" divided>
+                <el-dropdown-item command="export-print">
                   <el-icon><Finished /></el-icon> 导出并打印
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="businessAuth.hasPermission('construction', 'batch_delete')"
+                  command="batch-delete"
+                  divided
+                  style="color: #f56c6c;"
+                >
+                  <el-icon><Delete /></el-icon> 批量删除
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -627,6 +634,57 @@
             </el-select>
           </el-form-item>
 
+          <!-- 存在问题 -->
+          <div class="section-header">
+            <span class="section-icon"><el-icon><WarningFilled /></el-icon></span>
+            <span class="section-title">存在问题</span>
+            <el-button size="small" type="primary" link @click="addIssue" style="margin-left: auto;">
+              <el-icon><Plus /></el-icon>添加问题
+            </el-button>
+          </div>
+          <div v-if="form.issues.length === 0" class="empty-hint">暂无调度问题</div>
+          <div v-for="(iss, i) in form.issues" :key="i" class="issue-edit-card">
+            <div class="issue-edit-card-header">
+              <span class="issue-edit-index">问题 {{ i + 1 }}</span>
+              <el-button size="small" type="danger" link @click="form.issues.splice(i, 1)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="问题类型" label-width="80px">
+                  <el-select v-model="iss.issue_type_code" placeholder="选择类型" clearable style="width:100%">
+                    <el-option v-for="d in dicts.issue_types" :key="d.code" :label="d.name" :value="d.code" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="解决状态" label-width="80px">
+                  <el-select v-model="iss.resolution_status_code" placeholder="选择状态" style="width:100%">
+                    <el-option v-for="d in dicts.resolution_statuses" :key="d.code" :label="d.name" :value="d.code" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="问题描述" label-width="80px">
+              <el-input v-model="iss.issue_description" placeholder="请输入问题描述" type="textarea" :rows="2" maxlength="500" show-word-limit />
+            </el-form-item>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="责任部门" label-width="80px">
+                  <el-select v-model="iss.main_department_code" placeholder="选择部门" clearable style="width:100%">
+                    <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="解决措施" label-width="80px">
+                  <el-input v-model="iss.resolution_note" placeholder="解决措施" maxlength="300" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </div>
+
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="handleSave">
@@ -869,7 +927,8 @@ import {
   InfoFilled, Document, OfficeBuilding, Guide,
   Check, Clock, Close, Edit,
   Upload, UploadFilled, Download, User,
-  ArrowUp, ArrowDown, Operation, Printer, Finished
+  ArrowUp, ArrowDown, Operation, Printer, Finished,
+  WarningFilled
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProgressTimelineDrawer from '@/components/investment/ProgressTimelineDrawer.vue'
@@ -906,7 +965,7 @@ const printExportDialogVisible = ref(false)
 
 // ---- 批量操作 ----
 function handleBatchCmd(cmd) {
-  if (cmd === 'print' || cmd === 'export' || cmd === 'export-print') {
+  if (cmd === 'export-print') {
     printExportDialogVisible.value = true
   } else if (cmd === 'batch-delete') { handleBatchDelete() }
 }
@@ -982,8 +1041,9 @@ const dicts = reactive({
 
 // 分页
 const currentPage = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(15)
 const showAll = ref(false)
+const recentProgressDays = ref('')
 
 const pagedProjects = computed(() => {
   if (showAll.value) return projects.value
@@ -1014,7 +1074,8 @@ const defaultForm = () => ({
   responsible_unit_code: '',
   responsible_person: '',
   responsible_person_phone: '',
-  team_leader_ids: []
+  team_leader_ids: [],
+  issues: []
 })
 const form = reactive(defaultForm())
 
@@ -1097,6 +1158,7 @@ async function fetchData() {
     if (filterDispatchStatus.value) params.dispatch_status = filterDispatchStatus.value
     if (filterProjectType.value) params.project_type = filterProjectType.value
     if (filterResponsibleUnit.value) params.responsible_unit = filterResponsibleUnit.value
+    if (recentProgressDays.value) params.recent_progress_days = recentProgressDays.value
     const res = await getProjects(params)
     projects.value = res.data || []
     currentPage.value = 1
@@ -1168,11 +1230,28 @@ async function openEdit(row) {
       form.responsible_person = d.responsible_person || ''
       form.responsible_person_phone = d.responsible_person_phone || ''
       form.team_leader_ids = Array.isArray(d.team_leader_ids) ? [...d.team_leader_ids] : []
+      form.issues = (d.issues || []).map(iss => ({
+        issue_type_code: iss.issue_type_code || '',
+        issue_description: iss.issue_description || '',
+        resolution_status_code: iss.resolution_status_code || 'pending',
+        resolution_note: iss.resolution_note || '',
+        main_department_code: iss.main_department_code || ''
+      }))
     }
     editDrawerVisible.value = true
   } catch (err) {
     ElMessage.error(err.message || '获取项目详情失败')
   }
+}
+
+function addIssue() {
+  form.issues.push({
+    issue_type_code: '',
+    issue_description: '',
+    resolution_status_code: 'pending',
+    resolution_note: '',
+    main_department_code: ''
+  })
 }
 
 function resetForm() {
@@ -1895,6 +1974,16 @@ async function handleViewDetail(row) {
 .issue-dept { font-size: 12px; color: #909399; }
 .issue-desc { font-size: 13px; color: #4a5568; margin: 0 0 4px; line-height: 1.6; }
 .issue-resolution { font-size: 13px; color: #67c23a; margin: 0; }
+.issue-edit-card {
+  padding: 12px 14px; background: #fafbfc; border-radius: 6px;
+  border: 1px solid #e4e7ed; margin-bottom: 10px;
+}
+.issue-edit-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #dcdfe6;
+}
+.issue-edit-index { font-weight: 600; font-size: 13px; color: #1a3a5c; }
+.empty-hint { text-align: center; color: #c0c4cc; padding: 16px 0; font-size: 13px; }
 </style>
 
 <!-- 非 scoped 样式 -->

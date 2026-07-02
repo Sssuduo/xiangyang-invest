@@ -535,7 +535,7 @@ function renderTypeChart() {
         return html
       }
     },
-    grid: { left: 12, right: 24, top: 16, bottom: 80, containLabel: true },
+    grid: { left: 12, right: 24, top: 28, bottom: 80, containLabel: true },
     xAxis: {
       type: 'category',
       data: names,

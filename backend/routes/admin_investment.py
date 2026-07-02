@@ -310,6 +310,9 @@ def update_project(project_id):
                 old_val = json.dumps(json.loads(old_val) if old_val else [], ensure_ascii=False) if old_val else '[]'
             old_values[field] = old_val
 
+    # 标记是否有实际内容变更（用于跳过时间戳刷新）
+    project_changed = False
+
     for field in updatable_fields:
         if field in data:
             val = data[field]
@@ -319,7 +322,22 @@ def update_project(project_id):
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
             elif field == 'team_leader_ids':
                 val = json.dumps(val, ensure_ascii=False) if isinstance(val, list) else val
-            setattr(project, field, val)
+
+            # 比较新旧值，仅在实际变更时写入（避免无变更时刷新 last_updated_at）
+            old_val = getattr(project, field)
+            if field == 'first_contact_date':
+                old_cmp = old_val.isoformat() if old_val else None
+                new_cmp = val.isoformat() if val else None
+                changed = (old_cmp != new_cmp)
+            elif field in ('tags', 'team_leader_ids'):
+                old_str = json.dumps(json.loads(old_val) if old_val else [], ensure_ascii=False) if old_val else '[]'
+                new_str = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
+                changed = (old_str != new_str)
+            else:
+                changed = (str(old_val or '') != str(val or ''))
+            if changed:
+                setattr(project, field, val)
+                project_changed = True
 
     # 审计日志：对比新旧值
     if user_info:

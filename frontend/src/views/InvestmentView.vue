@@ -288,230 +288,242 @@
       </template>
       <div class="drawer-form">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" label-position="right">
-          <!-- 基础信息 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
-            <span class="section-title">基础信息</span>
-          </div>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="顺序号" prop="order_no">
-                <el-input-number v-model="form.order_no" :min="0" :max="9999" controls-position="right" style="width: 100%;" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="项目类型" prop="project_type_code">
-                <el-select v-model="form.project_type_code" placeholder="请选择" style="width: 100%;">
-                  <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-form-item label="项目名称" prop="project_name">
-            <el-input v-model="form.project_name" placeholder="请输入项目名称" maxlength="255" />
-          </el-form-item>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="投资金额" prop="invest_amount">
-                <el-input-number v-model="form.invest_amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 100%;" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="首次对接时间">
-                <el-date-picker v-model="form.first_contact_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 100%;" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <!-- 企业信息 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><OfficeBuilding /></el-icon></span>
-            <span class="section-title">企业信息</span>
-          </div>
-          <el-form-item label="投资商名称" prop="invest_enterprise">
-            <el-input v-model="form.invest_enterprise" placeholder="请输入投资商名称" maxlength="255" />
-          </el-form-item>
-          <el-form-item label="企业简介" prop="enterprise_info">
-            <el-input v-model="form.enterprise_info" type="textarea" :rows="6" placeholder="企业简介..." maxlength="2000" show-word-limit />
-          </el-form-item>
-
-          <!-- 项目详情 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><Document /></el-icon></span>
-            <span class="section-title">项目详情</span>
-          </div>
-          <el-form-item label="项目内容" prop="project_content">
-            <el-input v-model="form.project_content" type="textarea" :rows="6" placeholder="项目详细内容..." maxlength="5000" show-word-limit />
-          </el-form-item>
-          <el-form-item label="项目文档">
-            <div class="upload-wrapper">
-              <el-upload
-                ref="uploadRef"
-                v-model:file-list="fileList"
-                :action="uploadUrl"
-                :headers="uploadHeaders"
-                :on-success="handleUploadSuccess"
-                :on-error="handleUploadError"
-                :before-upload="beforeUpload"
-                :on-remove="handleFileRemove"
-                multiple
-                drag
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
-                class="upload-compact"
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
-              </el-upload>
-              <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
-            </div>
-          </el-form-item>
-          <el-form-item label="项目投资计划书">
-            <div class="upload-wrapper">
-              <el-upload
-                ref="planUploadRef"
-                v-model:file-list="planFileList"
-                :action="uploadUrl"
-                :headers="uploadHeaders"
-                :on-success="handlePlanUploadSuccess"
-                :on-error="handleUploadError"
-                :before-upload="beforeUpload"
-                :on-remove="handlePlanFileRemove"
-                multiple
-                drag
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
-                class="upload-compact"
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
-              </el-upload>
-              <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
-            </div>
-          </el-form-item>
-
-          <!-- 专班研判结论 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><DataAnalysis /></el-icon></span>
-            <span class="section-title">专班研判结论</span>
-          </div>
-          <el-form-item label="研判结论">
-            <el-input v-model="form.conclusion" type="textarea" :rows="4" placeholder="专班研判结论..." maxlength="3000" show-word-limit />
-          </el-form-item>
-
-          <!-- 对接信息 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><Connection /></el-icon></span>
-            <span class="section-title">对接信息</span>
-          </div>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="跟进状态" prop="follow_status_code">
-                <el-select v-model="form.follow_status_code" style="width: 100%;">
-                  <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="上会状态" prop="meeting_status_code">
-                <el-select v-model="form.meeting_status_code" style="width: 100%;">
-                  <el-option v-for="d in dicts.meeting_statuses" :key="d.code" :label="d.name" :value="d.code" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="推介单位">
-                <el-select v-model="form.recommend_unit_code" placeholder="请选择" clearable style="width: 100%;">
-                  <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="责任单位" prop="responsible_unit_code">
-                <el-select v-model="form.responsible_unit_code" style="width: 100%;">
-                  <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="责任人">
-                <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="联系电话">
-                <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <!-- 项目标签 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
-            <span class="section-title">项目标签</span>
-          </div>
-          <el-form-item label="标签">
-            <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
-              <el-option v-for="d in dicts.project_tags" :key="d.code" :label="d.name" :value="d.code" />
-            </el-select>
-          </el-form-item>
-
-          <!-- 专班负责人 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><User /></el-icon></span>
-            <span class="section-title">专班负责人</span>
-          </div>
-          <el-form-item label="专班负责人">
-            <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
-              <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
-            </el-select>
-          </el-form-item>
-
-          <!-- 企业诉求 -->
-          <div class="section-header">
-            <span class="section-icon"><el-icon><ChatLineSquare /></el-icon></span>
-            <span class="section-title">企业诉求</span>
-          </div>
-          <div class="demands-section">
-            <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
-              <div class="demand-card-header">
-                <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
+          <el-tabs v-model="editActiveTab" class="drawer-tabs">
+            <!-- ================================================================ -->
+            <!-- 项目情况 -->
+            <!-- ================================================================ -->
+            <el-tab-pane label="项目情况" name="project">
+              <!-- 基础信息 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
+                <span class="section-title">基础信息</span>
               </div>
-              <el-row :gutter="12" style="margin-bottom: 8px;">
-                <el-col :span="16">
-                  <el-cascader
-                    v-model="d._cascader"
-                    :options="demandTypeTree"
-                    :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
-                    placeholder="诉求类型（可多选）"
-                    clearable
-                    collapse-tags
-                    collapse-tags-tooltip
-                    size="small"
-                    style="width: 100%;"
-                  />
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="顺序号" prop="order_no">
+                    <el-input-number v-model="form.order_no" :min="0" :max="9999" controls-position="right" style="width: 100%;" />
+                  </el-form-item>
                 </el-col>
-                <el-col :span="8">
-                  <el-select v-model="d.unit_code" placeholder="对接单位" size="small" style="width: 100%;">
-                    <el-option v-for="org in dicts.organizations" :key="org.code" :label="org.name" :value="org.code" />
-                  </el-select>
+                <el-col :span="12">
+                  <el-form-item label="项目类型" prop="project_type_code">
+                    <el-select v-model="form.project_type_code" placeholder="请选择" style="width: 100%;">
+                      <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
+                    </el-select>
+                  </el-form-item>
                 </el-col>
               </el-row>
-              <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
-              <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
-              <el-select v-model="d.status" size="small" style="width: 120px;">
-                <el-option label="待回应" value="pending" />
-                <el-option label="协调中" value="processing" />
-                <el-option label="已回应" value="resolved" />
-              </el-select>
-            </div>
-            <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
-              <el-icon><Plus /></el-icon> 添加诉求
-            </el-button>
-          </div>
+              <el-form-item label="项目名称" prop="project_name">
+                <el-input v-model="form.project_name" placeholder="请输入项目名称" maxlength="255" />
+              </el-form-item>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="投资金额" prop="invest_amount">
+                    <el-input-number v-model="form.invest_amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 100%;" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="首次对接时间">
+                    <el-date-picker v-model="form.first_contact_date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 100%;" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <!-- 企业信息 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><OfficeBuilding /></el-icon></span>
+                <span class="section-title">企业信息</span>
+              </div>
+              <el-form-item label="投资商名称" prop="invest_enterprise">
+                <el-input v-model="form.invest_enterprise" placeholder="请输入投资商名称" maxlength="255" />
+              </el-form-item>
+              <el-form-item label="企业简介" prop="enterprise_info">
+                <el-input v-model="form.enterprise_info" type="textarea" :rows="6" placeholder="企业简介..." maxlength="2000" show-word-limit />
+              </el-form-item>
+
+              <!-- 项目详情 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><Document /></el-icon></span>
+                <span class="section-title">项目详情</span>
+              </div>
+              <el-form-item label="项目内容" prop="project_content">
+                <el-input v-model="form.project_content" type="textarea" :rows="6" placeholder="项目详细内容..." maxlength="5000" show-word-limit />
+              </el-form-item>
+              <el-form-item label="项目文档">
+                <div class="upload-wrapper">
+                  <el-upload
+                    ref="uploadRef"
+                    v-model:file-list="fileList"
+                    :action="uploadUrl"
+                    :headers="uploadHeaders"
+                    :on-success="handleUploadSuccess"
+                    :on-error="handleUploadError"
+                    :before-upload="beforeUpload"
+                    :on-remove="handleFileRemove"
+                    multiple
+                    drag
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    class="upload-compact"
+                  >
+                    <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                    <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
+                  </el-upload>
+                  <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                </div>
+              </el-form-item>
+              <el-form-item label="项目投资计划书">
+                <div class="upload-wrapper">
+                  <el-upload
+                    ref="planUploadRef"
+                    v-model:file-list="planFileList"
+                    :action="uploadUrl"
+                    :headers="uploadHeaders"
+                    :on-success="handlePlanUploadSuccess"
+                    :on-error="handleUploadError"
+                    :before-upload="beforeUpload"
+                    :on-remove="handlePlanFileRemove"
+                    multiple
+                    drag
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    class="upload-compact"
+                  >
+                    <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                    <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
+                  </el-upload>
+                  <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                </div>
+              </el-form-item>
+
+              <!-- 项目标签 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
+                <span class="section-title">项目标签</span>
+              </div>
+              <el-form-item label="标签">
+                <el-select v-model="form.tags" multiple placeholder="请选择标签" style="width: 100%;">
+                  <el-option v-for="d in dicts.project_tags" :key="d.code" :label="d.name" :value="d.code" />
+                </el-select>
+              </el-form-item>
+            </el-tab-pane>
+
+            <!-- ================================================================ -->
+            <!-- 对接情况 -->
+            <!-- ================================================================ -->
+            <el-tab-pane label="对接情况" name="contact">
+              <!-- 专班研判结论 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><DataAnalysis /></el-icon></span>
+                <span class="section-title">专班研判结论</span>
+              </div>
+              <el-form-item label="研判结论">
+                <el-input v-model="form.conclusion" type="textarea" :rows="4" placeholder="专班研判结论..." maxlength="3000" show-word-limit />
+              </el-form-item>
+
+              <!-- 对接信息 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><Connection /></el-icon></span>
+                <span class="section-title">对接信息</span>
+              </div>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="跟进状态" prop="follow_status_code">
+                    <el-select v-model="form.follow_status_code" style="width: 100%;">
+                      <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="上会状态" prop="meeting_status_code">
+                    <el-select v-model="form.meeting_status_code" style="width: 100%;">
+                      <el-option v-for="d in dicts.meeting_statuses" :key="d.code" :label="d.name" :value="d.code" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="推介单位">
+                    <el-select v-model="form.recommend_unit_code" placeholder="请选择" clearable style="width: 100%;">
+                      <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="责任单位" prop="responsible_unit_code">
+                    <el-select v-model="form.responsible_unit_code" style="width: 100%;">
+                      <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="责任人">
+                    <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="联系电话">
+                    <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <!-- 专班负责人 -->
+              <div class="section-header">
+                <span class="section-icon"><el-icon><User /></el-icon></span>
+                <span class="section-title">专班负责人</span>
+              </div>
+              <el-form-item label="专班负责人">
+                <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
+                  <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+              </el-form-item>
+            </el-tab-pane>
+
+            <!-- ================================================================ -->
+            <!-- 企业诉求 -->
+            <!-- ================================================================ -->
+            <el-tab-pane label="企业诉求" name="demands">
+              <div class="demands-section">
+                <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
+                  <div class="demand-card-header">
+                    <span class="demand-card-title">诉求 {{ i + 1 }}</span>
+                    <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
+                  </div>
+                  <el-row :gutter="12" style="margin-bottom: 8px;">
+                    <el-col :span="16">
+                      <el-cascader
+                        v-model="d._cascader"
+                        :options="demandTypeTree"
+                        :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
+                        placeholder="诉求类型（可多选）"
+                        clearable
+                        collapse-tags
+                        collapse-tags-tooltip
+                        size="small"
+                        style="width: 100%;"
+                      />
+                    </el-col>
+                    <el-col :span="8">
+                      <el-select v-model="d.unit_code" placeholder="对接单位" size="small" style="width: 100%;">
+                        <el-option v-for="org in dicts.organizations" :key="org.code" :label="org.name" :value="org.code" />
+                      </el-select>
+                    </el-col>
+                  </el-row>
+                  <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
+                  <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
+                  <el-select v-model="d.status" size="small" style="width: 120px;">
+                    <el-option label="待回应" value="pending" />
+                    <el-option label="协调中" value="processing" />
+                    <el-option label="已回应" value="resolved" />
+                  </el-select>
+                </div>
+                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
+                  <el-icon><Plus /></el-icon> 添加诉求
+                </el-button>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
 
           <div class="drawer-footer">
             <el-button @click="editDrawerVisible = false">取消</el-button>
@@ -772,6 +784,7 @@ const activityProjectName = ref('')
 const editDrawerVisible = ref(false)
 const editMode = ref('create')
 const editingId = ref(null)
+const editActiveTab = ref('project')
 const formRef = ref(null)
 const uploadRef = ref(null)
 const saving = ref(false)
@@ -1068,6 +1081,7 @@ async function openEdit(row) {
 }
 
 function resetForm() {
+  editActiveTab.value = 'project'
   Object.assign(form, defaultForm())
   fileList.value = []
   planFileList.value = []
@@ -1470,6 +1484,29 @@ async function handleDelete(row) {
 .drawer-form { padding: 0 4px; }
 .drawer-form :deep(.el-form-item) { margin-bottom: 16px; }
 .drawer-form :deep(.el-input-number .el-input__inner) { text-align: left; }
+
+/* 编辑侧滑页标签切换 */
+.drawer-tabs :deep(.el-tabs__header) {
+  margin-bottom: 18px;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 5;
+  padding-top: 2px;
+}
+.drawer-tabs :deep(.el-tabs__item) {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 20px;
+  height: 40px;
+  line-height: 40px;
+}
+.drawer-tabs :deep(.el-tabs__active-bar) {
+  height: 3px;
+}
+.drawer-tabs :deep(.el-tab-pane) {
+  min-height: 300px;
+}
 
 /* 分区标题 */
 .section-header {

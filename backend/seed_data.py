@@ -38,82 +38,150 @@ HUBEI_CITIES = [
 
 def init_database(app):
     """初始化数据库表和数据"""
-    # 创建所有表
+    # 创建所有表（首次启动）
     db.create_all()
 
-    # 为已有数据库添加新字段（幂等操作，不丢失数据）
-    migrations = [
-        "ALTER TABLE homepage_config ADD COLUMN carousel_interval INTEGER DEFAULT 8",
-        "ALTER TABLE homepage_config ADD COLUMN carousel_display_mode VARCHAR(20) DEFAULT 'coverflow'",
-        "ALTER TABLE homepage_config ADD COLUMN carousel_width INTEGER DEFAULT 85",
-        "ALTER TABLE homepage_config ADD COLUMN carousel_height INTEGER DEFAULT 80",
-        "ALTER TABLE homepage_config ADD COLUMN presentation_interval INTEGER DEFAULT 5",
-        "ALTER TABLE homepage_config ADD COLUMN carousel_autoplay BOOLEAN DEFAULT 1",
-        "ALTER TABLE homepage_config ADD COLUMN presentation_autoplay BOOLEAN DEFAULT 1",
-        # V3.1: 企业诉求新增字段
-        "ALTER TABLE enterprise_demands ADD COLUMN demand_type_code VARCHAR(32) DEFAULT ''",
-        "ALTER TABLE enterprise_demands ADD COLUMN unit_code VARCHAR(32) DEFAULT ''",
-        # V10.1: 诉求类型支持多选，扩展列宽
-        "ALTER TABLE enterprise_demands MODIFY COLUMN demand_type_code VARCHAR(255) DEFAULT ''",
-        # V4: 项目投资计划书
-        "ALTER TABLE investment_projects ADD COLUMN investment_plan TEXT DEFAULT ''",
-        # V5: 导出多模板支持 — 新增 template_id 列，移除旧 field_key 唯一约束
-        "ALTER TABLE export_field_config ADD COLUMN template_id INTEGER DEFAULT 1",
-        # V5.1: 自定义列 + 投资金额(亿元)
-        "ALTER TABLE export_field_config ADD COLUMN is_custom BOOLEAN DEFAULT 0",
-        # V8: 项目标签 + 动态标签
-        "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
-        "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
-        # 工作进展附件
-        "ALTER TABLE work_progress ADD COLUMN files TEXT DEFAULT '[]'",
-        # V11: 联系电话
-        "ALTER TABLE investment_projects ADD COLUMN person_in_charge_phone VARCHAR(32) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN responsible_person_phone VARCHAR(32) DEFAULT ''",
-        # V12: 打印模板 V3 新增字段
-        "ALTER TABLE print_template ADD COLUMN sub_title_font_size INTEGER DEFAULT 12",
-        "ALTER TABLE print_template ADD COLUMN title_bold BOOLEAN DEFAULT 1",
-        "ALTER TABLE print_template ADD COLUMN subtitle_bold BOOLEAN DEFAULT 1",
-        "ALTER TABLE print_template ADD COLUMN border_style VARCHAR(20) DEFAULT 'all'",
-        "ALTER TABLE print_template ADD COLUMN group_by VARCHAR(64) DEFAULT ''",
-        "ALTER TABLE print_template ADD COLUMN template_file VARCHAR(512) DEFAULT ''",
-        "ALTER TABLE print_template ADD COLUMN data_start_row INTEGER DEFAULT 3",
-        "ALTER TABLE print_template ADD COLUMN header_row INTEGER DEFAULT 2",
-        "ALTER TABLE print_template ADD COLUMN title_row INTEGER DEFAULT 1",
-        "ALTER TABLE print_template ADD COLUMN has_group_title BOOLEAN DEFAULT 0",
-        # V13: Staff 表 + 专班负责人 + 在建项目新字段
-        "ALTER TABLE investment_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
-        "ALTER TABLE construction_projects ADD COLUMN construction_location VARCHAR(255) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN start_date VARCHAR(7) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN end_date VARCHAR(7) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
-        "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
-        # V13.4: 招商动态 ↔ 企业诉求 多对多关联表
-        "CREATE TABLE IF NOT EXISTS activity_demand_link ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "activity_id INTEGER NOT NULL REFERENCES investment_activities(id) ON DELETE CASCADE, "
-        "demand_id INTEGER NOT NULL REFERENCES enterprise_demands(id) ON DELETE CASCADE, "
-        "created_at DATETIME DEFAULT (datetime('now')), "
-        "UNIQUE(activity_id, demand_id)"
-        ")",
+    # ================================================================
+    # SQLite 性能优化：WAL 模式 + 缓存 + 超时（每次连接都生效）
+    # ================================================================
+    from sqlalchemy import event
+    @event.listens_for(db.engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        """每次新连接自动设置性能 PRAGMA"""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=-8000")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    # ================================================================
+    # 幂等索引（CREATE INDEX IF NOT EXISTS 安全重复执行）
+    # ================================================================
+    index_sqls = [
+        "CREATE INDEX IF NOT EXISTS ix_demands_project_id ON enterprise_demands(project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_demands_demand_type_code ON enterprise_demands(demand_type_code)",
+        "CREATE INDEX IF NOT EXISTS ix_demands_status ON enterprise_demands(status)",
+        "CREATE INDEX IF NOT EXISTS ix_demands_unit_code ON enterprise_demands(unit_code)",
+        "CREATE INDEX IF NOT EXISTS ix_activities_project_id ON investment_activities(project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_activities_date ON investment_activities(date)",
+        "CREATE INDEX IF NOT EXISTS ix_link_activity_id ON activity_demand_link(activity_id)",
+        "CREATE INDEX IF NOT EXISTS ix_link_demand_id ON activity_demand_link(demand_id)",
+        "CREATE INDEX IF NOT EXISTS ix_work_progress_project_id ON work_progress(project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_project_issues_project_id ON project_issues(project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_work_roadmap_project_id ON work_roadmap_items(project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_investment_projects_follow_status ON investment_projects(follow_status_code)",
+        "CREATE INDEX IF NOT EXISTS ix_investment_projects_order_no ON investment_projects(order_no)",
+        "CREATE INDEX IF NOT EXISTS ix_construction_projects_type ON construction_projects(project_type_code)",
+        "CREATE INDEX IF NOT EXISTS ix_construction_projects_dispatch ON construction_projects(dispatch_status_code)",
+        "CREATE INDEX IF NOT EXISTS ix_construction_projects_order_no ON construction_projects(order_no)",
+        "CREATE INDEX IF NOT EXISTS ix_investment_projects_last_updated ON investment_projects(last_updated_at)",
+        "CREATE INDEX IF NOT EXISTS ix_construction_projects_last_updated ON construction_projects(last_updated_at)",
     ]
-    # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
-    drop_index_sqls = [
-        "DROP INDEX IF EXISTS ix_export_field_config_field_key",
-        "DROP INDEX IF EXISTS uq_export_field_config_field_key",
-    ]
-    for sql in drop_index_sqls:
+    for sql in index_sqls:
         try:
             db.session.execute(db.text(sql))
-            db.session.commit()
         except Exception:
-            db.session.rollback()
-    for sql in migrations:
-        try:
-            db.session.execute(db.text(sql))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()  # 列已存在则忽略
+            pass
+    db.session.commit()
+
+    # ================================================================
+    # 版本号迁移机制：仅执行未完成的迁移，避免每次启动都跑 50+ 条 ALTER TABLE
+    # ================================================================
+    CURRENT_DB_VERSION = 1  # 新增迁移时 +1
+
+    # 确保 app_config 表存在
+    db.session.execute(db.text(
+        "CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT)"
+    ))
+    db.session.commit()
+
+    row = db.session.execute(
+        db.text("SELECT value FROM app_config WHERE key='db_version'")
+    ).fetchone()
+    db_version = int(row[0]) if row else 0
+
+    if db_version < CURRENT_DB_VERSION:
+        # 为已有数据库添加新字段（幂等操作，不丢失数据）
+        migrations = [
+            "ALTER TABLE homepage_config ADD COLUMN carousel_interval INTEGER DEFAULT 8",
+            "ALTER TABLE homepage_config ADD COLUMN carousel_display_mode VARCHAR(20) DEFAULT 'coverflow'",
+            "ALTER TABLE homepage_config ADD COLUMN carousel_width INTEGER DEFAULT 85",
+            "ALTER TABLE homepage_config ADD COLUMN carousel_height INTEGER DEFAULT 80",
+            "ALTER TABLE homepage_config ADD COLUMN presentation_interval INTEGER DEFAULT 5",
+            "ALTER TABLE homepage_config ADD COLUMN carousel_autoplay BOOLEAN DEFAULT 1",
+            "ALTER TABLE homepage_config ADD COLUMN presentation_autoplay BOOLEAN DEFAULT 1",
+            # V3.1: 企业诉求新增字段
+            "ALTER TABLE enterprise_demands ADD COLUMN demand_type_code VARCHAR(32) DEFAULT ''",
+            "ALTER TABLE enterprise_demands ADD COLUMN unit_code VARCHAR(32) DEFAULT ''",
+            # V10.1: 诉求类型支持多选，扩展列宽
+            "ALTER TABLE enterprise_demands MODIFY COLUMN demand_type_code VARCHAR(255) DEFAULT ''",
+            # V4: 项目投资计划书
+            "ALTER TABLE investment_projects ADD COLUMN investment_plan TEXT DEFAULT ''",
+            # V5: 导出多模板支持 — 新增 template_id 列，移除旧 field_key 唯一约束
+            "ALTER TABLE export_field_config ADD COLUMN template_id INTEGER DEFAULT 1",
+            # V5.1: 自定义列 + 投资金额(亿元)
+            "ALTER TABLE export_field_config ADD COLUMN is_custom BOOLEAN DEFAULT 0",
+            # V8: 项目标签 + 动态标签
+            "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
+            "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
+            # 工作进展附件
+            "ALTER TABLE work_progress ADD COLUMN files TEXT DEFAULT '[]'",
+            # V11: 联系电话
+            "ALTER TABLE investment_projects ADD COLUMN person_in_charge_phone VARCHAR(32) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN responsible_person_phone VARCHAR(32) DEFAULT ''",
+            # V12: 打印模板 V3 新增字段
+            "ALTER TABLE print_template ADD COLUMN sub_title_font_size INTEGER DEFAULT 12",
+            "ALTER TABLE print_template ADD COLUMN title_bold BOOLEAN DEFAULT 1",
+            "ALTER TABLE print_template ADD COLUMN subtitle_bold BOOLEAN DEFAULT 1",
+            "ALTER TABLE print_template ADD COLUMN border_style VARCHAR(20) DEFAULT 'all'",
+            "ALTER TABLE print_template ADD COLUMN group_by VARCHAR(64) DEFAULT ''",
+            "ALTER TABLE print_template ADD COLUMN template_file VARCHAR(512) DEFAULT ''",
+            "ALTER TABLE print_template ADD COLUMN data_start_row INTEGER DEFAULT 3",
+            "ALTER TABLE print_template ADD COLUMN header_row INTEGER DEFAULT 2",
+            "ALTER TABLE print_template ADD COLUMN title_row INTEGER DEFAULT 1",
+            "ALTER TABLE print_template ADD COLUMN has_group_title BOOLEAN DEFAULT 0",
+            # V13: Staff 表 + 专班负责人 + 在建项目新字段
+            "ALTER TABLE investment_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+            "ALTER TABLE construction_projects ADD COLUMN construction_location VARCHAR(255) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN start_date VARCHAR(7) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN end_date VARCHAR(7) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
+            "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+            # V13.4: 招商动态 ↔ 企业诉求 多对多关联表
+            "CREATE TABLE IF NOT EXISTS activity_demand_link ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "activity_id INTEGER NOT NULL REFERENCES investment_activities(id) ON DELETE CASCADE, "
+            "demand_id INTEGER NOT NULL REFERENCES enterprise_demands(id) ON DELETE CASCADE, "
+            "created_at DATETIME DEFAULT (datetime('now')), "
+            "UNIQUE(activity_id, demand_id)"
+            ")",
+        ]
+        # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
+        drop_index_sqls = [
+            "DROP INDEX IF EXISTS ix_export_field_config_field_key",
+            "DROP INDEX IF EXISTS uq_export_field_config_field_key",
+        ]
+        for sql in drop_index_sqls:
+            try:
+                db.session.execute(db.text(sql))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        for sql in migrations:
+            try:
+                db.session.execute(db.text(sql))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()  # 列已存在则忽略
+
+        # 更新版本号
+        db.session.execute(db.text(
+            "INSERT OR REPLACE INTO app_config (key, value) VALUES ('db_version', :v)"
+        ), {'v': CURRENT_DB_VERSION})
+        db.session.commit()
 
     # 创建 contact_info 表（如果不存在——db.create_all 只创建缺失的表）
     try:

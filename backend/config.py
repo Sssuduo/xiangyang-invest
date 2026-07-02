@@ -16,6 +16,18 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         f'sqlite:///{os.path.join(project_root, "instance", "app.db")}'
 
+    # SQLAlchemy 引擎选项（连接池 + SQLite 优化）
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 10,
+        'pool_timeout': 30,
+        'pool_recycle': 3600,
+        'connect_args': {
+            'check_same_thread': False,
+            'timeout': 30,
+        },
+        'pool_pre_ping': True,
+    }
+
     # 文件上传配置
     UPLOAD_FOLDER = os.path.join(project_root, 'static', 'uploads')
     BACKGROUNDS_FOLDER = os.path.join(UPLOAD_FOLDER, 'backgrounds')

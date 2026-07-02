@@ -14,28 +14,43 @@ from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 
 
-def _enrich_demand_dict(item):
-    """为诉求 dict 添加 demand_type_name、unit_name 和 linked_activities 字段"""
-    demand = EnterpriseDemand.query.get(item['id'])
-    if demand:
-        import json as _json
+def _enrich_demand_dict(item, type_map=None, org_map=None, demand_obj=None, linked_map=None):
+    """为诉求 dict 添加 demand_type_name、unit_name 和 linked_activities 字段
 
-        # 解析诉求类型名称（支持逗号分隔的多值编码）
-        codes = [c.strip() for c in (demand.demand_type_code or '').split(',') if c.strip()]
-        item['demand_type_name'] = '、'.join([
-            DemandTypeDict.query.filter_by(code=c, is_active=True).first().name
-            if DemandTypeDict.query.filter_by(code=c, is_active=True).first() else c
-            for c in codes
-        ]) if codes else ''
+    列表接口传入 type_map / org_map / demand_obj / linked_map 可完全消除 N+1 查询；
+    单条接口仅传 demand_obj 即可（3~5 次查询在单条场景可接受）。
+    """
+    import json as _json
 
-        # 解析对接单位名称
-        if demand.unit_code:
-            org = OrganizationDict.query.filter_by(code=demand.unit_code, is_active=True).first()
+    if demand_obj is None:
+        demand_obj = EnterpriseDemand.query.get(item['id'])
+
+    if not demand_obj:
+        item.setdefault('demand_type_name', '')
+        item.setdefault('unit_name', '')
+        item['linked_activities'] = []
+        return item
+
+    # ---- 诉求类型名称（支持逗号分隔的多值编码） ----
+    if 'demand_type_name' not in item or not item.get('demand_type_name'):
+        _type_map = type_map or DemandTypeDict.build_display_name_map()
+        codes = [c.strip() for c in (demand_obj.demand_type_code or '').split(',') if c.strip()]
+        item['demand_type_name'] = '、'.join([_type_map.get(c, c) for c in codes]) if codes else ''
+
+    # ---- 对接单位名称 ----
+    if 'unit_name' not in item or not item.get('unit_name'):
+        if org_map is not None:
+            item['unit_name'] = org_map.get(demand_obj.unit_code, '')
+        elif demand_obj.unit_code:
+            org = OrganizationDict.query.filter_by(code=demand_obj.unit_code, is_active=True).first()
             item['unit_name'] = org.name if org else ''
         else:
             item['unit_name'] = ''
 
-        # 关联动态
+    # ---- 关联动态 ----
+    if linked_map is not None:
+        item['linked_activities'] = linked_map.get(demand_obj.id, [])
+    else:
         item['linked_activities'] = [
             {
                 'id': a.id,
@@ -44,10 +59,9 @@ def _enrich_demand_dict(item):
                 'project_name': a.project.project_name if a.project else '',
                 'tags': _json.loads(a.tags) if a.tags else []
             }
-            for a in demand.linked_activities.order_by(InvestmentActivity.date.desc()).all()
+            for a in demand_obj.linked_activities.order_by(InvestmentActivity.date.desc()).all()
         ]
-    else:
-        item['linked_activities'] = []
+
     return item
 
 
@@ -93,19 +107,45 @@ def list_demands():
     q = q.order_by(EnterpriseDemand.created_at.desc())
     demands = q.offset((page - 1) * page_size).limit(page_size).all()
 
-    # 解析字典名称（二级显示：一级：二级）
+    # 预加载字典映射（列表场景一次性查询，避免 N+1）
     type_map = DemandTypeDict.build_display_name_map()
     org_map = {d.code: d.name for d in OrganizationDict.query.all()}
+
+    # 批量预加载关联动态（1 条 SQL 替代 N 条）
+    demand_ids = [d.id for d in demands]
+    linked_map = {}  # demand_id → [activity_dict]
+    if demand_ids:
+        from models import ActivityDemandLink
+        from sqlalchemy.orm import joinedload
+        rows = db.session.query(
+            ActivityDemandLink.demand_id,
+            InvestmentActivity
+        ).options(
+            joinedload(InvestmentActivity.project)
+        ).join(
+            InvestmentActivity,
+            ActivityDemandLink.activity_id == InvestmentActivity.id
+        ).filter(
+            ActivityDemandLink.demand_id.in_(demand_ids)
+        ).order_by(InvestmentActivity.date.desc()).all()
+        import json as _json
+        for did, act in rows:
+            linked_map.setdefault(did, []).append({
+                'id': act.id,
+                'date': act.date.strftime('%Y-%m-%d') if act.date else None,
+                'content': act.content or '',
+                'project_name': act.project.project_name if act.project else '',
+                'tags': _json.loads(act.tags) if act.tags else []
+            })
 
     result = []
     for d in demands:
         item = d.to_dict()
         item['project_name'] = d.project.project_name if d.project else ''
-        # 支持逗号分隔的多值编码
         codes = [c.strip() for c in (d.demand_type_code or '').split(',') if c.strip()]
         item['demand_type_name'] = '、'.join([type_map.get(c, c) for c in codes]) if codes else ''
         item['unit_name'] = org_map.get(d.unit_code, '')
-        result.append(_enrich_demand_dict(item))
+        result.append(_enrich_demand_dict(item, type_map=type_map, org_map=org_map, demand_obj=d, linked_map=linked_map))
 
     return jsonify({'code': 0, 'data': result, 'total': total})
 
@@ -154,7 +194,7 @@ def create_demand():
         log_changes('enterprise_demands', demand.id, changes, 'create', user_info)
 
     db.session.commit()
-    result = _enrich_demand_dict(demand.to_dict())
+    result = _enrich_demand_dict(demand.to_dict(), demand_obj=demand)
     return jsonify({'code': 0, 'data': result, 'message': '诉求已创建'})
 
 
@@ -165,7 +205,7 @@ def get_demand(demand_id):
     demand = EnterpriseDemand.query.filter_by(id=demand_id).first_or_404()
     data = demand.to_dict()
     data['project_name'] = demand.project.project_name if demand.project else ''
-    data = _enrich_demand_dict(data)
+    data = _enrich_demand_dict(data, demand_obj=demand)
     return jsonify({'code': 0, 'data': data})
 
 
@@ -203,7 +243,7 @@ def update_demand(demand_id):
         log_changes('enterprise_demands', demand_id, changes, 'update', user_info)
 
     db.session.commit()
-    result = _enrich_demand_dict(demand.to_dict())
+    result = _enrich_demand_dict(demand.to_dict(), demand_obj=demand)
     return jsonify({'code': 0, 'data': result, 'message': '诉求已更新'})
 
 

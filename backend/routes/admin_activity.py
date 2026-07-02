@@ -29,25 +29,37 @@ def _sync_activity_demands(activity, demand_ids):
             db.session.add(ActivityDemandLink(activity_id=activity.id, demand_id=int(did)))
 
 
-def _enrich_activity_dict(item):
-    """为活动 dict 添加 linked_demands 字段（含完整诉求信息）"""
-    activity = InvestmentActivity.query.get(item['id'])
-    if activity:
-        demand_type_map = DemandTypeDict.build_display_name_map()
+def _enrich_activity_dict(item, demand_type_map=None, activity_obj=None, linked_demands_map=None):
+    """为活动 dict 添加 linked_demands 字段（含完整诉求信息）
+
+    列表接口传入 demand_type_map / activity_obj / linked_demands_map 可完全消除 N+1；
+    单条接口仅传 activity_obj 即可（2 次查询在单条场景可接受）。
+    """
+    if activity_obj is None:
+        activity_obj = InvestmentActivity.query.get(item['id'])
+
+    if not activity_obj:
+        item['linked_demands'] = []
+        return item
+
+    # ---- 关联诉求 ----
+    if linked_demands_map is not None:
+        item['linked_demands'] = linked_demands_map.get(activity_obj.id, [])
+    else:
+        _type_map = demand_type_map or DemandTypeDict.build_display_name_map()
         item['linked_demands'] = [
             {
                 'id': d.id,
                 'demand_content': d.demand_content or '',
                 'demand_type_code': d.demand_type_code or '',
-                'demand_type_name': demand_type_map.get(d.demand_type_code, d.demand_type_code or ''),
+                'demand_type_name': _type_map.get(d.demand_type_code, d.demand_type_code or ''),
                 'status': d.status,
                 'unit_code': d.unit_code or '',
                 'resolution': d.resolution or ''
             }
-            for d in activity.linked_demands.all()
+            for d in activity_obj.linked_demands.all()
         ]
-    else:
-        item['linked_demands'] = []
+
     return item
 
 
@@ -91,7 +103,37 @@ def list_activities():
     total = q.count()
     q = q.order_by(InvestmentActivity.date.desc())
     activities = q.offset((page - 1) * page_size).limit(page_size).all()
-    result = [_enrich_activity_dict(a.to_dict()) for a in activities]
+
+    # 预构建诉求类型字典映射（只查一次）
+    demand_type_map = DemandTypeDict.build_display_name_map()
+
+    # 批量预加载关联诉求（1 条 SQL 替代 N 条）
+    activity_ids = [a.id for a in activities]
+    linked_demands_map = {}  # activity_id → [demand_dict]
+    if activity_ids:
+        from models import ActivityDemandLink
+        rows = db.session.query(
+            ActivityDemandLink.activity_id,
+            EnterpriseDemand
+        ).join(
+            EnterpriseDemand,
+            ActivityDemandLink.demand_id == EnterpriseDemand.id
+        ).filter(
+            ActivityDemandLink.activity_id.in_(activity_ids)
+        ).all()
+        for aid, d in rows:
+            linked_demands_map.setdefault(aid, []).append({
+                'id': d.id,
+                'demand_content': d.demand_content or '',
+                'demand_type_code': d.demand_type_code or '',
+                'demand_type_name': demand_type_map.get(d.demand_type_code, d.demand_type_code or ''),
+                'status': d.status,
+                'unit_code': d.unit_code or '',
+                'resolution': d.resolution or ''
+            })
+
+    result = [_enrich_activity_dict(a.to_dict(), demand_type_map=demand_type_map,
+                                     activity_obj=a, linked_demands_map=linked_demands_map) for a in activities]
     return jsonify({'code': 0, 'data': result, 'total': total})
 
 
@@ -140,7 +182,7 @@ def create_activity():
         log_changes('investment_activities', activity.id, changes, 'create', user_info)
 
     db.session.commit()
-    result = _enrich_activity_dict(activity.to_dict())
+    result = _enrich_activity_dict(activity.to_dict(), activity_obj=activity)
     return jsonify({'code': 0, 'data': result, 'message': '动态创建成功'})
 
 
@@ -149,7 +191,7 @@ def create_activity():
 def get_activity(activity_id):
     """获取动态详情（含项目名称 + 关联诉求）"""
     activity = InvestmentActivity.query.filter_by(id=activity_id).first_or_404()
-    result = _enrich_activity_dict(activity.to_dict())
+    result = _enrich_activity_dict(activity.to_dict(), activity_obj=activity)
     return jsonify({'code': 0, 'data': result})
 
 
@@ -213,7 +255,7 @@ def update_activity(activity_id):
             log_changes('investment_activities', activity_id, changes, 'update', user_info)
 
     db.session.commit()
-    result = _enrich_activity_dict(activity.to_dict())
+    result = _enrich_activity_dict(activity.to_dict(), activity_obj=activity)
     return jsonify({'code': 0, 'data': result, 'message': '更新成功'})
 
 

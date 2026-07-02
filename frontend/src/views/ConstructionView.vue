@@ -1146,7 +1146,9 @@ async function loadDicts() {
   try {
     const res = await getDicts()
     if (res.code === 0) Object.assign(dicts, res.data)
-  } catch { /* ignore */ }
+  } catch (err) {
+    ElMessage.error(err.message || '加载字典数据失败')
+  }
 }
 
 async function fetchData() {
@@ -1162,8 +1164,9 @@ async function fetchData() {
     const res = await getProjects(params)
     projects.value = res.data || []
     currentPage.value = 1
-  } catch {
+  } catch (err) {
     projects.value = []
+    ElMessage.error(err.message || '加载在建项目数据失败')
   } finally {
     loading.value = false
   }

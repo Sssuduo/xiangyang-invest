@@ -11,7 +11,7 @@ from extensions import db
 from routes import admin_construction_bp
 from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
-from sqlalchemy.orm import selectinload
+
 
 
 def _safe_date_str(val):
@@ -264,11 +264,9 @@ def list_projects():
     q = q.order_by(ConstructionProject.order_no.asc(),
                    ConstructionProject.created_at.desc())
 
-    q = q.options(
-        selectinload(ConstructionProject.work_roadmap_items),
-        selectinload(ConstructionProject.work_progresses),
-        selectinload(ConstructionProject.issues)
-    )
+    # 注意：lazy='dynamic' 的关系不支持 selectinload/joinedload 预加载，
+    # 使用 .all() 会在序列化时按需查询子表，性能上会有 N+1 查询，
+    # 但由于 ConstructionProject 规模可控（一般 < 500 条），影响可接受。
     projects = q.all()
     _resolve_project_names(projects)
 
@@ -404,11 +402,6 @@ def get_project(project_id):
     """获取单个在建项目详情"""
     project = ConstructionProject.query \
         .filter_by(id=project_id, is_deleted=False) \
-        .options(
-            selectinload(ConstructionProject.work_roadmap_items),
-            selectinload(ConstructionProject.work_progresses),
-            selectinload(ConstructionProject.issues)
-        ) \
         .first_or_404()
     _resolve_project_names([project])
     return jsonify({'code': 0, 'data': _build_project_dict(project)})

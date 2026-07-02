@@ -167,7 +167,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { Folder, Loading, CircleCheck, OfficeBuilding, Document, WarningFilled, Back } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'

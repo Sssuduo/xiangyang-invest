@@ -485,42 +485,84 @@
             <!-- ================================================================ -->
             <el-tab-pane label="企业诉求" name="demands">
               <div class="demands-section">
-                <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
-                  <div class="demand-card-header">
-                    <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                    <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
-                  </div>
-                  <el-row :gutter="12" style="margin-bottom: 8px;">
-                    <el-col :span="16">
-                      <el-cascader
-                        v-model="d._cascader"
-                        :options="demandTypeTree"
-                        :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
-                        placeholder="诉求类型（可多选）"
-                        clearable
-                        collapse-tags
-                        collapse-tags-tooltip
-                        size="small"
-                        style="width: 100%;"
-                      />
-                    </el-col>
-                    <el-col :span="8">
-                      <el-select v-model="d.unit_code" placeholder="对接单位" size="small" style="width: 100%;">
-                        <el-option v-for="org in dicts.organizations" :key="org.code" :label="org.name" :value="org.code" />
-                      </el-select>
-                    </el-col>
-                  </el-row>
-                  <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
-                  <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
-                  <el-select v-model="d.status" size="small" style="width: 120px;">
-                    <el-option label="待回应" value="pending" />
-                    <el-option label="协调中" value="processing" />
-                    <el-option label="已回应" value="resolved" />
-                  </el-select>
+                <!-- 切换按钮 -->
+                <div v-if="form.demands.length > 0 || editingDemands" style="text-align: right; margin-bottom: 12px;">
+                  <el-button v-if="!editingDemands" size="small" type="primary" plain @click="editingDemands = true">
+                    <el-icon><Edit /></el-icon> 编辑诉求
+                  </el-button>
+                  <el-button v-else size="small" @click="editingDemands = false">完成编辑</el-button>
                 </div>
-                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
-                  <el-icon><Plus /></el-icon> 添加诉求
-                </el-button>
+
+                <!-- 查看模式 -->
+                <template v-if="!editingDemands">
+                  <div v-for="(d, i) in form.demands" :key="i" class="demand-view-card">
+                    <div class="demand-view-header">
+                      <span class="demand-card-title">诉求 {{ i + 1 }}</span>
+                      <el-tag :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'" size="small">
+                        {{ demandStatusLabel(d.status) }}
+                      </el-tag>
+                    </div>
+                    <div class="demand-view-row">
+                      <span v-if="demandTypeNames(d.demand_type_code)" class="demand-view-item">
+                        <label>类型</label> {{ demandTypeNames(d.demand_type_code) }}
+                      </span>
+                      <span v-if="d.unit_code" class="demand-view-item">
+                        <label>对接单位</label> {{ demandOrgName(d.unit_code) }}
+                      </span>
+                    </div>
+                    <div class="demand-view-item" style="margin-bottom: 4px;" v-if="d.demand_content">
+                      <label>诉求内容</label>
+                      <p class="demand-view-text">{{ d.demand_content }}</p>
+                    </div>
+                    <div class="demand-view-item" v-if="d.resolution">
+                      <label>解决措施</label>
+                      <p class="demand-view-text">{{ d.resolution }}</p>
+                    </div>
+                  </div>
+                  <div v-if="form.demands.length === 0" style="text-align: center; color: #909399; padding: 40px 0; font-size: 14px;">
+                    暂无企业诉求
+                  </div>
+                </template>
+
+                <!-- 编辑模式 -->
+                <template v-else>
+                  <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
+                    <div class="demand-card-header">
+                      <span class="demand-card-title">诉求 {{ i + 1 }}</span>
+                      <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
+                    </div>
+                    <el-row :gutter="12" style="margin-bottom: 8px;">
+                      <el-col :span="16">
+                        <el-cascader
+                          v-model="d._cascader"
+                          :options="demandTypeTree"
+                          :props="{ expandTrigger: 'click', checkStrictly: true, multiple: true }"
+                          placeholder="诉求类型（可多选）"
+                          clearable
+                          collapse-tags
+                          collapse-tags-tooltip
+                          size="small"
+                          style="width: 100%;"
+                        />
+                      </el-col>
+                      <el-col :span="8">
+                        <el-select v-model="d.unit_code" placeholder="对接单位" size="small" style="width: 100%;">
+                          <el-option v-for="org in dicts.organizations" :key="org.code" :label="org.name" :value="org.code" />
+                        </el-select>
+                      </el-col>
+                    </el-row>
+                    <el-input v-model="d.demand_content" type="textarea" :rows="2" placeholder="诉求内容" style="margin-bottom: 8px;" />
+                    <el-input v-model="d.resolution" type="textarea" :rows="2" placeholder="解决措施（可选）" style="margin-bottom: 8px;" />
+                    <el-select v-model="d.status" size="small" style="width: 120px;">
+                      <el-option label="待回应" value="pending" />
+                      <el-option label="协调中" value="processing" />
+                      <el-option label="已回应" value="resolved" />
+                    </el-select>
+                  </div>
+                  <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
+                    <el-icon><Plus /></el-icon> 添加诉求
+                  </el-button>
+                </template>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -785,6 +827,7 @@ const editDrawerVisible = ref(false)
 const editMode = ref('create')
 const editingId = ref(null)
 const editActiveTab = ref('project')
+const editingDemands = ref(false)
 const formRef = ref(null)
 const uploadRef = ref(null)
 const saving = ref(false)
@@ -1082,6 +1125,7 @@ async function openEdit(row) {
 
 function resetForm() {
   editActiveTab.value = 'project'
+  editingDemands.value = false
   Object.assign(form, defaultForm())
   fileList.value = []
   planFileList.value = []
@@ -1090,6 +1134,23 @@ function resetForm() {
 
 function addDemand() { form.demands.push({ _cascader: [], demand_type_code: '', demand_content: '', resolution: '', unit_code: '', status: 'pending' }) }
 function removeDemand(i) { form.demands.splice(i, 1) }
+
+// 诉求卡片辅助：code → 名称
+function demandTypeNames(codesStr) {
+  if (!codesStr) return ''
+  const codes = codesStr.split(',').map(c => c.trim()).filter(Boolean)
+  const map = {}
+  for (const t of (dicts.demand_types || [])) { map[t.code] = t.name }
+  return codes.map(c => map[c] || c).join('、')
+}
+function demandOrgName(code) {
+  const org = (dicts.organizations || []).find(o => o.code === code)
+  return org ? org.name : (code || '')
+}
+function demandStatusLabel(s) {
+  const map = { pending: '待回应', processing: '协调中', resolved: '已回应' }
+  return map[s] || s
+}
 
 // ---- 文件上传处理 ----
 function handleUploadSuccess(response, file) {
@@ -1523,6 +1584,50 @@ async function handleDelete(row) {
 .demand-card { background: #f8f9fb; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #606266; }
+
+/* 诉求查看模式卡片 */
+.demand-view-card {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.demand-view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #e4e7ed;
+}
+.demand-view-row {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.demand-view-item {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.7;
+}
+.demand-view-item label {
+  font-size: 12px;
+  color: #909399;
+  margin-right: 6px;
+  font-weight: 500;
+}
+.demand-view-text {
+  margin: 2px 0 0 0;
+  padding: 6px 10px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .drawer-footer { display: flex; justify-content: center; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #ebeef5; }
 

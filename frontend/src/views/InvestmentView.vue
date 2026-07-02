@@ -485,32 +485,41 @@
             <!-- ================================================================ -->
             <el-tab-pane label="企业诉求" name="demands">
               <div class="demands-section">
-                <!-- 切换按钮 -->
-                <div v-if="form.demands.length > 0 || editingDemands" style="text-align: right; margin-bottom: 12px;">
-                  <el-button v-if="!editingDemands" size="small" type="primary" plain @click="editingDemands = true">
-                    <el-icon><Edit /></el-icon> 编辑诉求
-                  </el-button>
-                  <el-button v-else size="small" @click="editingDemands = false">完成编辑</el-button>
-                </div>
-
-                <!-- 查看模式 -->
-                <template v-if="!editingDemands">
-                  <div v-for="(d, i) in form.demands" :key="i" class="demand-view-card">
-                    <div class="demand-view-header">
+                <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
+                  <!-- 查看模式 -->
+                  <template v-if="editingDemandIndex !== i">
+                    <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                      <el-tag :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'" size="small">
-                        {{ demandStatusLabel(d.status) }}
+                      <div class="demand-card-actions">
+                        <el-button size="small" type="primary" link @click="editingDemandIndex = i">
+                          <el-icon><Edit /></el-icon>
+                        </el-button>
+                        <el-button size="small" type="danger" link @click="removeDemand(i)">
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </div>
+                    </div>
+                    <!-- 类型 / 对接单位：卡片式标签展示 -->
+                    <div class="demand-tags-row">
+                      <template v-if="d.demand_type_code">
+                        <el-tag
+                          v-for="(name, ti) in demandTypeNamesList(d.demand_type_code)"
+                          :key="'t'+ti"
+                          size="small"
+                          type="info"
+                          class="demand-type-tag"
+                        >{{ name }}</el-tag>
+                      </template>
+                      <el-tag v-if="d.unit_code" size="small" type="" class="demand-unit-tag">
+                        <el-icon style="margin-right: 2px;"><OfficeBuilding /></el-icon>
+                        {{ demandOrgName(d.unit_code) }}
                       </el-tag>
+                      <el-tag
+                        size="small"
+                        :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'"
+                      >{{ demandStatusLabel(d.status) }}</el-tag>
                     </div>
-                    <div class="demand-view-row">
-                      <span v-if="demandTypeNames(d.demand_type_code)" class="demand-view-item">
-                        <label>类型</label> {{ demandTypeNames(d.demand_type_code) }}
-                      </span>
-                      <span v-if="d.unit_code" class="demand-view-item">
-                        <label>对接单位</label> {{ demandOrgName(d.unit_code) }}
-                      </span>
-                    </div>
-                    <div class="demand-view-item" style="margin-bottom: 4px;" v-if="d.demand_content">
+                    <div class="demand-view-item" v-if="d.demand_content">
                       <label>诉求内容</label>
                       <p class="demand-view-text">{{ d.demand_content }}</p>
                     </div>
@@ -518,18 +527,12 @@
                       <label>解决措施</label>
                       <p class="demand-view-text">{{ d.resolution }}</p>
                     </div>
-                  </div>
-                  <div v-if="form.demands.length === 0" style="text-align: center; color: #909399; padding: 40px 0; font-size: 14px;">
-                    暂无企业诉求
-                  </div>
-                </template>
-
-                <!-- 编辑模式 -->
-                <template v-else>
-                  <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
+                  </template>
+                  <!-- 编辑模式 -->
+                  <template v-else>
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                      <el-button size="small" type="danger" link @click="removeDemand(i)"><el-icon><Delete /></el-icon></el-button>
+                      <el-button size="small" @click="editingDemandIndex = -1">完成</el-button>
                     </div>
                     <el-row :gutter="12" style="margin-bottom: 8px;">
                       <el-col :span="16">
@@ -558,11 +561,14 @@
                       <el-option label="协调中" value="processing" />
                       <el-option label="已回应" value="resolved" />
                     </el-select>
-                  </div>
-                  <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
-                    <el-icon><Plus /></el-icon> 添加诉求
-                  </el-button>
-                </template>
+                  </template>
+                </div>
+                <div v-if="form.demands.length === 0" style="text-align: center; color: #909399; padding: 40px 0; font-size: 14px;">
+                  暂无企业诉求
+                </div>
+                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
+                  <el-icon><Plus /></el-icon> 添加诉求
+                </el-button>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -827,7 +833,7 @@ const editDrawerVisible = ref(false)
 const editMode = ref('create')
 const editingId = ref(null)
 const editActiveTab = ref('project')
-const editingDemands = ref(false)
+const editingDemandIndex = ref(-1)
 const formRef = ref(null)
 const uploadRef = ref(null)
 const saving = ref(false)
@@ -1125,7 +1131,7 @@ async function openEdit(row) {
 
 function resetForm() {
   editActiveTab.value = 'project'
-  editingDemands.value = false
+  editingDemandIndex.value = -1
   Object.assign(form, defaultForm())
   fileList.value = []
   planFileList.value = []
@@ -1136,12 +1142,12 @@ function addDemand() { form.demands.push({ _cascader: [], demand_type_code: '', 
 function removeDemand(i) { form.demands.splice(i, 1) }
 
 // 诉求卡片辅助：code → 名称
-function demandTypeNames(codesStr) {
-  if (!codesStr) return ''
+function demandTypeNamesList(codesStr) {
+  if (!codesStr) return []
   const codes = codesStr.split(',').map(c => c.trim()).filter(Boolean)
   const map = {}
   for (const t of (dicts.demand_types || [])) { map[t.code] = t.name }
-  return codes.map(c => map[c] || c).join('、')
+  return codes.map(c => map[c] || c)
 }
 function demandOrgName(code) {
   const org = (dicts.organizations || []).find(o => o.code === code)
@@ -1581,32 +1587,30 @@ async function handleDelete(row) {
 
 /* 诉求卡片 */
 .demands-section { margin-bottom: 16px; }
-.demand-card { background: #f8f9fb; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.demand-card { background: #fafbfc; border: 1px solid #e4e7ed; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.demand-card-title { font-size: 13px; font-weight: 600; color: #606266; }
+.demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
+.demand-card-actions { display: flex; gap: 4px; }
 
-/* 诉求查看模式卡片 */
-.demand-view-card {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
-}
-.demand-view-header {
+/* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/
+.demand-tags-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #e4e7ed;
-}
-.demand-view-row {
-  display: flex;
-  gap: 32px;
-  margin-bottom: 6px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 8px;
+  align-items: center;
 }
+.demand-type-tag {
+  background: #e8edf2;
+  border-color: #d0d7de;
+  color: #4a5568;
+}
+.demand-unit-tag {
+  background: #fff;
+  border-color: #d0d7de;
+  color: #606266;
+}
+
 .demand-view-item {
   font-size: 13px;
   color: #606266;

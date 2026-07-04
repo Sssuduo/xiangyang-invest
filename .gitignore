@@ -40,3 +40,17 @@ check_disk.ps1
 format_usb.ps1
 cookies.txt
 prod_cookies.txt
+
+# Frontend build output (generated on server)
+static/assets/
+static/favicon.svg
+static/icons.svg
+static/index.html
+
+# Deployment scripts (server only)
+deploy.sh
+rollback.sh
+scripts/backup_db.sh
+
+# Uploaded files
+backend/static/uploads/templates/

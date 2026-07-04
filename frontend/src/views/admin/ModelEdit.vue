@@ -38,6 +38,23 @@
           <el-form-item label="系统提示词">
             <el-input v-model="form.system_prompt" type="textarea" :rows="3" placeholder="可选" />
           </el-form-item>
+
+          <!-- Embedding 独立配置（可选） -->
+          <el-divider content-position="left">
+            <span class="embedding-divider-text">Embedding 配置（可选，留空则复用上方 Chat 配置）</span>
+          </el-divider>
+          <el-form-item label="Embedding URL">
+            <el-input v-model="form.embedding_api_url" placeholder="如：https://api.siliconflow.cn/v1/embeddings" />
+            <div class="form-tip">硅基流动免费 Embedding 端点：https://api.siliconflow.cn/v1/embeddings</div>
+          </el-form-item>
+          <el-form-item label="Embedding Key">
+            <el-input v-model="form.embedding_api_key" type="password" show-password placeholder="sk-...（留空则复用上方的 API Key）" />
+          </el-form-item>
+          <el-form-item label="Embedding 模型">
+            <el-input v-model="form.embedding_model_name" placeholder="BAAI/bge-m3（免费，1024维，中英文通用）" />
+            <div class="form-tip">推荐免费模型：BAAI/bge-m3（1024维）或 BAAI/bge-large-zh-v1.5（纯中文）</div>
+          </el-form-item>
+
           <el-form-item label="启用">
             <el-switch v-model="form.is_active" />
           </el-form-item>
@@ -74,6 +91,9 @@ const form = ref({
   temperature: 0.7,
   max_tokens: 4096,
   system_prompt: '',
+  embedding_api_url: '',
+  embedding_api_key: '',
+  embedding_model_name: '',
   is_active: true,
   sort_order: 0
 })
@@ -116,4 +136,6 @@ async function handleSave() {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 h2 { color: var(--primary-color); }
 .edit-form { background: #fff; padding: 32px; border-radius: 12px; box-shadow: var(--shadow-sm); }
+.form-tip { margin-top: 4px; font-size: 12px; color: #909399; line-height: 1.4; }
+.embedding-divider-text { font-size: 13px; color: #909399; font-weight: 400; }
 </style>

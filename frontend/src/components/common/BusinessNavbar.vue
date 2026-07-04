@@ -39,6 +39,19 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- AI 工具箱 下拉菜单 — 仅登录后可见 -->
+        <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
+          <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isToolboxRoute }">
+            AI 工具箱
+            <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="/lead">招商线索研判</el-dropdown-item>
+              <el-dropdown-item command="/knowledge">本地招商知识库</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
@@ -138,6 +151,7 @@ const businessAuth = useBusinessAuthStore()
 
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
+const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge'))
 
 function handleCommand(path) {
   if (route.path !== path) {

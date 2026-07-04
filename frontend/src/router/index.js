@@ -181,6 +181,19 @@ const routes = [
     component: () => import('@/views/ConstructionIssuesView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  // ---- AI 工具箱（前台） ----
+  {
+    path: '/lead',
+    name: 'Lead',
+    component: () => import('@/views/LeadView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
+    path: '/knowledge',
+    name: 'Knowledge',
+    component: () => import('@/views/KnowledgeView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
   // ---- 管理后台 ----
   {
     path: '/admin/investment',
@@ -264,6 +277,25 @@ const routes = [
     path: '/admin/business-users',
     name: 'AdminBusinessUsers',
     component: () => import('@/views/admin/BusinessUserList.vue'),
+    meta: { requiresAuth: true }
+  },
+  // ---- 管理后台 AI 工具箱 ----
+  {
+    path: '/admin/lead',
+    name: 'AdminLead',
+    component: () => import('@/views/admin/LeadList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/knowledge',
+    name: 'AdminKnowledge',
+    component: () => import('@/views/admin/KnowledgeList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/knowledge/drafts',
+    name: 'AdminKnowledgeDrafts',
+    component: () => import('@/views/admin/KnowledgeDrafts.vue'),
     meta: { requiresAuth: true }
   },
   {

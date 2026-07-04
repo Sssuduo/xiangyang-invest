@@ -116,6 +116,7 @@
               </div>
             </div>
             <div ref="typeChartRef" class="chart-box"></div>
+            <div class="resize-handle" @mousedown="onResizeStart"></div>
           </div>
 
           <!-- 项目类型分布（饼状图，支持下钻） -->
@@ -133,6 +134,7 @@
               </div>
             </div>
             <div ref="dispatchPieRef" class="chart-box"></div>
+            <div class="resize-handle" @mousedown="onResizeStart"></div>
           </div>
         </div>
 
@@ -151,6 +153,7 @@
             </div>
           </div>
           <div ref="unitChartRef" class="chart-box"></div>
+          <div class="resize-handle" @mousedown="onResizeStart"></div>
         </div>
 
         <!-- 专班负责人分布（饼状图） -->
@@ -158,7 +161,8 @@
           <div class="chart-panel-header">
             <h3>专班负责人分布</h3>
           </div>
-          <div ref="teamPieChartRef" class="chart-box" style="height:400px"></div>
+          <div ref="teamPieChartRef" class="chart-box"></div>
+          <div class="resize-handle" @mousedown="onResizeStart"></div>
         </div>
       </div>
     </div>
@@ -323,7 +327,7 @@ function renderTypeChart() {
           return html
         }
       },
-      grid: { left: 12, right: 24, top: 16, bottom: 80, containLabel: true },
+      grid: { left: 12, right: 24, top: 28, bottom: 80, containLabel: true },
       xAxis: {
         type: 'category',
         data: names,
@@ -841,6 +845,44 @@ function disposeCharts() {
   resizeObserver?.disconnect()
 }
 
+// ========== 图表面板拖拽拉伸 ==========
+function onResizeStart(e) {
+  const panel = e.target.closest('.chart-panel')
+  if (!panel) return
+
+  const startX = e.clientX
+  const startY = e.clientY
+  const startW = panel.offsetWidth
+  const startH = panel.offsetHeight
+  const chartBox = panel.querySelector('.chart-box')
+  const chartInstance = chartBox ? echarts.getInstanceByDom(chartBox) : null
+
+  panel.classList.add('is-resizing')
+  document.body.style.cursor = 'nwse-resize'
+  document.body.style.userSelect = 'none'
+
+  function onMove(ev) {
+    const w = Math.max(280, startW + ev.clientX - startX)
+    const h = Math.max(220, startH + ev.clientY - startY)
+    panel.style.width = w + 'px'
+    panel.style.height = h + 'px'
+    chartInstance?.resize()
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    panel.classList.remove('is-resizing')
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    chartInstance?.resize()
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  e.preventDefault()
+}
+
 async function fetchProjectTypes() {
   try {
     const res = await getDicts()
@@ -976,6 +1018,10 @@ onUnmounted(() => {
   padding: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   min-height: 380px;
+  min-width: 330px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
 .chart-panel-header {
@@ -983,6 +1029,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 .chart-panel-header h3 {
   margin: 0;
@@ -999,6 +1046,37 @@ onUnmounted(() => {
 
 .chart-box {
   width: 100%;
-  height: 340px;
+  flex: 1;
+  min-height: 240px;
+}
+
+/* 拉伸拖拽手柄 */
+.resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  opacity: 0.25;
+  transition: opacity 0.2s;
+  background:
+    linear-gradient(135deg, transparent 50%, #909399 50%),
+    linear-gradient(135deg, transparent 50%, #909399 50%) 3px 3px;
+  background-size: 7px 7px;
+  background-repeat: no-repeat;
+}
+.chart-panel:hover .resize-handle {
+  opacity: 0.5;
+}
+.resize-handle:active,
+.chart-panel.is-resizing .resize-handle {
+  opacity: 0.8;
+}
+
+.chart-panel.is-resizing {
+  box-shadow: 0 2px 12px rgba(64,158,255,0.18);
+  outline: 2px solid #409eff;
+  outline-offset: -1px;
 }
 </style>

@@ -37,6 +37,12 @@
       <span>招商项目管理</span>
     </el-menu-item>
 
+    <!-- 招商线索研判 -->
+    <el-menu-item index="/admin/lead">
+      <el-icon><Search /></el-icon>
+      <span>招商线索研判</span>
+    </el-menu-item>
+
     <!-- 招商动态管理 -->
     <el-menu-item index="/admin/activity">
       <el-icon><Notebook /></el-icon>
@@ -95,6 +101,18 @@
       <span>字典配置</span>
     </el-menu-item>
 
+    <!-- 知识库管理 -->
+    <el-menu-item index="/admin/knowledge">
+      <el-icon><Reading /></el-icon>
+      <span>知识库管理</span>
+    </el-menu-item>
+
+    <!-- 知识沉淀审核 -->
+    <el-menu-item index="/admin/knowledge/drafts">
+      <el-icon><Collection /></el-icon>
+      <span>知识沉淀审核</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/prompts">
       <el-icon><ChatDotSquare /></el-icon>
       <span>提示词管理</span>
@@ -134,7 +152,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

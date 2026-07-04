@@ -1,81 +1,28 @@
 <template>
-  <div class="investment-page">
+  <div class="lead-page">
     <BusinessNavbar variant="light" />
 
     <div class="page-body">
       <div class="content-card">
         <div class="toolbar">
           <el-input v-model="searchText" placeholder="搜索项目名称、企业、内容..." :prefix-icon="Search" clearable class="search-input" @input="handleSearch" />
-          <el-select v-model="filterFollowStatus" multiple placeholder="跟进状态" clearable collapse-tags collapse-tags-tooltip @change="fetchData" style="width: 160px;">
-            <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
-          </el-select>
-          <el-select v-model="filterMeetingStatus" placeholder="上会状态" clearable @change="fetchData" style="width: 140px;">
-            <el-option v-for="d in dicts.meeting_statuses" :key="d.code" :label="d.name" :value="d.code" />
-          </el-select>
           <el-select v-model="filterProjectType" placeholder="项目类型" clearable @change="fetchData" style="width: 140px;">
             <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
-          <el-radio-group v-model="recentActivityDays" size="small" @change="fetchData">
-            <el-radio-button value="">全部</el-radio-button>
-            <el-radio-button value="7">7日内更新</el-radio-button>
-            <el-radio-button value="15">15日内更新</el-radio-button>
-          </el-radio-group>
           <div class="toolbar-spacer" />
-          <el-dropdown
-            v-if="selectedIds.length > 0"
-            trigger="hover"
-            @command="handleBatchCmd"
-          >
-            <el-button type="primary" plain>
-              <el-icon><Operation /></el-icon> 批量操作 ({{ selectedIds.length }})
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="export-print">
-                  <el-icon><Finished /></el-icon> 导出并打印
-                </el-dropdown-item>
-                <el-dropdown-item
-                  v-if="businessAuth.hasPermission('investment', 'batch_delete')"
-                  command="batch-delete"
-                  divided
-                  style="color: #f56c6c;"
-                >
-                  <el-icon><Delete /></el-icon> 批量删除
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-dropdown v-if="businessAuth.hasPermission('investment', 'import')" trigger="click" @command="handleImportCmd">
-            <el-button type="default">
-              <el-icon><Upload /></el-icon> 项目导入 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="download-template">
-                  <el-icon><Download /></el-icon> 下载导入模板
-                </el-dropdown-item>
-                <el-dropdown-item command="import-data">
-                  <el-icon><Upload /></el-icon> 导入项目
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <div class="toolbar-spacer" />
-          <el-button v-if="businessAuth.hasPermission('investment', 'add')" type="primary" @click="openCreate">
-            <el-icon><Plus /></el-icon> 添加项目
+          <el-button v-if="businessAuth.hasPermission('lead', 'add')" type="primary" @click="openCreate">
+            <el-icon><Plus /></el-icon> 添加线索
           </el-button>
         </div>
 
         <el-table
           ref="tableRef"
-          :data="pagedProjects"
+          :data="pagedLeads"
           row-key="id"
-          :row-class-name="tableRowClassName"
           v-loading="loading"
           @selection-change="handleSelectionChange"
           @expand-change="onExpandChange"
-          empty-text="暂无招商项目数据"
+          empty-text="暂无招商线索数据"
           style="width: 100%"
         >
           <el-table-column type="selection" width="45" />
@@ -96,8 +43,8 @@
                     <div class="expand-block-title">基础信息</div>
                     <div class="expand-grid">
                       <div class="expand-item"><label>项目名称</label><span>{{ displayName(row.project_name) }}</span></div>
-                      <div class="expand-item"><label>投资商名称</label><span>{{ displayName(row.invest_enterprise) }}</span></div>
-                      <div class="expand-item"><label>推介单位</label><span>{{ row.recommend_unit_name || '-' }}</span></div>
+                      <div class="expand-item"><label>投资企业</label><span>{{ displayName(row.invest_enterprise) }}</span></div>
+                      <div class="expand-item"><label>责任单位</label><span>{{ displayName(row.responsible_unit_name || row.responsible_unit_code) }}</span></div>
                       <div class="expand-item"><label>首次对接</label><span>{{ row.first_contact_date || '-' }}</span></div>
                     </div>
                   </div>
@@ -110,6 +57,17 @@
                     <p class="expand-text-block">{{ displayContent(row.project_content) }}</p>
                   </div>
                 </template>
+
+                <!-- AI 研判结果（始终显示，绿色高亮置顶） -->
+                <div class="expand-block expand-block-ai" v-if="row.ai_assessment_result">
+                  <div class="expand-block-title">
+                    AI 研判结果
+                    <el-button size="small" link type="primary" @click.stop="copyPrompt(row)" class="ai-copy-prompt-btn">
+                      <el-icon><CopyDocument /></el-icon> 复制提示词
+                    </el-button>
+                  </div>
+                  <p class="expand-text-block">{{ row.ai_assessment_result }}</p>
+                </div>
 
                 <!-- 专班研判结论（始终显示，高亮置顶） -->
                 <div class="expand-block expand-block-highlight" v-if="row.conclusion">
@@ -169,17 +127,10 @@
               <span class="project-type-tag">{{ row.project_type_name || row.project_type_code }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="投资商名称" width="130">
+          <el-table-column label="投资企业" width="130">
             <template #default="{ row }">
               <el-tooltip :content="businessAuth.isVisitor ? '' : row.enterprise_info" placement="top" :show-after="300" popper-class="enterprise-tooltip">
                 <span class="enterprise-name">{{ displayName(row.invest_enterprise) }}</span>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-          <el-table-column label="项目内容" min-width="160">
-            <template #default="{ row }">
-              <el-tooltip :content="businessAuth.isVisitor ? '' : row.project_content" placement="top" :show-after="300" popper-class="content-tooltip">
-                <span class="content-preview">{{ displayContent(truncate(row.project_content, 40)) }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -188,14 +139,10 @@
               <span>{{ formatAmount(row.invest_amount) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="跟进状态" width="95" align="center">
+          <el-table-column label="转换状态" width="120" align="center">
             <template #default="{ row }">
-              <el-tag :color="row.follow_status_color" effect="dark" size="small">{{ row.follow_status_name }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="上会状态" width="95" align="center">
-            <template #default="{ row }">
-              <el-tag :color="row.meeting_status_color" effect="dark" size="small">{{ row.meeting_status_name }}</el-tag>
+              <el-tag v-if="row.converted_project_id" type="success" size="small">已转为招商项目</el-tag>
+              <span v-else class="convert-pending-text">待研判</span>
             </template>
           </el-table-column>
           <el-table-column label="责任单位" width="120" show-overflow-tooltip>
@@ -211,20 +158,23 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="185" fixed="right">
+          <el-table-column label="操作" width="260" fixed="right">
             <template #default="{ row }">
               <div class="action-cell">
-                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" link type="success" @click="openEdit(row)">编辑</el-button>
-                <el-button size="small" link type="warning" @click="handleAddActivity(row)">动态</el-button>
-                <!-- <el-button size="small" link type="primary" @click="handleAI(row)">AI助手</el-button> -->
-                <el-dropdown v-if="businessAuth.hasPermission('investment', 'delete')" trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
+                <el-button v-if="businessAuth.hasPermission('lead', 'edit')" size="small" link type="success" @click="openEdit(row)">编辑</el-button>
+                <el-button v-if="businessAuth.hasPermission('lead', 'assess')" size="small" link type="primary" @click="triggerAssessFromList(row)">AI研判</el-button>
+                <el-button v-if="businessAuth.hasPermission('lead', 'assess')" size="small" link type="primary" @click="copyPrompt(row)">
+                  <el-icon><CopyDocument /></el-icon> 复制提示词
+                </el-button>
+                <el-button v-if="!row.converted_project_id && businessAuth.hasPermission('lead', 'convert')" size="small" link type="warning" @click="handleConvert(row)">转为项目</el-button>
+                <el-dropdown v-if="businessAuth.hasPermission('lead', 'delete')" trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
                   <el-button size="small" link class="action-more">
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="view">
-                        <el-icon><View /></el-icon> 项目详情
+                        <el-icon><View /></el-icon> 线索详情
                       </el-dropdown-item>
                       <el-dropdown-item command="delete" divided>
                         <el-icon><Delete /></el-icon> 删除
@@ -239,7 +189,7 @@
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="view">
-                        <el-icon><View /></el-icon> 项目详情
+                        <el-icon><View /></el-icon> 线索详情
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -254,7 +204,7 @@
             v-model:current-page="currentPage"
             v-model:page-size="pageSize"
             :page-sizes="[5, 10, 20, 50]"
-            :total="projects.length"
+            :total="leads.length"
             layout="total, sizes, prev, pager, next"
             background
             small
@@ -267,14 +217,7 @@
     </div>
 
     <!-- 查看抽屉 -->
-    <ProjectDrawer v-model="viewDrawerVisible" :project="viewProject" />
-
-    <!-- 动态侧滑 -->
-    <ActivityTimelineDrawer
-      v-model="activityDrawerVisible"
-      :project-id="activityProjectId"
-      :project-name="activityProjectName"
-    />
+    <LeadDrawer v-model="viewDrawerVisible" :lead="viewLead" />
 
     <!-- 编辑抽屉（新建/编辑共用） -->
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="780px" @closed="resetForm">
@@ -282,7 +225,7 @@
         <div class="drawer-title-bar">
           <span class="drawer-title">
             <el-icon><Edit /></el-icon>
-            {{ editMode === 'create' ? '新建项目' : '编辑项目' }}
+            {{ editMode === 'create' ? '新建线索' : '编辑线索' }}
           </span>
         </div>
       </template>
@@ -333,8 +276,8 @@
                 <span class="section-icon"><el-icon><OfficeBuilding /></el-icon></span>
                 <span class="section-title">企业信息</span>
               </div>
-              <el-form-item label="投资商名称" prop="invest_enterprise">
-                <el-input v-model="form.invest_enterprise" placeholder="请输入投资商名称" maxlength="255" />
+              <el-form-item label="投资企业" prop="invest_enterprise">
+                <el-input v-model="form.invest_enterprise" placeholder="请输入投资企业名称" maxlength="255" />
               </el-form-item>
               <el-form-item label="企业简介" prop="enterprise_info">
                 <el-input v-model="form.enterprise_info" type="textarea" :rows="6" placeholder="企业简介..." maxlength="2000" show-word-limit />
@@ -425,28 +368,14 @@
               </div>
               <el-row :gutter="20">
                 <el-col :span="12">
-                  <el-form-item label="跟进状态" prop="follow_status_code">
-                    <el-select v-model="form.follow_status_code" style="width: 100%;">
+                  <el-form-item label="跟进状态">
+                    <el-select v-model="form.follow_status_code" style="width: 100%;" clearable placeholder="可不填">
                       <el-option v-for="d in dicts.follow_statuses" :key="d.code" :label="d.name" :value="d.code" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="12">
-                  <el-form-item label="上会状态" prop="meeting_status_code">
-                    <el-select v-model="form.meeting_status_code" style="width: 100%;">
-                      <el-option v-for="d in dicts.meeting_statuses" :key="d.code" :label="d.name" :value="d.code" />
                     </el-select>
                   </el-form-item>
                 </el-col>
               </el-row>
               <el-row :gutter="20">
-                <el-col :span="12">
-                  <el-form-item label="推介单位">
-                    <el-select v-model="form.recommend_unit_code" placeholder="请选择" clearable style="width: 100%;">
-                      <el-option v-for="d in dicts.organizations" :key="d.code" :label="d.name" :value="d.code" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
                 <el-col :span="12">
                   <el-form-item label="责任单位" prop="responsible_unit_code">
                     <el-select v-model="form.responsible_unit_code" style="width: 100%;">
@@ -454,30 +383,19 @@
                     </el-select>
                   </el-form-item>
                 </el-col>
-              </el-row>
-              <el-row :gutter="20">
                 <el-col :span="12">
                   <el-form-item label="责任人">
                     <el-input v-model="form.person_in_charge" placeholder="责任人姓名" maxlength="64" />
                   </el-form-item>
                 </el-col>
+              </el-row>
+              <el-row :gutter="20">
                 <el-col :span="12">
                   <el-form-item label="联系电话">
                     <el-input v-model="form.person_in_charge_phone" placeholder="联系电话" maxlength="32" />
                   </el-form-item>
                 </el-col>
               </el-row>
-
-              <!-- 专班负责人 -->
-              <div class="section-header">
-                <span class="section-icon"><el-icon><User /></el-icon></span>
-                <span class="section-title">专班负责人</span>
-              </div>
-              <el-form-item label="专班负责人">
-                <el-select v-model="form.team_leader_ids" multiple placeholder="请选择专班负责人" style="width: 100%;">
-                  <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
-                </el-select>
-              </el-form-item>
             </el-tab-pane>
 
             <!-- ================================================================ -->
@@ -566,7 +484,7 @@
                 <div v-if="form.demands.length === 0" style="text-align: center; color: #909399; padding: 40px 0; font-size: 14px;">
                   暂无企业诉求
                 </div>
-                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
+                <el-button v-if="businessAuth.hasPermission('lead', 'edit')" size="small" @click="addDemand">
                   <el-icon><Plus /></el-icon> 添加诉求
                 </el-button>
               </div>
@@ -581,100 +499,24 @@
       </div>
     </el-drawer>
 
-    <!-- 导入对话框 -->
-    <el-dialog v-model="importDialogVisible" title="导入项目" width="900px" :close-on-click-modal="false" @closed="resetImport">
-      <template v-if="importStep === 'select'">
-        <el-upload
-          ref="importUploadRef"
-          :auto-upload="false"
-          :limit="1"
-          accept=".xlsx,.xls"
-          :on-change="handleImportFile"
-          :file-list="importFileList"
-          drag
-        >
-          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-          <div class="el-upload__text">拖动 Excel 文件到此处 或 <em>点击选取文件</em></div>
-          <template #tip>
-            <div class="el-upload__tip">仅支持 .xlsx / .xls 格式，请先下载导入模板填写数据</div>
-          </template>
-        </el-upload>
-      </template>
-
-      <template v-if="importStep === 'preview'">
-        <div class="import-summary">
-          <span>总计 <strong>{{ importRows.length }}</strong> 条</span>
-          <span class="summary-valid">有效 <strong>{{ importValidCount }}</strong> 条</span>
-          <span v-if="importErrorCount > 0" class="summary-error">错误 <strong>{{ importErrorCount }}</strong> 条</span>
-        </div>
-        <el-alert v-if="importErrorCount > 0" type="warning" :closable="false" show-icon style="margin-bottom: 12px;">
-          存在错误数据的行已标红，请修正后重新导入，或删除错误行后进行部分导入
-        </el-alert>
-        <div class="import-table-wrap">
-          <el-table :data="importRows" stripe size="small" max-height="400" row-key="row" :row-class-name="importRowClass">
-            <el-table-column type="index" label="#" width="40" />
-            <el-table-column v-for="h in importHeaders" :key="h" :label="h" min-width="110" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.data[h] ?? '' }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="80" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row._valid" type="success" size="small">正常</el-tag>
-                <el-tooltip v-else placement="top" :content="row.errors.join('\n')">
-                  <el-tag type="danger" size="small">错误</el-tag>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="70" align="center">
-              <template #default="{ row, $index }">
-                <el-button v-if="!row._valid" size="small" link type="danger" @click="removeImportRow($index)">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </template>
-
-      <template #footer>
-        <template v-if="importStep === 'select'">
-          <el-button @click="importDialogVisible = false">取消</el-button>
-        </template>
-        <template v-if="importStep === 'preview'">
-          <el-button @click="resetImport">重新选择文件</el-button>
-          <el-button type="primary" :disabled="importValidCount === 0" :loading="importing" @click="handleImportExecute">
-            开始导入 ({{ importValidCount }} 条)
-          </el-button>
-        </template>
-      </template>
-    </el-dialog>
-
-    <!-- 打印/导出弹窗 -->
-    <SimplePrintExportDialog
-      v-model="printExportDialogVisible"
-      entity-type="investment"
-      :project-ids="selectedIds"
+    <!-- AI 研判侧滑页 -->
+    <LeadAssessmentDrawer
+      v-model="assessmentDrawerVisible"
+      :lead-id="assessmentLeadId"
+      :lead-name="assessmentLeadName"
+      @assessment-complete="onAssessmentComplete"
     />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-
-const router = useRouter()
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Operation, Printer, Finished, User } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Connection, InfoFilled, Edit, Cpu, CopyDocument } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
-import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import ActivityTimelineDrawer from '@/components/investment/ActivityTimelineDrawer.vue'
-import SimplePrintExportDialog from '@/components/common/SimplePrintExportDialog.vue'
-import { getPublicProjects } from '@/api/investment'
-import { getDicts, createProject, updateProject, getProject, deleteProject, getMaxOrderNo } from '@/api/investment'
-import { downloadExcel, getExportTemplates } from '@/api/export'
-// print API now called from SimplePrintExportDialog
-// import { getPrintTemplates, downloadPrintExcel } from '@/api/print'
-import { batchDeleteProjects } from '@/api/investment'
-import { downloadImportTemplate, importPreviewApi, importExecute } from '@/api/import_api'
+import LeadDrawer from '@/components/lead/LeadDrawer.vue'
+import LeadAssessmentDrawer from '@/components/lead/LeadAssessmentDrawer.vue'
+import { getLeads, getDicts, createLead, updateLead, getLead, deleteLead, getMaxOrderNo, convertLead, getPromptPreview } from '@/api/lead'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent, maskPhone } from '@/utils/mask'
 
@@ -689,15 +531,15 @@ function displayContent(val) {
 function displayPhone(val) {
   return businessAuth.isVisitor ? maskPhone(val) : (val || '')
 }
+
 const tableRef = ref(null)
-const projects = ref([])
+const leads = ref([])
 const loading = ref(false)
 const searchText = ref('')
 const filterFollowStatus = ref([])
-const filterMeetingStatus = ref('')
 const filterProjectType = ref('')
 const selectedIds = ref([])
-const dicts = reactive({ follow_statuses: [], meeting_statuses: [], organizations: [], project_types: [], demand_types: [], project_tags: [], staff: [] })
+const dicts = reactive({ follow_statuses: [], organizations: [], project_types: [], demand_types: [], project_tags: [] })
 
 const demandTypeTree = computed(() => {
   const types = dicts.demand_types || []
@@ -716,12 +558,11 @@ const demandTypeTree = computed(() => {
 const currentPage = ref(1)
 const pageSize = ref(15)
 const showAll = ref(false)
-const recentActivityDays = ref('')
 
-const pagedProjects = computed(() => {
-  if (showAll.value) return projects.value
+const pagedLeads = computed(() => {
+  if (showAll.value) return leads.value
   const start = (currentPage.value - 1) * pageSize.value
-  return projects.value.slice(start, start + pageSize.value)
+  return leads.value.slice(start, start + pageSize.value)
 })
 
 function handlePageChange() { /* currentPage 已双向绑定 */ }
@@ -780,7 +621,7 @@ function updateExpandWidth() {
 
 function addExpandTooltips() {
   const icons = tableRef.value?.$el?.querySelectorAll('.el-table__expand-icon')
-  icons?.forEach(icon => icon.setAttribute('title', '展开项目详情'))
+  icons?.forEach(icon => icon.setAttribute('title', '展开线索详情'))
 }
 
 function onExpandChange() {
@@ -821,12 +662,7 @@ let searchTimer = null
 
 // 查看抽屉
 const viewDrawerVisible = ref(false)
-const viewProject = ref(null)
-
-// 动态侧滑
-const activityDrawerVisible = ref(false)
-const activityProjectId = ref(null)
-const activityProjectName = ref('')
+const viewLead = ref(null)
 
 // 编辑抽屉
 const editDrawerVisible = ref(false)
@@ -843,17 +679,49 @@ const planUploadRef = ref(null)
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 
-// 导入
-const importDialogVisible = ref(false)
-const importStep = ref('select')  // 'select' | 'preview'
-const importFileList = ref([])
-const importUploadRef = ref(null)
-const importHeaders = ref([])
-const importRows = ref([])
-const importing = ref(false)
+// AI 研判侧滑页
+const assessmentDrawerVisible = ref(false)
+const assessmentLeadId = ref(null)
+const assessmentLeadName = ref('')
 
-const importValidCount = ref(0)
-const importErrorCount = ref(0)
+function triggerAssessFromList(row) {
+  assessmentLeadId.value = row.id
+  assessmentLeadName.value = row.project_name
+  assessmentDrawerVisible.value = true
+}
+
+async function copyPrompt(row) {
+  try {
+    const res = await getPromptPreview(row.id)
+    if (res.code !== 0) {
+      ElMessage.error(res.message || '获取提示词失败')
+      return
+    }
+    const data = res.data
+    const parts = []
+    if (data.system_prompt) {
+      parts.push('【系统提示词】')
+      parts.push(data.system_prompt)
+      parts.push('')
+    }
+    parts.push('【用户提示词】')
+    parts.push(data.prompt_text)
+    await navigator.clipboard.writeText(parts.join('\n'))
+    ElMessage.success('提示词已复制到剪贴板')
+  } catch (err) {
+    ElMessage.error(err.message || '复制失败')
+  }
+}
+
+function openAssessmentDrawerForEdit() {
+  assessmentLeadId.value = editingId.value
+  assessmentLeadName.value = form.project_name
+  assessmentDrawerVisible.value = true
+}
+
+function onAssessmentComplete() {
+  fetchData()
+}
 
 const defaultForm = () => ({
   order_no: 0,
@@ -865,16 +733,14 @@ const defaultForm = () => ({
   project_content: '',
   project_doc: '',
   investment_plan: '',
+  ai_assessment_result: '',
   conclusion: '',
   follow_status_code: '',
-  meeting_status_code: 'not_meeting',
-  recommend_unit_code: '',
   responsible_unit_code: '',
   person_in_charge: '',
   person_in_charge_phone: '',
   first_contact_date: '',
   tags: [],
-  team_leader_ids: [],
   demands: []
 })
 
@@ -883,10 +749,10 @@ const form = reactive(defaultForm())
 const rules = {
   project_name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
   project_type_code: [{ required: true, message: '请选择项目类型', trigger: 'change' }],
-  invest_enterprise: [{ required: true, message: '请输入投资商名称', trigger: 'blur' }],
+  invest_enterprise: [{ required: true, message: '请输入投资企业名称', trigger: 'blur' }],
   enterprise_info: [{ required: true, message: '请输入企业简介', trigger: 'blur' }],
   project_content: [{ required: true, message: '请输入项目内容', trigger: 'blur' }],
-  follow_status_code: [{ required: true, message: '请选择跟进状态', trigger: 'change' }],
+  follow_status_code: [{ required: false, message: '请选择跟进状态', trigger: 'change' }],
   responsible_unit_code: [{ required: false, message: '请选择责任单位', trigger: 'change' }]
 }
 
@@ -902,14 +768,12 @@ async function fetchData() {
     const params = {}
     if (searchText.value) params.search = searchText.value
     if (filterFollowStatus.value.length > 0) params.follow_status = filterFollowStatus.value.join(',')
-    if (filterMeetingStatus.value) params.meeting_status = filterMeetingStatus.value
     if (filterProjectType.value) params.project_type = filterProjectType.value
-    if (recentActivityDays.value) params.recent_activity_days = recentActivityDays.value
-    const res = await getPublicProjects(params)
-    projects.value = res.data || []
+    const res = await getLeads(params)
+    leads.value = res.data || []
     currentPage.value = 1
     nextTick(() => { updateExpandWidth(); addExpandTooltips() })
-  } catch { projects.value = [] }
+  } catch { leads.value = [] }
   finally { loading.value = false }
 }
 
@@ -925,9 +789,6 @@ function formatAmount(amount) {
   return n.toLocaleString('zh-CN') + ' 万元'
 }
 
-function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
-function tableRowClassName({ row }) { return row.follow_status_code === 'follow_focus' ? 'row-focus' : '' }
-
 function demandStatusColor(s) {
   const map = { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }
   return map[s] || '#909399'
@@ -940,119 +801,29 @@ function demandStatusName(s) {
 // ---- 操作列 ----
 function handleRowCmd(cmd, row) {
   if (cmd === 'view') {
-    viewProject.value = row
+    viewLead.value = row
     viewDrawerVisible.value = true
   } else if (cmd === 'delete') {
     handleDelete(row)
   }
 }
-function handleAddActivity(row) {
-  activityProjectId.value = row.id
-  activityProjectName.value = row.project_name
-  activityDrawerVisible.value = true
-}
-function handleAI(row) {
-  router.push({ path: '/toolbox', query: { topic: row.project_name } })
-}
 
-// ---- 查看 ----
-function handleView(row) {
-  // tag_names 来自公开 API 已解析；_tagNames 用于 ProjectDrawer 展示
-  row._tagNames = row.tag_names || []
-  viewProject.value = row
-  viewDrawerVisible.value = true
-}
-
-// ---- 打印 / 导出 ----
-const printExportDialogVisible = ref(false)
-
-// ---- 批量删除 ----
-async function handleBatchDelete() {
+// ---- 转为项目 ----
+async function handleConvert(row) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedIds.value.length} 个项目吗？此操作不可恢复。`,
-      '批量删除',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      `确定将线索「${row.project_name}」转为招商项目吗？转换后将在招商项目库中创建对应项目。`,
+      '转为招商项目',
+      { confirmButtonText: '确认转换', cancelButtonText: '取消', type: 'warning' }
     )
-    const res = await batchDeleteProjects(selectedIds.value)
+    const res = await convertLead(row.id)
     if (res.code === 0) {
-      ElMessage.success(res.message)
-      selectedIds.value = []
+      ElMessage.success('线索已成功转为招商项目')
       fetchData()
+    } else {
+      ElMessage.error(res.message || '转换失败')
     }
   } catch { /* cancelled */ }
-}
-
-// ---- 批量操作 ----
-function handleBatchCmd(cmd) {
-  if (cmd === 'export-print') {
-    printExportDialogVisible.value = true
-  } else if (cmd === 'batch-delete') {
-    handleBatchDelete()
-  }
-}
-
-// ---- 导入 ----
-function handleImportCmd(cmd) {
-  if (cmd === 'download-template') {
-    downloadImportTemplate().catch(err => ElMessage.error(err.message))
-  } else if (cmd === 'import-data') {
-    resetImport()
-    importDialogVisible.value = true
-  }
-}
-
-function resetImport() {
-  importStep.value = 'select'
-  importFileList.value = []
-  importHeaders.value = []
-  importRows.value = []
-  importValidCount.value = 0
-  importErrorCount.value = 0
-}
-
-async function handleImportFile(file) {
-  importFileList.value = [file]
-  try {
-    const res = await importPreviewApi(file.raw)
-    importHeaders.value = res.data.headers
-    importRows.value = res.data.rows
-    importValidCount.value = res.data.valid_count
-    importErrorCount.value = res.data.error_count
-    importStep.value = 'preview'
-  } catch (err) {
-    ElMessage.error(err.message)
-    importFileList.value = []
-  }
-}
-
-function importRowClass({ row }) {
-  return !row._valid ? 'import-error-row' : ''
-}
-
-function removeImportRow(idx) {
-  const removed = importRows.value[idx]
-  importRows.value.splice(idx, 1)
-  // 重新统计
-  importValidCount.value = importRows.value.filter(r => r._valid).length
-  importErrorCount.value = importRows.value.length - importValidCount.value
-}
-
-async function handleImportExecute() {
-  const validRows = importRows.value.filter(r => r._valid)
-  if (validRows.length === 0) {
-    ElMessage.warning('没有有效数据可导入')
-    return
-  }
-  importing.value = true
-  try {
-    const res = await importExecute(validRows)
-    if (res.code === 0) {
-      ElMessage.success(`成功导入 ${res.data?.count || validRows.length} 条记录`)
-      importDialogVisible.value = false
-    }
-  } catch (err) { ElMessage.error(err.message) }
-  finally { importing.value = false }
 }
 
 // ---- 新建 ----
@@ -1074,7 +845,7 @@ async function openEdit(row) {
   editMode.value = 'edit'
   editingId.value = row.id
   try {
-    const res = await getProject(row.id)
+    const res = await getLead(row.id)
     if (res.code === 0) {
       const d = res.data
       form.order_no = d.order_no || 0
@@ -1086,6 +857,7 @@ async function openEdit(row) {
       form.project_content = d.project_content || ''
       form.project_doc = d.project_doc || ''
       form.investment_plan = d.investment_plan || ''
+      form.ai_assessment_result = d.ai_assessment_result || ''
       form.conclusion = d.conclusion || ''
       // 解析已有的文件列表
       try {
@@ -1097,14 +869,11 @@ async function openEdit(row) {
         planFileList.value = Array.isArray(parsedPlan) ? parsedPlan.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { planFileList.value = [] }
       form.follow_status_code = d.follow_status_code || ''
-      form.meeting_status_code = d.meeting_status_code || 'not_meeting'
-      form.recommend_unit_code = d.recommend_unit_code || ''
       form.responsible_unit_code = d.responsible_unit_code || ''
       form.person_in_charge = d.person_in_charge || ''
       form.person_in_charge_phone = d.person_in_charge_phone || ''
       form.first_contact_date = d.first_contact_date || ''
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
-      form.team_leader_ids = Array.isArray(d.team_leader_ids) ? [...d.team_leader_ids] : []
       form.demands = (d.demands || []).map(dd => {
         const code = dd.demand_type_code || ''
         let cascader = []
@@ -1126,6 +895,10 @@ async function openEdit(row) {
       })
     }
     editDrawerVisible.value = true
+    // 如果已有研判结果，自动切换到对接情况Tab查看
+    if (row.ai_assessment_result) {
+      nextTick(() => { editActiveTab.value = 'contact' })
+    }
   } catch (err) { ElMessage.error(err.message) }
 }
 
@@ -1224,48 +997,45 @@ async function handleSave() {
       project_content: form.project_content,
       project_doc: projectDoc,
       investment_plan: investmentPlan,
+      ai_assessment_result: form.ai_assessment_result,
       conclusion: form.conclusion,
       follow_status_code: form.follow_status_code,
-      meeting_status_code: form.meeting_status_code,
-      recommend_unit_code: form.recommend_unit_code,
       responsible_unit_code: form.responsible_unit_code,
       person_in_charge: form.person_in_charge,
       person_in_charge_phone: form.person_in_charge_phone,
       first_contact_date: form.first_contact_date || null,
       tags: form.tags,
-      team_leader_ids: form.team_leader_ids,
       demands: form.demands
     }
 
     if (editMode.value === 'create') {
-      await createProject(data)
-      ElMessage.success('项目创建成功')
+      await createLead(data)
+      ElMessage.success('线索创建成功')
       editDrawerVisible.value = false
       fetchData()
     } else {
-      // 编辑模式：尝试保存
-      const res = await updateProject(editingId.value, data)
+      const res = await updateLead(editingId.value, data)
       if (res.code === 2) {
         // 顺序号冲突：询问是否下移
         await ElMessageBox.confirm(
-          `顺序号 ${form.order_no} 已被项目「${res.data?.conflict_project || ''}」使用，是否将后续项目整体下移？`,
+          `顺序号 ${form.order_no} 已被线索「${res.data?.conflict_project || ''}」使用，是否将后续线索整体下移？`,
           '顺序号冲突',
           { confirmButtonText: '确认下移', cancelButtonText: '取消', type: 'warning' }
         )
         // 重试：force_reorder
         saving.value = true
         const docUrls2 = fileList.value.filter(f => f.url).map(f => f.url)
-        const retryRes = await updateProject(editingId.value, { ...data, project_doc: JSON.stringify(docUrls2), force_reorder: true })
+        const retryRes = await updateLead(editingId.value, { ...data, project_doc: JSON.stringify(docUrls2), force_reorder: true })
         if (retryRes.code === 0) {
           editDrawerVisible.value = false
           fetchData()
-          ElMessage.success('项目更新成功，顺序号已重排')
+          ElMessage.success('线索更新成功，顺序号已重排')
           return
         }
       }
       editDrawerVisible.value = false
       fetchData()
-      ElMessage.success('项目更新成功')
+      ElMessage.success('线索更新成功')
     }
   } catch (err) {
     ElMessage.error(err.message)
@@ -1276,18 +1046,18 @@ async function handleSave() {
 // ---- 删除 ----
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确定要删除项目「${row.project_name}」吗？`, '确认删除', {
+    await ElMessageBox.confirm(`确定要删除线索「${row.project_name}」吗？`, '确认删除', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
-    await deleteProject(row.id)
-    ElMessage.success('项目已删除')
+    await deleteLead(row.id)
+    ElMessage.success('线索已删除')
     fetchData()
   } catch { /* cancelled */ }
 }
 </script>
 
 <style scoped>
-.investment-page { min-height: 100vh; background: linear-gradient(160deg, #dce8f5 0%, #c8daf0 50%, #b0c8e8 100%); }
+.lead-page { min-height: 100vh; background: linear-gradient(160deg, #dce8f5 0%, #c8daf0 50%, #b0c8e8 100%); }
 .page-body { max-width: 1600px; margin: 0 auto; padding: 28px 32px 60px; }
 .content-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 20px rgba(0,0,0,0.06); }
 .toolbar { display: flex; gap: 16px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
@@ -1317,6 +1087,22 @@ async function handleDelete(row) {
 }
 .expand-block-highlight .expand-block-title {
   color: #8b6914;
+}
+/* AI 研判结果卡片：绿色背景 */
+.expand-block-ai {
+  background: linear-gradient(135deg, #edfaf1 0%, #d9f5e0 100%);
+  border-color: #67c23a !important;
+  border-left: 4px solid #67c23a !important;
+}
+.expand-block-ai .expand-block-title {
+  color: #2d6a3f;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-copy-prompt-btn {
+  font-size: 12px;
+  margin-left: auto;
 }
 .expand-block-title {
   font-size: 12px;
@@ -1403,7 +1189,7 @@ async function handleDelete(row) {
 }
 
 .enterprise-name { cursor: default; border-bottom: 1px dotted #909399; }
-.content-preview { cursor: default; color: #606266; }
+.convert-pending-text { color: #909399; font-size: 13px; }
 
 .pagination-bar {
   display: flex;
@@ -1487,12 +1273,8 @@ async function handleDelete(row) {
   color: #606266;
   line-height: 1.6;
 }
-/* 关注行：默认与普通行一致，悬停时显示黄色 */
-:deep(.row-focus) { background-color: transparent !important; }
-:deep(.row-focus:hover > td) { background-color: #fef7e8 !important; }
 /* 所有行悬停时显示黄色加深效果 */
 :deep(.el-table__body tr:hover > td) { background-color: #fef7e8 !important; }
-:deep(.el-table__body tr.row-focus:hover > td) { background-color: #fdf0d5 !important; }
 :deep(.col-order-no) { padding-left: 4px !important; padding-right: 4px !important; }
 
 /* 紧凑单元格间距 */
@@ -1641,14 +1423,8 @@ async function handleDelete(row) {
 .upload-compact :deep(.el-upload-dragger) { padding: 8px 0 !important; height: 80px !important; }
 .upload-compact :deep(.el-upload-dragger .el-icon--upload) { font-size: 24px; margin-bottom: 0; }
 
-/* 导入对话框 */
-.import-summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 14px; }
-.import-summary strong { font-size: 18px; margin: 0 2px; }
-.summary-valid { color: #67c23a; }
-.summary-error { color: #f56c6c; }
-.import-table-wrap { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
-:deep(.import-error-row) { background-color: #fef0f0 !important; }
-:deep(.import-error-row:hover > td) { background-color: #fde2e2 !important; }
+/* AI 研判对话框 */
+.assess-dialog-tip { font-size: 14px; color: #606266; margin-bottom: 20px; line-height: 1.6; }
 </style>
 
 <!-- 非 scoped 样式：覆盖 Element Plus teleport 到 body 的 popper 和内部表格结构 -->
@@ -1658,11 +1434,6 @@ async function handleDelete(row) {
   max-width: 496px !important;
   word-break: break-word !important;
   overflow-wrap: break-word !important;
-}
-.content-tooltip {
-  max-width: 496px !important;
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
 }
 
 /* 展开单元格冻结 + 宽度约束 */

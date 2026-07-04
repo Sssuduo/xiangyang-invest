@@ -39,6 +39,9 @@ def create_model():
         temperature=data.get('temperature', 0.7),
         max_tokens=data.get('max_tokens', 4096),
         system_prompt=data.get('system_prompt', ''),
+        embedding_api_url=data.get('embedding_api_url', ''),
+        embedding_api_key=data.get('embedding_api_key', ''),
+        embedding_model_name=data.get('embedding_model_name', ''),
         is_active=data.get('is_active', True),
         sort_order=data.get('sort_order', 0)
     )
@@ -58,7 +61,8 @@ def update_model(model_id):
 
     updatable_fields = [
         'name', 'provider', 'api_base_url', 'api_key', 'model_name',
-        'temperature', 'max_tokens', 'system_prompt', 'is_active', 'sort_order'
+        'temperature', 'max_tokens', 'system_prompt', 'is_active', 'sort_order',
+        'embedding_api_url', 'embedding_api_key', 'embedding_model_name'
     ]
     for field in updatable_fields:
         if field in data:

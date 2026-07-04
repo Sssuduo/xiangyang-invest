@@ -16,8 +16,9 @@
             <el-input
               v-model="form.prompt_template"
               type="textarea"
-              :rows="5"
+              :rows="30"
               placeholder="请根据以下信息进行分析：{{user_input}}"
+              class="template-textarea"
             />
             <div class="form-tip">
               💡 使用 <code v-pre>{{ user_input }}</code> 作为用户输入内容的占位符
@@ -97,12 +98,25 @@ async function handleSave() {
 </script>
 
 <style scoped>
-.admin-layout { display: flex; min-height: 100vh; }
-.admin-main { flex: 1; background: var(--bg-light); }
-.admin-content { padding: 32px; max-width: 700px; }
+.admin-layout { display: flex; height: 100vh; }
+.admin-main { flex: 1; background: var(--bg-light); overflow-y: auto; }
+.admin-content { padding: 32px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 h2 { color: var(--primary-color); }
-.edit-form { background: #fff; padding: 32px; border-radius: 12px; box-shadow: var(--shadow-sm); }
+
+.edit-form {
+  background: #fff;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.template-textarea :deep(.el-textarea__inner) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .form-tip { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
 .form-tip code { background: #f0f0f0; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
 </style>

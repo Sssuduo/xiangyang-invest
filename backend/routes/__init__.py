@@ -51,6 +51,10 @@ admin_staff_bp = Blueprint('admin_staff', __name__, url_prefix='/api/admin')
 # 业务用户管理（后台）
 admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix='/api/admin')
 
+# 招商线索研判 + 本地招商知识库
+admin_lead_bp = Blueprint('admin_lead', __name__, url_prefix='/api/admin')
+admin_knowledge_bp = Blueprint('admin_knowledge', __name__, url_prefix='/api/admin')
+
 
 def register_routes(app):
     """注册所有蓝图"""
@@ -82,6 +86,8 @@ def register_routes(app):
     from routes import admin_business_users as _admin_business_users
     from routes import admin_staff as _admin_staff
     from routes import admin_debug as _admin_debug
+    from routes import admin_lead as _admin_lead
+    from routes import admin_knowledge as _admin_knowledge
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)
@@ -112,6 +118,8 @@ def register_routes(app):
     app.register_blueprint(business_auth.business_auth_bp)
     app.register_blueprint(admin_staff.admin_staff_bp)
     app.register_blueprint(admin_business_users.admin_business_users_bp)
+    app.register_blueprint(admin_lead.admin_lead_bp)
+    app.register_blueprint(admin_knowledge.admin_knowledge_bp)
 
     # 注册 debug 路由和错误处理器
     _admin_debug.register_debug_routes(app)

@@ -33,7 +33,7 @@ def call_llm(model_config, messages, temperature=None, max_tokens=None):
         'max_tokens': max_tokens if max_tokens is not None else 4096
     }
 
-    response = requests.post(url, json=payload, headers=headers, timeout=120)
+    response = requests.post(url, json=payload, headers=headers, timeout=300)
     response.raise_for_status()
 
     data = response.json()

@@ -1,3 +1,4 @@
+import json
 from models import AdminUser, BusinessUser, Staff, HomepageConfig, ContactInfo, ProvinceInfo, CityInfo
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from models import ExportTemplate, ExportFieldConfig, ImportFieldConfig
@@ -6,7 +7,80 @@ from models import ImportFieldConfigDemand, ImportFieldConfigConstruction, Impor
 from models import ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict
 from models import ConstructionProject, WorkProgress, ProjectIssue, WorkRoadmapItem
 from models import PromoVideo
+from models import KnowledgeEntry
+from models import LLMModel
 from extensions import db
+
+
+# ============================================================
+# V2: 招商线索研判 — 默认提示词模板
+# ============================================================
+DEFAULT_LEAD_ASSESSMENT_PROMPT = """你是一位专业的招商分析顾问。请根据以下招商线索信息，结合襄阳农高区的产业定位和本地招商知识库，进行全面、客观的研判分析。
+
+【线索信息】
+{{lead_context}}
+
+【本地知识库参考】（每条知识附有相关性评分，0-1 之间，越高越匹配该招商线索。如某条知识评分低于 0.5，表明知识库中暂无直接匹配内容，请以你的常识研判为主；如某条知识内容与你研判的事实矛盾，请在报告中指出该条知识的编号和矛盾原因）
+{{knowledge_context}}
+
+请从以下 9 个维度进行详细分析。**对于涉及外部信息的维度（尤其是舆情、市场调研、企业注册信息等），请务必列出具体的参考信息原文出处或新闻 URL 链接，以便人工核查。**
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+一、企业基础信息
+━━━━━━━━━━━━━━━━━━━━━━━━
+1. **企业注册信息核查**：确认企业注册信息、经营状态、法人代表、注册资本、成立时间、股权结构等。
+   - 请列出核查所使用的数据来源和查询平台。
+2. **企业资信状况**：分析企业的信用评级、融资历史、经营风险、涉诉情况等。
+   - 请列出所参考的裁判文书、失信被执行人查询等信息的来源。
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+二、市场与竞争
+━━━━━━━━━━━━━━━━━━━━━━━━
+3. **正面负面舆情**：搜索企业相关的近期新闻、舆情走向、社会评价等。
+   - **请明确列出每一条参考新闻的标题、媒体来源和 URL 链接**，至少列出 3-5 条。
+4. **同类型项目市场调研**：分析市场上类似项目的竞争格局、发展趋势、成功/失败案例。
+   - 请列出参考案例的项目名称、所在地、投资规模和来源链接。
+5. **市场占有情况分析**：分析该项目所生产的主要产品，在襄阳本地、湖北省及周边地区（河南、陕西、重庆、湖南等）的现有市场规模、销售渠道、目标客户群体、市场占有率预期及潜在竞品情况。
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+三、投资与回报
+━━━━━━━━━━━━━━━━━━━━━━━━
+6. **投资规模分析**：评估本项目投资规模的合理性，与同行业同类项目进行横向对比。
+7. **投资回报模型**：按企业预计的投入（固定资产投资、流动资金、人员成本等）和投产后预计的收益（年产量、年销售收入、利润率等），测算投资回收期（年）。
+   - 若项目涉及征地，需将土地购置成本（参考襄阳当地工业用地价格约 15-30 万元/亩）及基础设施建设成本纳入测算。
+   - 请给出**乐观、中性、悲观三种情景**下的回本周期。
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+四、配套与布局
+━━━━━━━━━━━━━━━━━━━━━━━━
+8. **经营配套分析**：分析该企业正常运营是否需要额外的配套设施或配套产业。例如：
+   - 秸秆综合利用项目 → 需要秸秆收储运体系（收集半径、运输成本、仓储设施）
+   - 粪污综合处理项目 → 需要污水处理厂配套（处理能力、管网覆盖）
+   - 农产品深加工项目 → 需要冷链物流、原料基地配套
+   - 新能源项目 → 需要电网接入、储能设施
+   若存在配套缺口，需评估配套建设周期及对项目投产时间的影响。
+9. **湖北及周边地区布局**：分析企业在湖北省及周边省份的现有产业布局、已投项目运营情况、未来投资计划，以及本项目与现有布局的协同效应。
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+五、综合研判
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+最后，请给出：
+- **综合研判结论**（200 字以内摘要）
+- **推荐等级**（★★★★★ 强烈推荐 / ★★★★ 推荐 / ★★★ 谨慎推荐 / ★★ 暂缓 / ★ 不推荐）
+- **主要风险点**（列举 3-5 条）
+- **下一步建议**（是否推荐跟进、需补充哪些材料、建议对接方式）
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+六、参考来源汇总
+━━━━━━━━━━━━━━━━━━━━━━━━
+请以表格形式汇总本次研判中所有引用的外部信息来源：
+
+| 序号 | 维度 | 来源名称 | 信息摘要 | URL链接 |
+|------|------|---------|---------|---------|
+| 1    | 舆情分析 | 天眼查企业信息 | xxx公司注册资本5000万... | https://... |
+| 2    | 舆情分析 | 襄阳市招商局官网 | xxx项目签约仪式报道 | https://... |
+| ...  | ...   | ...     | ...     | ...     |"""
 
 
 # 中国 34 个省级行政区（GB/T 2260 编码）
@@ -89,7 +163,7 @@ def init_database(app):
     # ================================================================
     # 版本号迁移机制：仅执行未完成的迁移，避免每次启动都跑 50+ 条 ALTER TABLE
     # ================================================================
-    CURRENT_DB_VERSION = 1  # 新增迁移时 +1
+    CURRENT_DB_VERSION = 3  # 新增迁移时 +1
 
     # 确保 app_config 表存在
     db.session.execute(db.text(
@@ -158,6 +232,79 @@ def init_database(app):
             "created_at DATETIME DEFAULT (datetime('now')), "
             "UNIQUE(activity_id, demand_id)"
             ")",
+            # V2: 招商线索研判 + 本地招商知识库
+            "CREATE TABLE IF NOT EXISTS investment_leads ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "order_no INTEGER DEFAULT 0, "
+            "project_name VARCHAR(255) NOT NULL, "
+            "invest_enterprise VARCHAR(255) NOT NULL, "
+            "enterprise_info TEXT NOT NULL, "
+            "project_content TEXT NOT NULL, "
+            "invest_amount NUMERIC(15,2) NOT NULL, "
+            "follow_status_code VARCHAR(32) NOT NULL, "
+            "meeting_status_code VARCHAR(32) DEFAULT 'not_meeting', "
+            "recommend_unit_code VARCHAR(32) DEFAULT '', "
+            "responsible_unit_code VARCHAR(32) DEFAULT '', "
+            "project_type_code VARCHAR(32) NOT NULL, "
+            "person_in_charge VARCHAR(64) DEFAULT '', "
+            "person_in_charge_phone VARCHAR(32) DEFAULT '', "
+            "project_doc TEXT DEFAULT '', "
+            "investment_plan TEXT DEFAULT '', "
+            "conclusion TEXT DEFAULT '', "
+            "tags TEXT DEFAULT '[]', "
+            "team_leader_ids TEXT DEFAULT '[]', "
+            "first_contact_date DATE, "
+            "ai_assessment_result TEXT DEFAULT '', "
+            "ai_assessment_at DATETIME, "
+            "ai_model_id INTEGER REFERENCES llm_models(id), "
+            "assessment_prompt_used TEXT DEFAULT '', "
+            "converted_project_id INTEGER REFERENCES investment_projects(id), "
+            "is_deleted BOOLEAN DEFAULT 0, "
+            "created_at DATETIME DEFAULT (datetime('now')), "
+            "updated_at DATETIME DEFAULT (datetime('now')), "
+            "last_updated_at DATETIME DEFAULT (datetime('now'))"
+            ")",
+            "CREATE TABLE IF NOT EXISTS knowledge_entries ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "title VARCHAR(255) NOT NULL, "
+            "content TEXT NOT NULL, "
+            "category VARCHAR(64) NOT NULL, "
+            "tags TEXT DEFAULT '[]', "
+            "source VARCHAR(255) DEFAULT '', "
+            "attach_files TEXT DEFAULT '[]', "
+            "is_active BOOLEAN DEFAULT 1, "
+            "sort_order INTEGER DEFAULT 0, "
+            "created_at DATETIME DEFAULT (datetime('now')), "
+            "updated_at DATETIME DEFAULT (datetime('now'))"
+            ")",
+            "CREATE INDEX IF NOT EXISTS ix_investment_leads_order_no ON investment_leads(order_no)",
+            "CREATE INDEX IF NOT EXISTS ix_investment_leads_converted_project_id ON investment_leads(converted_project_id)",
+            "CREATE INDEX IF NOT EXISTS ix_investment_leads_ai_status ON investment_leads(ai_assessment_status)",
+            "CREATE INDEX IF NOT EXISTS ix_knowledge_entries_category ON knowledge_entries(category)",
+            # EnterpriseDemand 支持线索关联
+            "ALTER TABLE enterprise_demands ADD COLUMN lead_id INTEGER REFERENCES investment_leads(id)",
+            # 异步研判状态字段
+            "ALTER TABLE investment_leads ADD COLUMN ai_assessment_status VARCHAR(32) DEFAULT 'pending'",
+            # V3: AI研判会话 + 消息
+            "CREATE TABLE IF NOT EXISTS lead_assessment_sessions ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "lead_id INTEGER NOT NULL REFERENCES investment_leads(id), "
+            "model_id INTEGER REFERENCES llm_models(id), "
+            "title VARCHAR(255) DEFAULT 'AI 研判', "
+            "created_at DATETIME DEFAULT (datetime('now')), "
+            "updated_at DATETIME DEFAULT (datetime('now'))"
+            ")",
+            "CREATE TABLE IF NOT EXISTS lead_assessment_messages ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "session_id INTEGER NOT NULL REFERENCES lead_assessment_sessions(id), "
+            "role VARCHAR(32) NOT NULL DEFAULT 'user', "
+            "content TEXT DEFAULT '', "
+            "file_path VARCHAR(512) DEFAULT '', "
+            "file_name VARCHAR(255) DEFAULT '', "
+            "created_at DATETIME DEFAULT (datetime('now'))"
+            ")",
+            "CREATE INDEX IF NOT EXISTS ix_lead_assmt_sessions_lead ON lead_assessment_sessions(lead_id)",
+            "CREATE INDEX IF NOT EXISTS ix_lead_assmt_msgs_session ON lead_assessment_messages(session_id)",
         ]
         # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
         drop_index_sqls = [
@@ -221,7 +368,9 @@ def init_database(app):
             'investment': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
             'activity': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
             'demand': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
-            'construction': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True}
+            'construction': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
+            'lead': {'view': True, 'add': True, 'edit': True, 'delete': True, 'assess': True, 'convert': True},
+            'knowledge': {'view': True, 'add': True, 'edit': True, 'delete': True}
         })
         db.session.add(demo)
         print('[种子数据] 业务用户账号已创建: demo / demo123')
@@ -318,6 +467,160 @@ def init_database(app):
     # ---- 打印模板（统一模板）字段配置 ----
     _seed_print_fields()
     _seed_construction_print_fields()
+
+    # ---- V2: 招商线索研判 + 本地招商知识库 ----
+    _seed_lead_assessment_prompt()
+    _seed_knowledge_from_demands()
+    _seed_static_knowledge()
+    _embed_existing_entries()
+
+
+def _seed_lead_assessment_prompt():
+    """初始化招商线索研判默认提示词模板"""
+    existing = db.session.execute(
+        db.text("SELECT value FROM app_config WHERE key='lead_assessment_prompt'")
+    ).fetchone()
+    if not existing:
+        db.session.execute(db.text(
+            "INSERT INTO app_config (key, value) VALUES ('lead_assessment_prompt', :prompt)"
+        ), {'prompt': DEFAULT_LEAD_ASSESSMENT_PROMPT})
+        db.session.commit()
+        print('[种子数据] 招商线索研判默认提示词模板已初始化')
+
+
+def _seed_knowledge_from_demands():
+    """从企业诉求数据提炼知识库种子条目"""
+    if KnowledgeEntry.query.count() > 0:
+        return
+
+    demands = db.session.execute(db.text("""
+        SELECT d.demand_type_code, dt.name as type_name,
+               GROUP_CONCAT(d.demand_content, '|||') as contents,
+               GROUP_CONCAT(d.resolution, '|||') as resolutions
+        FROM enterprise_demands d
+        LEFT JOIN demand_type_dict dt ON dt.code = d.demand_type_code
+        WHERE d.demand_type_code != ''
+        GROUP BY d.demand_type_code
+    """)).fetchall()
+
+    entries = []
+    for row in demands:
+        type_name = row[1] or row[0]
+        contents = [c for c in (row[2] or '').split('|||') if c.strip()]
+        resolutions = [r for r in (row[3] or '').split('|||') if r.strip()]
+        if not contents:
+            continue
+
+        unique_contents = list(set(contents))[:5]
+        unique_resolutions = list(set(resolutions))[:5]
+
+        content_parts = [f'## {type_name}常见情况']
+        content_parts.append(f'\n### 典型诉求（共 {len(contents)} 条，以下为代表性样本）')
+        for i, c in enumerate(unique_contents, 1):
+            content_parts.append(f'{i}. {c.strip()[:300]}')
+        if unique_resolutions:
+            content_parts.append(f'\n### 已采取的解决措施')
+            for i, r in enumerate(unique_resolutions, 1):
+                content_parts.append(f'{i}. {r.strip()[:300]}')
+
+        entries.append({
+            'title': f'企业常见诉求：{type_name}',
+            'content': '\n'.join(content_parts),
+            'category': 'demand_pattern',
+            'tags': json.dumps([type_name, '企业诉求', '常见问题'], ensure_ascii=False),
+            'source': '从招商项目历史数据自动提炼',
+            'is_active': False
+        })
+
+    for e in entries:
+        db.session.add(KnowledgeEntry(**e))
+    db.session.commit()
+
+    if entries:
+        print(f'[知识库种子] 从企业诉求中提炼了 {len(entries)} 条知识条目（默认停用，需人工审核后启用）')
+
+
+def _seed_static_knowledge():
+    """静态知识库种子数据"""
+    if KnowledgeEntry.query.filter(KnowledgeEntry.category != 'demand_pattern').count() > 0:
+        return
+
+    static_entries = [
+        {
+            'title': '襄阳农高区产业扶持政策摘要',
+            'content': '襄阳市对入驻农高区的企业提供以下政策支持：\n1. 固定资产投资补贴：对固定资产投资超过5000万元的项目，按实际投资额的2%给予一次性补贴\n2. 税收优惠：符合条件的企业享受企业所得税"三免三减半"政策\n3. 用地保障：优先安排建设用地指标，工业用地出让底价可按不低于国家最低价标准的70%执行\n4. 人才政策：对引进的高层次人才给予安家补贴和科研启动经费\n5. 科技创新：对获批国家级、省级研发平台的企业分别给予100万元、50万元奖励',
+            'category': 'industry_policy',
+            'tags': json.dumps(['政策', '补贴', '税收', '用地'], ensure_ascii=False),
+            'source': '襄阳市招商局官网',
+            'is_active': True
+        },
+        {
+            'title': '襄阳各片区工业用地基准价格（2025版）',
+            'content': '襄阳市各片区工业用地基准价格：\n1. 襄城区：18-25万元/亩\n2. 樊城区：20-28万元/亩\n3. 襄州区：15-22万元/亩\n4. 高新区：22-30万元/亩\n5. 东津新区：16-24万元/亩\n注：农高区核心区位于襄州区，土地成本相对较低。征地成本通常包括土地补偿费、安置补助费、青苗补偿费等，综合成本约25-35万元/亩。',
+            'category': 'land_cost',
+            'tags': json.dumps(['土地', '征地', '成本'], ensure_ascii=False),
+            'source': '襄阳市自然资源局',
+            'is_active': True
+        },
+        {
+            'title': '襄阳农高区园区基础设施配套概况',
+            'content': '襄阳国家农高区总体规划面积约120平方公里，核心区约30平方公里，已建成以下基础设施：\n1. 道路：核心区"三横四纵"主干路网已全面建成\n2. 供水：日供水能力10万吨\n3. 污水处理：一期日处理能力2万吨，二期（在建）日处理能力5万吨\n4. 供电：220kV变电站2座，110kV变电站4座\n5. 供气：天然气管网已覆盖核心区\n6. 冷链物流：已建成3万吨冷库，规划再建5万吨\n7. 标准化厂房：已建成20万平方米，可租可售',
+            'category': 'park_info',
+            'tags': json.dumps(['园区', '基础设施', '配套'], ensure_ascii=False),
+            'source': '襄阳农高区管委会',
+            'is_active': True
+        },
+        {
+            'title': '襄阳农产品加工产业配套能力',
+            'content': '襄阳农产品加工配套能力分析：\n1. 秸秆综合利用：全市秸秆年产量约600万吨，现有收储运企业30余家，收储点200余个，覆盖半径50公里\n2. 畜禽粪污处理：全市规模化养殖场粪污处理设施配套率已达90%，但区域性集中处理中心仅2座\n3. 冷链物流：现有冷链物流企业15家，冷藏车200余辆，冷库容量8万吨\n4. 包装印刷：现有包装印刷企业40余家，可满足本地农产品包装需求\n5. 检测认证：拥有国家级农产品质量检测中心1个，省级3个',
+            'category': 'supporting',
+            'tags': json.dumps(['配套', '产业链', '加工', '物流'], ensure_ascii=False),
+            'source': '襄阳市农业农村局',
+            'is_active': True
+        },
+        {
+            'title': '周边城市招商竞争态势',
+            'content': '襄阳周边主要竞争城市招商政策对比：\n1. 宜昌市：生物医药和精细化工为主导，土地价格18-26万元/亩，税收"三免两减半"\n2. 荆州市：农产品加工和纺织服装为重点，土地价格12-20万元/亩，提供标准化厂房前三年免租\n3. 南阳市（河南）：装备制造和新能源为重点，土地价格10-18万元/亩，固投补贴3%\n4. 十堰市：汽车零部件和文旅康养为主导，土地价格15-22万元/亩\n5. 随州市：专用汽车和农产品加工，土地价格12-18万元/亩\n襄阳优势：交通枢纽地位突出（高铁+汉江航运+机场），农高区国字号平台稀缺性',
+            'category': 'competitor',
+            'tags': json.dumps(['周边', '竞争', '招商政策', '对比'], ensure_ascii=False),
+            'source': '各市招商局公开资料整理',
+            'is_active': True
+        },
+    ]
+
+    for e in static_entries:
+        db.session.add(KnowledgeEntry(**e))
+    db.session.commit()
+    print(f'[知识库种子] 静态知识库 {len(static_entries)} 条已初始化')
+
+
+def _embed_existing_entries():
+    """批量向量化所有未向量化的知识条目"""
+    from services.embedding_service import batch_embed_entries
+
+    entries = KnowledgeEntry.query.filter(
+        db.or_(KnowledgeEntry.embedding.is_(None), KnowledgeEntry.embedding == '')
+    ).all()
+    if not entries:
+        return
+
+    model = LLMModel.query.filter_by(is_active=True).order_by(LLMModel.sort_order.asc()).first()
+    if not model:
+        print('[知识库向量化] 没有可用的 AI 模型，跳过向量化')
+        return
+
+    model_config = {
+        'api_base_url': model.api_base_url,
+        'api_key': model.api_key,
+        'model_name': model.model_name
+    }
+    try:
+        count = batch_embed_entries(entries, model_config)
+        db.session.commit()
+        print(f'[知识库向量化] 已对 {count}/{len(entries)} 条缺失向量的条目完成向量化')
+    except Exception as e:
+        print(f'[知识库向量化] 向量化失败: {e}')
+        db.session.rollback()
 
 
 def _seed_investment_dicts():

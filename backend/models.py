@@ -250,6 +250,12 @@ class LLMModel(db.Model):
     temperature = db.Column(db.Float, default=0.7)
     max_tokens = db.Column(db.Integer, default=4096)
     system_prompt = db.Column(db.Text, default='')
+
+    # 独立 Embedding 配置（留空则复用上方 api_base_url/api_key/model_name）
+    embedding_api_url = db.Column(db.String(512), default='')
+    embedding_api_key = db.Column(db.String(512), default='')
+    embedding_model_name = db.Column(db.String(128), default='')
+
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
 
@@ -268,16 +274,30 @@ class LLMModel(db.Model):
             'system_prompt': self.system_prompt or '',
             'is_active': self.is_active,
             'sort_order': self.sort_order,
+            'embedding_api_url': self.embedding_api_url or '',
+            'embedding_model_name': self.embedding_model_name or '',
             # 不返回 api_key
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
     def to_admin_dict(self):
-        """管理员视图（含 api_key）"""
+        """管理员视图（含 api_key 和 embedding_api_key）"""
         d = self.to_dict()
         d['api_key'] = self.api_key
+        d['embedding_api_key'] = self.embedding_api_key or ''
         return d
+
+    def get_embedding_config(self):
+        """获取 embedding 配置：优先独立配置，否则复用 chat 配置"""
+        url = self.embedding_api_url or f"{self.api_base_url.rstrip('/')}/embeddings"
+        key = self.embedding_api_key or self.api_key
+        model = self.embedding_model_name or self.model_name
+        return {
+            'url': url,
+            'key': key,
+            'model': model
+        }
 
 
 class QuickPrompt(db.Model):
@@ -481,6 +501,132 @@ class InvestmentProject(db.Model):
         }
 
 
+class InvestmentLead(db.Model):
+    """招商线索研判"""
+    __tablename__ = 'investment_leads'
+
+    # === 与 InvestmentProject 字段完全一致 ===
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    order_no = db.Column(db.Integer, nullable=False, default=0)
+    project_name = db.Column(db.String(255), nullable=False)
+    invest_enterprise = db.Column(db.String(255), nullable=False)
+    enterprise_info = db.Column(db.Text, nullable=False)
+    project_content = db.Column(db.Text, nullable=False)
+    invest_amount = db.Column(db.Numeric(15, 2), nullable=False)
+    follow_status_code = db.Column(db.String(32), nullable=False)
+    meeting_status_code = db.Column(db.String(32), nullable=False, default='not_meeting')
+    recommend_unit_code = db.Column(db.String(32), default='')
+    responsible_unit_code = db.Column(db.String(32), nullable=True, default='')
+    project_type_code = db.Column(db.String(32), nullable=False)
+    person_in_charge = db.Column(db.String(64), default='')
+    person_in_charge_phone = db.Column(db.String(32), default='')
+    project_doc = db.Column(db.Text, default='')
+    investment_plan = db.Column(db.Text, default='')
+    conclusion = db.Column(db.Text, default='')
+    tags = db.Column(db.Text, default='[]')
+    team_leader_ids = db.Column(db.Text, default='[]')
+    first_contact_date = db.Column(db.Date)
+
+    # === 研判专用字段 ===
+    ai_assessment_result = db.Column(db.Text, default='')
+    ai_assessment_at = db.Column(db.DateTime)
+    ai_assessment_status = db.Column(db.String(32), default='pending')  # pending / running / completed / failed
+    ai_model_id = db.Column(db.Integer, db.ForeignKey('llm_models.id'), nullable=True)
+    assessment_prompt_used = db.Column(db.Text, default='')
+    converted_project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
+
+    # === 生命周期 ===
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    converted_project = db.relationship('InvestmentProject', foreign_keys=[converted_project_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'order_no': self.order_no,
+            'project_name': self.project_name, 'invest_enterprise': self.invest_enterprise,
+            'enterprise_info': self.enterprise_info or '', 'project_content': self.project_content or '',
+            'invest_amount': float(self.invest_amount) if self.invest_amount else 0,
+            'follow_status_code': self.follow_status_code,
+            'meeting_status_code': self.meeting_status_code,
+            'recommend_unit_code': self.recommend_unit_code or '',
+            'responsible_unit_code': self.responsible_unit_code,
+            'project_type_code': self.project_type_code,
+            'person_in_charge': self.person_in_charge or '',
+            'person_in_charge_phone': self.person_in_charge_phone or '',
+            'project_doc': self.project_doc or '', 'investment_plan': self.investment_plan or '',
+            'conclusion': self.conclusion or '',
+            'tags': json.loads(self.tags) if self.tags else [],
+            'team_leader_ids': json.loads(self.team_leader_ids) if self.team_leader_ids else [],
+            'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
+            'ai_assessment_result': self.ai_assessment_result or '',
+            'ai_assessment_at': self.ai_assessment_at.isoformat() if self.ai_assessment_at else None,
+            'ai_assessment_status': self.ai_assessment_status or 'pending',
+            'ai_model_id': self.ai_model_id,
+            'converted_project_id': self.converted_project_id,
+            'is_deleted': self.is_deleted,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class LeadAssessmentSession(db.Model):
+    """AI 研判会话"""
+    __tablename__ = 'lead_assessment_sessions'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    lead_id = db.Column(db.Integer, db.ForeignKey('investment_leads.id'), nullable=False, index=True)
+    model_id = db.Column(db.Integer, db.ForeignKey('llm_models.id'), nullable=True)
+    title = db.Column(db.String(255), nullable=False, default='AI 研判')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lead = db.relationship('InvestmentLead', foreign_keys=[lead_id], backref='assessment_sessions')
+    model = db.relationship('LLMModel', foreign_keys=[model_id])
+
+    def to_dict(self):
+        msg_count = LeadAssessmentMessage.query.filter_by(session_id=self.id).count()
+        model_name = self.model.name if self.model else ''
+        return {
+            'id': self.id,
+            'lead_id': self.lead_id,
+            'model_id': self.model_id,
+            'model_name': model_name,
+            'title': self.title,
+            'message_count': msg_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class LeadAssessmentMessage(db.Model):
+    """AI 研判会话消息"""
+    __tablename__ = 'lead_assessment_messages'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('lead_assessment_sessions.id'), nullable=False, index=True)
+    role = db.Column(db.String(32), nullable=False, default='user')  # user / assistant / system
+    content = db.Column(db.Text, default='')
+    file_path = db.Column(db.String(512), default='')
+    file_name = db.Column(db.String(255), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    session = db.relationship('LeadAssessmentSession', foreign_keys=[session_id], backref='messages')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'session_id': self.session_id,
+            'role': self.role,
+            'content': self.content or '',
+            'file_url': f'/api/admin/lead/assessment-sessions/{self.session_id}/messages/{self.id}/download' if self.file_path else '',
+            'file_name': self.file_name or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class DemandTypeDict(db.Model):
     """诉求类型字典（支持两级：parent_code 为空则为一级）"""
     __tablename__ = 'demand_type_dict'
@@ -531,7 +677,8 @@ class EnterpriseDemand(db.Model):
     __tablename__ = 'enterprise_demands'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
+    lead_id = db.Column(db.Integer, db.ForeignKey('investment_leads.id'), nullable=True)
     demand_type_code = db.Column(db.String(255), default='')
     demand_content = db.Column(db.Text, nullable=False)
     resolution = db.Column(db.Text, default='')
@@ -545,6 +692,7 @@ class EnterpriseDemand(db.Model):
         return {
             'id': self.id,
             'project_id': self.project_id,
+            'lead_id': self.lead_id,
             'demand_type_code': self.demand_type_code or '',
             'demand_content': self.demand_content,
             'resolution': self.resolution or '',
@@ -1256,6 +1404,115 @@ class ChangeHistory(db.Model):
             'changed_by_id': self.changed_by_id,
             'changed_by_name': self.changed_by_name,
             'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class KnowledgeEntry(db.Model):
+    """本地招商知识库"""
+    __tablename__ = 'knowledge_entries'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(64), nullable=False)
+    tags = db.Column(db.Text, default='[]')
+    source = db.Column(db.String(255), default='')
+    attach_files = db.Column(db.Text, default='[]')
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    # 向量化字段
+    embedding = db.Column(db.Text, default=None)
+    embedding_model = db.Column(db.String(64), default='')
+    search_count = db.Column(db.Integer, default=0)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'title': self.title, 'content': self.content,
+            'category': self.category,
+            'tags': json.loads(self.tags) if self.tags else [],
+            'source': self.source or '',
+            'attach_files': json.loads(self.attach_files) if self.attach_files else [],
+            'is_active': self.is_active, 'sort_order': self.sort_order,
+            'has_embedding': bool(self.embedding),
+            'embedding_model': self.embedding_model or '',
+            'search_count': self.search_count or 0,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class KnowledgeDraft(db.Model):
+    """知识草稿（AI研判自动提炼，待人工审核）"""
+    __tablename__ = 'knowledge_drafts'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(64), nullable=False)
+    tags = db.Column(db.Text, default='[]')
+    source = db.Column(db.String(255), default='AI研判自动提炼')
+    source_session_id = db.Column(db.Integer, nullable=True)
+    source_lead_id = db.Column(db.Integer, nullable=True)
+    target_entry_id = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(32), default='draft')  # draft / approved / rejected
+    reviewed_by = db.Column(db.String(64), default='')
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    review_note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'category': self.category,
+            'tags': json.loads(self.tags) if self.tags else [],
+            'source': self.source or '',
+            'source_session_id': self.source_session_id,
+            'source_lead_id': self.source_lead_id,
+            'target_entry_id': self.target_entry_id,
+            'status': self.status,
+            'reviewed_by': self.reviewed_by or '',
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'review_note': self.review_note or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class KnowledgeUsageStat(db.Model):
+    """知识使用统计（每次研判记录一条）"""
+    __tablename__ = 'knowledge_usage_stats'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    entry_id = db.Column(db.Integer, nullable=False, index=True)
+    session_id = db.Column(db.Integer, nullable=False, index=True)
+    lead_id = db.Column(db.Integer, nullable=False)
+    was_used = db.Column(db.Boolean, default=False)
+    was_useful = db.Column(db.Boolean, nullable=True)
+    relevance_score = db.Column(db.Float, default=0.0)
+    accuracy_feedback = db.Column(db.Text, default='')
+    needs_update = db.Column(db.Boolean, default=False)
+    update_suggestion = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'entry_id': self.entry_id,
+            'session_id': self.session_id,
+            'lead_id': self.lead_id,
+            'was_used': self.was_used,
+            'was_useful': self.was_useful,
+            'relevance_score': self.relevance_score,
+            'accuracy_feedback': self.accuracy_feedback or '',
+            'needs_update': self.needs_update,
+            'update_suggestion': self.update_suggestion or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 

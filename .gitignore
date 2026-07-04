@@ -30,3 +30,13 @@ Desktop.ini
 
 # Logs
 *.log
+
+# CodeGraph
+.codegraph/
+
+# Personal scripts
+backup_db.sh
+check_disk.ps1
+format_usb.ps1
+cookies.txt
+prod_cookies.txt

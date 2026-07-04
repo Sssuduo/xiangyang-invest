@@ -41,16 +41,22 @@ format_usb.ps1
 cookies.txt
 prod_cookies.txt
 
-# Frontend build output (generated on server)
-static/assets/
-static/favicon.svg
-static/icons.svg
-static/index.html
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+test_output.txt
 
-# Deployment scripts (server only)
-deploy.sh
-rollback.sh
-scripts/backup_db.sh
+# Backups
+*.bak
+*_backup.*
 
-# Uploaded files
-backend/static/uploads/templates/
+# Temp
+*.tmp
+temp/
+
+# SSH keys
+*.pem
+id_rsa*
+deploy_temp_key*

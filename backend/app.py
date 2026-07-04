@@ -33,10 +33,11 @@ def create_app(config_name=None):
     # 注册路由
     register_routes(app)
 
-    # 自动创建数据库表（仅 SQLite 开发环境）
-    with app.app_context():
-        from seed_data import init_database
-        init_database(app)
+    # 自动创建数据库表（非测试环境才初始化种子数据）
+    if not app.config.get('TESTING'):
+        with app.app_context():
+            from seed_data import init_database
+            init_database(app)
 
     return app
 

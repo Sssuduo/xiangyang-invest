@@ -333,11 +333,23 @@ def approve_draft(draft_id):
             draft.target_entry_id = None
 
     if not draft.target_entry_id or not KnowledgeEntry.query.get(draft.target_entry_id):
+        # 安全获取 tags
+        if isinstance(draft.tags, list):
+            tag_list = draft.tags
+        elif draft.tags:
+            try:
+                tag_list = json.loads(draft.tags) if isinstance(draft.tags, str) else list(draft.tags)
+            except (json.JSONDecodeError, TypeError):
+                tag_list = []
+        else:
+            tag_list = []
+        tags_to_use = data.get('tags', tag_list)
+
         entry = KnowledgeEntry(
             title=title,
             content=content,
             category=category,
-            tags=json.dumps(data.get('tags', draft.tags if isinstance(draft.tags, list) else json.loads(draft.tags) if draft.tags else [], ensure_ascii=False)),
+            tags=json.dumps(tags_to_use, ensure_ascii=False),
             source=draft.source or 'AI研判自动提炼',
             is_active=True,
             sort_order=99

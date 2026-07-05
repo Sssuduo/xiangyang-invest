@@ -12,6 +12,7 @@ from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
 from services.llm_service import call_llm, build_messages
 from services.word_service import generate_assessment_docx
+from services.html_service import generate_assessment_html
 
 
 def _renumber_leads():
@@ -942,13 +943,22 @@ def create_assessment_session(lead_id):
             result
         )
 
+        # 生成 HTML 报告
+        html_url, html_file_name = generate_assessment_html(
+            lead.project_name,
+            lead.invest_enterprise,
+            result
+        )
+
         # 追加 assistant 消息
         assistant_msg = LeadAssessmentMessage(
             session_id=session.id,
             role='assistant',
             content=result,
             file_path=file_url,
-            file_name=file_name
+            file_name=file_name,
+            html_file_path=html_url,
+            html_file_name=html_file_name
         )
         db.session.add(assistant_msg)
         session.updated_at = datetime.utcnow()
@@ -1075,12 +1085,21 @@ def send_follow_up_message(session_id):
             result
         )
 
+        # 生成 HTML 报告
+        html_url, html_file_name = generate_assessment_html(
+            lead.project_name,
+            lead.invest_enterprise,
+            result
+        )
+
         assistant_msg = LeadAssessmentMessage(
             session_id=session_id,
             role='assistant',
             content=result,
             file_path=file_url,
-            file_name=file_name
+            file_name=file_name,
+            html_file_path=html_url,
+            html_file_name=html_file_name
         )
         db.session.add(assistant_msg)
         session.updated_at = datetime.utcnow()
@@ -1327,6 +1346,31 @@ def download_assessment_file(session_id, message_id):
 
     download_name = msg.file_name or f'研判报告_{message_id}.docx'
     return send_file(file_path, as_attachment=True, download_name=download_name)
+
+
+@admin_lead_bp.route('/lead/assessment-sessions/<int:session_id>/messages/<int:message_id>/html', methods=['GET'])
+@dual_login_required
+def view_assessment_html(session_id, message_id):
+    """在线查看研判 HTML 报告"""
+    msg = LeadAssessmentMessage.query.filter_by(id=message_id, session_id=session_id).first_or_404()
+    if not msg.html_file_path:
+        return jsonify({'code': 1, 'message': '该消息没有 HTML 报告'}), 404
+
+    from flask import send_file, current_app
+    relative = msg.html_file_path
+    if relative.startswith('/static/'):
+        relative = relative[8:]
+
+    import os as _os
+    backend_static = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'static')
+    file_path = _os.path.join(backend_static, relative)
+    if not _os.path.exists(file_path):
+        file_path = _os.path.join(current_app.static_folder, relative)
+
+    if not _os.path.exists(file_path):
+        return jsonify({'code': 1, 'message': '文件不存在或已被删除'}), 404
+
+    return send_file(file_path, mimetype='text/html; charset=utf-8')
 
 
 # ============================================================

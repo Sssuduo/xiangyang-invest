@@ -178,6 +178,8 @@ class LeadAssessmentMessage(db.Model):
     content = db.Column(db.Text, default='')
     file_path = db.Column(db.String(512), default='')
     file_name = db.Column(db.String(255), default='')
+    html_file_path = db.Column(db.String(512), default='')
+    html_file_name = db.Column(db.String(255), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     session = db.relationship('LeadAssessmentSession', foreign_keys=[session_id], backref='messages')
@@ -190,6 +192,8 @@ class LeadAssessmentMessage(db.Model):
             'content': self.content or '',
             'file_url': f'/api/admin/lead/assessment-sessions/{self.session_id}/messages/{self.id}/download' if self.file_path else '',
             'file_name': self.file_name or '',
+            'html_url': f'/api/admin/lead/assessment-sessions/{self.session_id}/messages/{self.id}/html' if self.html_file_path else '',
+            'html_file_name': self.html_file_name or '',
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

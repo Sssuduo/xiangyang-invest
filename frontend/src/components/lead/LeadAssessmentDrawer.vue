@@ -74,7 +74,15 @@
                     type="success"
                     @click="downloadFile(msg)"
                   >
-                    <el-icon><Download /></el-icon> 下载 Word 文档
+                    <el-icon><Download /></el-icon> 下载 Word
+                  </el-button>
+                  <el-button
+                    v-if="msg.html_url"
+                    size="small"
+                    type="primary"
+                    @click="viewHtml(msg)"
+                  >
+                    <el-icon><View /></el-icon> Web 报告
                   </el-button>
                   <el-button size="small" link type="primary" @click="toggleExpand(msg)">
                     {{ expandedMsgs.has(msg.id) ? '收起' : '展开全文' }}
@@ -129,7 +137,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Cpu, User, Document, Download, Loading, Promotion, CopyDocument } from '@element-plus/icons-vue'
+import { Cpu, User, Document, Download, Loading, Promotion, CopyDocument, View } from '@element-plus/icons-vue'
 import { getModels, getAdminModels } from '@/api/model'
 import {
   createAssessmentSession,
@@ -190,6 +198,11 @@ function toggleExpand(msg) {
 
 function downloadFile(msg) {
   const url = msg.file_url
+  if (url) window.open(url, '_blank')
+}
+
+function viewHtml(msg) {
+  const url = msg.html_url
   if (url) window.open(url, '_blank')
 }
 

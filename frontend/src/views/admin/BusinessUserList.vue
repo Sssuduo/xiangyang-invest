@@ -68,7 +68,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑用户' : '新建用户'"
-      width="600px"
+      width="820px"
       :close-on-click-modal="false"
       @closed="resetForm"
     >
@@ -160,7 +160,9 @@ const modules = [
   { key: 'investment', label: '招商项目管理' },
   { key: 'activity', label: '招商动态管理' },
   { key: 'demand', label: '企业诉求管理' },
-  { key: 'construction', label: '在建项目管理' }
+  { key: 'construction', label: '在建项目管理' },
+  { key: 'lead', label: '招商线索研判' },
+  { key: 'knowledge', label: '本地招商知识库' }
 ]
 
 const users = ref([])

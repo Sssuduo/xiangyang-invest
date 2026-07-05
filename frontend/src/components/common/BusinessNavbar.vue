@@ -49,6 +49,7 @@
             <el-dropdown-menu>
               <el-dropdown-item command="/lead">招商线索研判</el-dropdown-item>
               <el-dropdown-item command="/knowledge">本地招商知识库</el-dropdown-item>
+              <el-dropdown-item command="/knowledge/drafts">知识沉淀审核</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

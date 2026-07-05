@@ -194,6 +194,12 @@ const routes = [
     component: () => import('@/views/KnowledgeView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  {
+    path: '/knowledge/drafts',
+    name: 'KnowledgeDrafts',
+    component: () => import('@/views/KnowledgeDrafts.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
   // ---- 管理后台 ----
   {
     path: '/admin/investment',
@@ -290,12 +296,6 @@ const routes = [
     path: '/admin/knowledge',
     name: 'AdminKnowledge',
     component: () => import('@/views/admin/KnowledgeList.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/admin/knowledge/drafts',
-    name: 'AdminKnowledgeDrafts',
-    component: () => import('@/views/admin/KnowledgeDrafts.vue'),
     meta: { requiresAuth: true }
   },
   {

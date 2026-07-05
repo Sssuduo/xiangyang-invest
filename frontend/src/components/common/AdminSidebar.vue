@@ -107,12 +107,6 @@
       <span>知识库管理</span>
     </el-menu-item>
 
-    <!-- 知识沉淀审核 -->
-    <el-menu-item index="/admin/knowledge/drafts">
-      <el-icon><Collection /></el-icon>
-      <span>知识沉淀审核</span>
-    </el-menu-item>
-
     <el-menu-item index="/admin/prompts">
       <el-icon><ChatDotSquare /></el-icon>
       <span>提示词管理</span>

@@ -89,11 +89,6 @@ def create_app(config_name=None):
         # 自动添加缺失的数据库列（简化迁移）
         _run_auto_migrations(app)
 
-    # 启动夜间压缩调度器
-    if not app.config.get('TESTING'):
-        from services.night_scheduler import start_night_scheduler
-        start_night_scheduler(app)
-
     return app
 
 

@@ -30,9 +30,16 @@ class Config:
 
     # 文件上传配置
     UPLOAD_FOLDER = os.path.join(project_root, 'static', 'uploads')
+    AUDIO_FOLDER = os.path.join(UPLOAD_FOLDER, 'audio')  # 录音文件专用目录
     BACKGROUNDS_FOLDER = os.path.join(UPLOAD_FOLDER, 'backgrounds')
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB 上传限制（含大视频）
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+    # 腾讯云语音识别（ASR）配置
+    TENCENT_SECRET_ID = os.environ.get('TENCENT_SECRET_ID', '')
+    TENCENT_SECRET_KEY = os.environ.get('TENCENT_SECRET_KEY', '')
+    ASR_ENGINE_MODEL = '16k_zh'  # 16k 中文普通话
+    ASR_REGION = 'ap-shanghai'   # 上海区域
 
     # Session 配置
     PERMANENT_SESSION_LIFETIME = 8 * 3600  # 8 小时

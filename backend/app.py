@@ -11,6 +11,53 @@ from routes import register_routes
 from models import AdminUser
 
 
+def _run_auto_migrations(app):
+    """自动向已存在的数据库表添加缺失的列（简化版迁移，适用于 SQLite）。
+    
+    生产环境新增模型字段后，db.create_all() 不会修改已有表结构，
+    此处逐表检查并补上缺失列，避免 500 错误。
+    """
+    from sqlalchemy import inspect, text
+    from extensions import db as _db
+
+    # 各表缺失列映射：{表名: [(列名, 列类型), ...]}
+    MIGRATIONS = {
+        'activity_ledger': [
+            ('audio_archive', 'TEXT'),
+            ('audio_archive_size', 'INTEGER'),
+        ],
+        'work_progress': [
+            ('import_user_id', 'INTEGER'),
+            ('import_user_name', 'VARCHAR(128)'),
+        ],
+        # 后续如有新增字段，在此追加即可
+    }
+
+    with app.app_context():
+        inspector = inspect(_db.engine)
+        for table_name, cols in MIGRATIONS.items():
+            try:
+                existing_cols = {c['name'] for c in inspector.get_columns(table_name)}
+            except Exception:
+                continue  # 表不存在，skip
+
+            for col_name, col_type in cols:
+                if col_name not in existing_cols:
+                    try:
+                        _db.session.execute(
+                            text(f'ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}')
+                        )
+                        _db.session.commit()
+                        app.logger.info(
+                            f'[自动迁移] 表 {table_name} 已添加缺失列 {col_name} ({col_type})'
+                        )
+                    except Exception as exc:
+                        _db.session.rollback()
+                        app.logger.warning(
+                            f'[自动迁移] 添加列失败 ({table_name}.{col_name}): {exc}'
+                        )
+
+
 def create_app(config_name=None):
     """Flask 应用工厂"""
     if config_name is None:
@@ -38,6 +85,14 @@ def create_app(config_name=None):
         with app.app_context():
             from seed_data import init_database
             init_database(app)
+
+        # 自动添加缺失的数据库列（简化迁移）
+        _run_auto_migrations(app)
+
+    # 启动夜间压缩调度器
+    if not app.config.get('TESTING'):
+        from services.night_scheduler import start_night_scheduler
+        start_night_scheduler(app)
 
     return app
 

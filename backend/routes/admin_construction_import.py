@@ -687,5 +687,15 @@ def import_execute():
         next_order_no += 1
         imported += 1
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        from flask import current_app
+        current_app.logger.error(f'在建项目导入失败: {e}\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 1,
+            'message': f'导入失败（数据库写入错误）：{str(e)}'
+        }), 500
     return jsonify({'code': 0, 'message': f'成功导入 {imported} 个项目', 'data': {'count': imported}})

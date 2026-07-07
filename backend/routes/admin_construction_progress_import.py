@@ -370,7 +370,17 @@ def import_execute():
         db.session.add(wp)
         imported += 1
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        from flask import current_app
+        current_app.logger.error(f'工作进展导入失败: {e}\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 1,
+            'message': f'导入失败（数据库写入错误）：{str(e)}'
+        }), 500
 
     return jsonify({
         'code': 0,

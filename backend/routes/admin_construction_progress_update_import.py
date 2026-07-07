@@ -9,7 +9,7 @@
 import io
 import re
 from datetime import date
-from flask import request, jsonify, send_file, session
+from flask import request, jsonify, send_file, session, current_app
 from flask_login import current_user
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -396,39 +396,48 @@ def import_execute():
 
     imported = 0
     skipped = 0
-    for row in valid_rows:
-        row_data = row['data']
+    try:
+        for row in valid_rows:
+            row_data = row['data']
 
-        project_name = row_data.get('project_name', '')
-        project_id = project_name_to_id.get(project_name)
-        if not project_id:
-            skipped += 1
-            continue
+            project_name = row_data.get('project_name', '')
+            project_id = project_name_to_id.get(project_name)
+            if not project_id:
+                skipped += 1
+                continue
 
-        start_date = _parse_date(row_data.get('start_date')) or global_start_date
-        end_date = _parse_date(row_data.get('end_date')) or global_end_date
+            start_date = _parse_date(row_data.get('start_date')) or global_start_date
+            end_date = _parse_date(row_data.get('end_date')) or global_end_date
 
-        # 内容处理：优先使用 processed_content，其次再处理一次
-        content = row_data.get('processed_content', '')
-        if not content:
-            content = _process_content(row_data.get('content', ''))
+            # 内容处理：优先使用 processed_content，其次再处理一次
+            content = row_data.get('processed_content', '')
+            if not content:
+                content = _process_content(row_data.get('content', ''))
 
-        if not content or not start_date or not end_date:
-            skipped += 1
-            continue
+            if not content or not start_date or not end_date:
+                skipped += 1
+                continue
 
-        wp = WorkProgress(
-            project_id=project_id,
-            start_date=start_date,
-            end_date=end_date,
-            content=content,
-            import_user_id=import_user_id,
-            import_user_name=import_user_name or '',
-        )
-        db.session.add(wp)
-        imported += 1
+            wp = WorkProgress(
+                project_id=project_id,
+                start_date=start_date,
+                end_date=end_date,
+                content=content,
+                import_user_id=import_user_id,
+                import_user_name=import_user_name or '',
+            )
+            db.session.add(wp)
+            imported += 1
 
-    db.session.commit()
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        current_app.logger.error(f'工作进展更新导入失败: {e}\n{traceback.format_exc()}')
+        return jsonify({
+            'code': 1,
+            'message': f'导入失败（数据库写入错误）：{str(e)}'
+        }), 500
 
     msg = f'成功导入 {imported} 条工作进展'
     if import_user_name:

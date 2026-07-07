@@ -36,6 +36,7 @@ admin_demand_bp = Blueprint('admin_demand', __name__, url_prefix='/api/admin')
 admin_construction_bp = Blueprint('admin_construction', __name__, url_prefix='/api/admin')
 admin_construction_import_bp = Blueprint('admin_construction_import', __name__, url_prefix='/api/admin')
 admin_construction_progress_import_bp = Blueprint('admin_construction_progress_import', __name__, url_prefix='/api/admin')
+admin_construction_progress_update_import_bp = Blueprint('admin_construction_progress_update_import', __name__, url_prefix='/api/admin')
 admin_construction_export_bp = Blueprint('admin_construction_export', __name__, url_prefix='/api/admin')
 
 # 打印模板
@@ -78,6 +79,7 @@ def register_routes(app):
     from routes import admin_construction as _admin_construction
     from routes import admin_construction_import as _admin_construction_import
     from routes import admin_construction_progress_import as _admin_construction_progress_import
+    from routes import admin_construction_progress_update_import as _admin_construction_progress_update_import
     from routes import admin_construction_export as _admin_construction_export
     from routes import admin_print as _admin_print
     from routes import admin_construction_print as _admin_construction_print
@@ -109,6 +111,7 @@ def register_routes(app):
     app.register_blueprint(admin_construction.admin_construction_bp)
     app.register_blueprint(admin_construction_import.admin_construction_import_bp)
     app.register_blueprint(admin_construction_progress_import.admin_construction_progress_import_bp)
+    app.register_blueprint(admin_construction_progress_update_import.admin_construction_progress_update_import_bp)
     app.register_blueprint(admin_construction_export.admin_construction_export_bp)
     app.register_blueprint(admin_print.admin_print_bp)
     app.register_blueprint(admin_construction_print.admin_construction_print_bp)

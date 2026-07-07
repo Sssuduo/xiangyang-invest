@@ -49,10 +49,13 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="download-template">
-                  <el-icon><Download /></el-icon> 下载模板
+                  <el-icon><Download /></el-icon> 下载更新模板
                 </el-dropdown-item>
-                <el-dropdown-item command="import-data">
+                <!-- <el-dropdown-item command="import-data">
                   <el-icon><Upload /></el-icon> 上传导入
+                </el-dropdown-item> -->
+                <el-dropdown-item command="update-import-data" divided>
+                  <el-icon><Upload /></el-icon> 更新导入（本周）
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -304,6 +307,122 @@
       </template>
     </el-dialog>
 
+    <!-- 更新导入对话框 -->
+    <el-dialog
+      v-model="updateImportDialogVisible"
+      title="更新导入（本周）"
+      width="1000px"
+      :close-on-click-modal="false"
+      @close="resetUpdateImport"
+    >
+      <div v-if="updateImportStep === 'select'">
+        <el-alert title="操作说明" type="info" :closable="false" style="margin-bottom: 16px;">
+          <p style="margin: 2px 0; font-size: 13px;">
+            1. 首次使用请先<strong>下载更新导入模板</strong>，模板含项目编号+名称+内容<br />
+            2. 选择工作进展的时间段（开始 ~ 结束日期），统一应用于所有行<br />
+            3. 上传填写好的 Excel 文件，预览确认无误后执行导入<br />
+            4. 导入后将记录导入人信息，便于追溯
+          </p>
+        </el-alert>
+        <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 13px; color: #606266; white-space: nowrap;">工作进展时间段：</span>
+          <el-date-picker
+            v-model="updateImportDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 320px;"
+          />
+        </div>
+        <div class="update-import-upload-wrapper" :class="{ 'upload-disabled': !updateImportDateRangeValid }">
+          <el-upload
+            ref="updateImportUploadRef"
+            :auto-upload="false"
+            :on-change="handleUpdateImportFile"
+            :file-list="updateImportFileList"
+            :limit="1"
+            accept=".xlsx"
+            drag
+            :disabled="!updateImportDateRangeValid"
+          >
+            <el-icon style="font-size: 48px; color: #c0c4cc;"><UploadFilled /></el-icon>
+            <div style="margin-top: 8px; color: #606266;">
+              将 Excel 文件拖到此处，或<em style="color: #409eff;">点击上传</em>
+            </div>
+            <template #tip>
+              <div style="margin-top: 6px; font-size: 12px; color: #909399;">
+                仅支持 .xlsx 格式，请使用"更新导入模板"。时间段由上方选择器统一指定。
+              </div>
+            </template>
+          </el-upload>
+          <div v-if="!updateImportDateRangeValid" class="upload-mask">
+            <el-icon style="font-size: 28px; color: #909399; margin-bottom: 6px;"><WarningFilled /></el-icon>
+            <span>请先选择上方的工作进展时间段，再上传文件</span>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <div class="import-summary">
+          <el-tag type="success" effect="plain">有效：{{ updateImportValidCount }} 行</el-tag>
+          <el-tag v-if="updateImportErrorCount > 0" type="danger" effect="plain" style="margin-left: 8px;">错误：{{ updateImportErrorCount }} 行</el-tag>
+          <el-tag v-if="updateImportChangedCount > 0" type="warning" effect="plain" style="margin-left: 8px;">内容截取：{{ updateImportChangedCount }} 行</el-tag>
+          <span style="margin-left: 12px; font-size: 12px; color: #909399;">共 {{ updateImportRows.length }} 行</span>
+        </div>
+        <el-table :data="updateImportRows" stripe max-height="400" :row-class-name="updateImportRowClass" style="margin-top: 12px;">
+          <el-table-column type="index" label="#" width="40" />
+          <el-table-column prop="data.order_no" label="项目编号" width="90" />
+          <el-table-column prop="data.project_name" label="项目名称" min-width="180" show-overflow-tooltip />
+          <el-table-column label="开始日期" width="115">
+            <template #default="{ row }">{{ row.data.start_date }}</template>
+          </el-table-column>
+          <el-table-column label="结束日期" width="115">
+            <template #default="{ row }">{{ row.data.end_date }}</template>
+          </el-table-column>
+          <el-table-column label="处理后内容" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span :class="{ 'content-changed': row.has_content_change }">{{ row.data.processed_content }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="content_note" label="备注" width="130">
+            <template #default="{ row }">
+              <el-tag v-if="row.has_content_change" type="warning" size="small">已截取"本周"</el-tag>
+              <span v-else style="color: #909399;">保留全部</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="错误" min-width="180">
+            <template #default="{ row }">
+              <div v-if="row.errors && row.errors.length > 0" class="import-errors">
+                <span v-for="(e, i) in row.errors" :key="i" class="import-error-item">{{ e }}</span>
+              </div>
+              <span v-else style="color: #67c23a;">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="60" align="center">
+            <template #default="{ $index }">
+              <el-button size="small" type="danger" link @click="removeUpdateImportRow($index)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="updateImportDialogVisible = false">取消</el-button>
+        <el-button v-if="updateImportStep === 'preview'" @click="resetUpdateImport">返回</el-button>
+        <el-button
+          v-if="updateImportStep === 'preview'"
+          type="primary"
+          :loading="updateImporting"
+          :disabled="updateImportValidCount === 0"
+          @click="handleUpdateImportExecute"
+        >
+          执行导入（{{ updateImportValidCount }} 行）
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 项目详情抽屉 -->
     <ConstructionProjectDrawer v-model="projectDrawerVisible" :project-id="projectDrawerId" />
   </div>
@@ -312,11 +431,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Edit, UploadFilled, Download, Upload, ArrowDown, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, Edit, UploadFilled, Download, Upload, ArrowDown, Delete, WarningFilled } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ConstructionProjectDrawer from '@/components/investment/ConstructionProjectDrawer.vue'
 import { getDicts, getProjects, getProgressList, createProgress, updateProgress, deleteProgress } from '@/api/construction'
 import { downloadTemplate, previewImport, executeImport } from '@/api/construction_progress_import'
+import { downloadUpdateTemplate, previewUpdateImport, executeUpdateImport } from '@/api/construction_progress_update_import'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
 
@@ -371,6 +491,21 @@ const importHeaders = ref([])
 const importing = ref(false)
 const importValidCount = computed(() => importRows.value.filter(r => r._valid).length)
 const importErrorCount = computed(() => importRows.value.length - importValidCount.value)
+
+// 更新导入相关
+const updateImportDialogVisible = ref(false)
+const updateImportStep = ref('select')
+const updateImportFileList = ref([])
+const updateImportRows = ref([])
+const updateImportHeaders = ref([])
+const updateImporting = ref(false)
+const updateImportValidCount = computed(() => updateImportRows.value.filter(r => r._valid).length)
+const updateImportErrorCount = computed(() => updateImportRows.value.length - updateImportValidCount.value)
+const updateImportChangedCount = computed(() => updateImportRows.value.filter(r => r.has_content_change).length)
+const updateImportDateRange = ref([])  // [startDate, endDate]
+const updateImportDateRangeValid = computed(() =>
+  updateImportDateRange.value && updateImportDateRange.value.length === 2
+)
 
 const defaultForm = () => ({
   project_id: '',
@@ -533,20 +668,27 @@ async function handleDelete(row) {
 // ---- 导入 ----
 function handleImportCmd(cmd) {
   if (cmd === 'download-template') {
-    handleDownloadTemplate()
+    handleDownloadUpdateTemplate()
   } else if (cmd === 'import-data') {
     importDialogVisible.value = true
     importStep.value = 'select'
     importFileList.value = []
     importRows.value = []
     importHeaders.value = []
+  } else if (cmd === 'update-import-data') {
+    updateImportDialogVisible.value = true
+    updateImportStep.value = 'select'
+    updateImportFileList.value = []
+    updateImportRows.value = []
+    updateImportHeaders.value = []
+    updateImportDateRange.value = []
   }
 }
 
-async function handleDownloadTemplate() {
+async function handleDownloadUpdateTemplate() {
   try {
-    await downloadTemplate()
-    ElMessage.success('模板下载已开始')
+    await downloadUpdateTemplate()
+    ElMessage.success('更新导入模板下载已开始')
   } catch (err) {
     ElMessage.error(err.message || '模板下载失败')
   }
@@ -597,6 +739,69 @@ function importRowClass({ row }) {
 
 function removeImportRow(index) {
   importRows.value.splice(index, 1)
+}
+
+// ---- 更新导入 ----
+function resetUpdateImport() {
+  updateImportStep.value = 'select'
+  updateImportFileList.value = []
+  updateImportRows.value = []
+  updateImportHeaders.value = []
+  updateImportDateRange.value = []
+}
+
+async function handleUpdateImportFile(file) {
+  if (!updateImportDateRangeValid.value) {
+    ElMessage.warning('请先选择工作进展的时间段')
+    return
+  }
+  updateImportFileList.value = [file]
+  try {
+    const res = await previewUpdateImport(
+      file.raw,
+      updateImportDateRange.value[0],
+      updateImportDateRange.value[1]
+    )
+    updateImportHeaders.value = res.data.headers || []
+    updateImportRows.value = res.data.rows || []
+    updateImportStep.value = 'preview'
+    if (res.data.error_count === 0) {
+      ElMessage.success(`预览成功，${res.data.valid_count} 条有效记录`)
+    } else {
+      ElMessage.warning(`${res.data.error_count} 行存在错误，已自动标红`)
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '预览失败')
+    updateImportFileList.value = []
+  }
+}
+
+async function handleUpdateImportExecute() {
+  updateImporting.value = true
+  try {
+    const res = await executeUpdateImport(
+      updateImportRows.value,
+      updateImportDateRange.value[0],
+      updateImportDateRange.value[1]
+    )
+    ElMessage.success(res.message || '导入成功')
+    updateImportDialogVisible.value = false
+    fetchData()
+  } catch (err) {
+    ElMessage.error(err.message || '导入失败')
+  } finally {
+    updateImporting.value = false
+  }
+}
+
+function updateImportRowClass({ row }) {
+  if (!row._valid) return 'import-error-row'
+  if (row.has_content_change) return 'import-content-changed-row'
+  return ''
+}
+
+function removeUpdateImportRow(index) {
+  updateImportRows.value.splice(index, 1)
 }
 </script>
 
@@ -654,11 +859,39 @@ function removeImportRow(index) {
 .import-errors { display: flex; flex-direction: column; gap: 4px; }
 .import-error-item { color: #f56c6c; font-size: 12px; }
 :deep(.import-error-row) { background-color: #fef0f0 !important; }
+:deep(.import-content-changed-row) { background-color: #fdf6ec !important; }
+:deep(.import-content-changed-row.import-error-row) { background-color: #fef0f0 !important; }
 
-/* 文件上传 */
+/* 内容截取标记 */
 .upload-wrapper { width: 100%; }
 .upload-compact :deep(.el-upload) { width: 100%; }
 .upload-compact :deep(.el-upload-dragger) { width: 100%; padding: 20px; }
+
+/* 更新导入：未选日期时屏蔽上传区域 */
+.update-import-upload-wrapper { position: relative; }
+.update-import-upload-wrapper.upload-disabled :deep(.el-upload-dragger) {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+.upload-mask {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #909399;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  text-align: center;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 20px 32px;
+  border-radius: 8px;
+}
 </style>
 
 <style>

@@ -163,7 +163,7 @@ def init_database(app):
     # ================================================================
     # 版本号迁移机制：仅执行未完成的迁移，避免每次启动都跑 50+ 条 ALTER TABLE
     # ================================================================
-    CURRENT_DB_VERSION = 4  # 新增迁移时 +1
+    CURRENT_DB_VERSION = 5  # V5: 活动台账录音字段
 
     # 确保 app_config 表存在
     db.session.execute(db.text(
@@ -308,6 +308,12 @@ def init_database(app):
             # 工作进展更新导入：导入人追踪字段
             "ALTER TABLE work_progress ADD COLUMN import_user_id INTEGER",
             "ALTER TABLE work_progress ADD COLUMN import_user_name VARCHAR(128) DEFAULT ''",
+            # V5: 活动台账录音文件字段
+            "ALTER TABLE activity_ledger ADD COLUMN audio_file TEXT",
+            "ALTER TABLE activity_ledger ADD COLUMN audio_transcript TEXT",
+            "ALTER TABLE activity_ledger ADD COLUMN audio_summary TEXT",
+            "ALTER TABLE activity_ledger ADD COLUMN audio_status VARCHAR(20)",
+            "ALTER TABLE activity_ledger ADD COLUMN audio_duration FLOAT",
         ]
         # 额外：尝试删除旧 field_key 唯一索引（SQLite 可能使用不同索引名）
         drop_index_sqls = [

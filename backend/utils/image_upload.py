@@ -6,6 +6,9 @@ from werkzeug.utils import secure_filename
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'mp4', 'webm', 'mov', 'avi', 'mkv', 'ogg', 'wmv', 'flv', 'm4v'}
 
+# 录音文件允许的扩展名
+AUDIO_EXTENSIONS = {'wav', 'mp3', 'm4a', 'ogg', 'flac', 'wma', 'aac', 'amr', 'opus', 'webm', 'weba'}
+
 
 def allowed_file(filename):
     """检查文件扩展名是否合法"""

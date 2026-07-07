@@ -73,6 +73,8 @@ class WorkProgress(db.Model):
     end_date = db.Column(db.Date, nullable=False)
     content = db.Column(db.Text, nullable=False)
     files = db.Column(db.Text, default='[]')  # JSON array of file URLs
+    import_user_id = db.Column(db.Integer, nullable=True)
+    import_user_name = db.Column(db.String(128), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -89,6 +91,8 @@ class WorkProgress(db.Model):
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'content': self.content,
             'files': _files,
+            'import_user_id': self.import_user_id,
+            'import_user_name': self.import_user_name or '',
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

@@ -84,4 +84,6 @@ def register_debug_routes(app):
         # 始终记录错误日志，方便排查
         app.logger.error(f'Unhandled exception: {type(e).__name__}: {e}')
         app.logger.error(get_full_traceback(e))
-        return jsonify({'code': 1, 'message': '请求处理失败'}), 500
+        # 返回具体错误信息，便于前端排查
+        msg = str(e) if str(e) else '请求处理失败'
+        return jsonify({'code': 1, 'message': msg}), 500

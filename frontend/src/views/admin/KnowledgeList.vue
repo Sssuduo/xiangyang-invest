@@ -6,9 +6,12 @@
         <div class="page-header">
           <h2>本地招商知识库管理</h2>
           <div class="header-actions">
-            <el-button @click="handleBatchEmbed" :loading="batchEmbedLoading">
-              <el-icon><MagicStick /></el-icon> 批量向量化
-            </el-button>
+            <el-tooltip :content="embedTip" placement="bottom">
+              <el-button @click="handleBatchEmbed" :loading="batchEmbedLoading" :disabled="total < 500">
+                <el-icon><MagicStick /></el-icon> 批量向量化
+              </el-button>
+            </el-tooltip>
+            <span v-if="total < 500" class="embed-hint">知识库不足500条，暂无需向量化（当前{{ total }}条）</span>
             <el-button type="primary" @click="openCreate">
               <el-icon><Plus /></el-icon> 添加知识条目
             </el-button>
@@ -181,6 +184,15 @@
                     </template>
                   </el-upload>
                 </div>
+                <!-- 已上传文件列表（带预览/下载） -->
+                <div v-if="fileList.length > 0" class="file-preview-list" style="margin-top: 8px;">
+                  <div v-for="(f, idx) in fileList" :key="idx" class="file-preview-item">
+                    <el-icon><Document /></el-icon>
+                    <span class="file-preview-name" :title="f.originalName || f.name">{{ f.originalName || f.name }}</span>
+                    <el-button size="small" link type="primary" @click="previewKBFile(f.url, f.originalName || f.name)">预览</el-button>
+                    <el-button size="small" link type="success" @click="downloadKBFile(f.url, f.originalName || f.name)">下载</el-button>
+                  </div>
+                </div>
               </el-form-item>
 
               <div class="drawer-footer">
@@ -202,23 +214,17 @@ import { Search, Plus, InfoFilled, Document, UploadFilled, PriceTag, Paperclip, 
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import { getCategories, getEntries, createEntry, updateEntry, getEntry, deleteEntry, embedEntry, batchEmbedEntries } from '@/api/knowledge'
 
-const CATEGORY_MAP = {
-  industry_policy: '产业政策',
-  park_info: '园区信息',
-  supporting: '配套能力',
-  land_cost: '土地成本',
-  case_study: '招商案例',
-  demand_pattern: '企业诉求',
-  market_data: '市场数据',
-  competitor: '周边竞争'
+// 分类从后端 API 动态获取
+const categoryOptions = ref([])
+async function loadCategories() {
+  try {
+    const res = await getCategories()
+    if (res.code === 0) categoryOptions.value = res.data || []
+  } catch { /* ignore */ }
 }
-
-const entries = ref([])
-const loading = ref(false)
-const searchText = ref('')
-const filterCategory = ref('')
-const includeInactive = ref(false)
-const categoryOptions = Object.entries(CATEGORY_MAP).map(([code, name]) => ({ code, name }))
+function resolveCategory(code) {
+  return categoryOptions.value.find(c => c.code === code)?.name || code || '-'
+}
 
 // 分页
 const currentPage = ref(1)
@@ -239,6 +245,8 @@ const fileList = ref([])
 const tagInputValue = ref('')
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
+
+const embedTip = '知识库达到500条后可启用向量语义搜索，当前使用关键词匹配'
 
 const defaultForm = () => ({
   title: '',
@@ -261,11 +269,7 @@ const rules = {
 
 let searchTimer = null
 
-onMounted(() => { fetchData() })
-
-function resolveCategory(code) {
-  return CATEGORY_MAP[code] || code || '-'
-}
+onMounted(() => { loadCategories(); fetchData() })
 
 function fmtDt(d) {
   if (!d) return '-'
@@ -337,7 +341,13 @@ async function openEdit(row) {
       form.sort_order = d.sort_order || 0
       form.attach_files = Array.isArray(d.attach_files) ? d.attach_files : []
       // 解析已有的文件列表
-      fileList.value = form.attach_files.map((url, i) => ({ name: url.split('/').pop() || `文件${i + 1}`, url }))
+      fileList.value = form.attach_files.map((item, i) => {
+        // 兼容旧格式（纯 URL 字符串）和新格式（{url, original_name} 对象）
+        if (typeof item === 'string') {
+          return { name: item.split('/').pop() || `文件${i + 1}`, url: item }
+        }
+        return { name: item.original_name || item.url.split('/').pop(), url: item.url, originalName: item.original_name }
+      })
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -369,7 +379,11 @@ function removeTag(idx) {
 
 // ---- 文件上传处理 ----
 function handleUploadSuccess(response, file) {
-  if (response.code === 0) { file.url = response.data.url }
+  if (response.code === 0) {
+    file.url = response.data.url
+    // 保存原始文件名，用于展示和下载
+    file.originalName = response.data.original_name || file.name
+  }
 }
 
 function handleUploadError() { ElMessage.error('文件上传失败') }
@@ -389,6 +403,27 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 
+function previewKBFile(url, name) {
+  const ext = (name || '').split('.').pop().toLowerCase()
+  if (['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+    window.open(url, '_blank')
+  } else if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) {
+    ElMessage.info('Office 文件需下载后查看，点击"下载"按钮即可')
+  } else {
+    ElMessage.info('该文件类型不支持在线预览，请下载后查看')
+  }
+}
+
+function downloadKBFile(url, name) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
@@ -396,7 +431,11 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const docUrls = fileList.value.filter(f => f.url).map(f => f.url)
+    // 保存时携带原始文件名（用于下载还原）
+    const docUrls = fileList.value.filter(f => f.url).map(f => ({
+      url: f.url,
+      original_name: f.originalName || f.name || f.url.split('/').pop()
+    }))
     const data = {
       title: form.title,
       category: form.category,

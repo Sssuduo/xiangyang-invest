@@ -38,7 +38,7 @@ export async function previewUpdateImport(file, startDate, endDate) {
 
 // 执行更新导入
 export function executeUpdateImport(rows, startDate, endDate) {
-  return api.post('/api/admin/construction-progress-update-import/execute', {
+  return api.post('/admin/construction-progress-update-import/execute', {
     rows,
     start_date: startDate,
     end_date: endDate,

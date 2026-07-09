@@ -1,3 +1,4 @@
+<!-- ConstructionView.vue: 在建项目库管理 — CRUD + 工作路径 + 调度问题 + 批量操作 + 导入导出 + 打印 -->
 <template>
   <div class="construction-page">
     <BusinessNavbar variant="light" />
@@ -1123,7 +1124,7 @@ function resolutionStatusColor(code) {
 
 // ---- 数据加载 ----
 onMounted(async () => {
-  await loadDicts()
+  loadDicts()   // 字典不阻塞数据加载，改为并行（字典失败不影响列表展示）
   fetchData()
   nextTick(() => {
     updateExpandWidth()

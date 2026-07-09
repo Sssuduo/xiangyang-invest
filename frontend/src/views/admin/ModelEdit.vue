@@ -55,6 +55,22 @@
             <div class="form-tip">推荐免费模型：BAAI/bge-m3（1024维）或 BAAI/bge-large-zh-v1.5（纯中文）</div>
           </el-form-item>
 
+          <!-- 关联搜索模型（用于研判时自动联网搜索） -->
+          <el-divider content-position="left">
+            <span class="embedding-divider-text">联网搜索配置（可选，GLM-4-Flash 等支持 Web Search 的模型）</span>
+          </el-divider>
+          <el-form-item label="搜索模型">
+            <el-select v-model="form.search_model_id" placeholder="选择用于联网搜索的模型（留空则不启用联网搜索）" clearable style="width: 100%;">
+              <el-option
+                v-for="m in searchModelCandidates"
+                :key="m.id"
+                :label="`${m.name} (${m.model_name})`"
+                :value="m.id"
+              />
+            </el-select>
+            <div class="form-tip">选择支持 Web Search API 的模型（如 GLM-4-Flash），研判时将自动使用此模型进行联网搜索，再将结果交给主模型生成报告。</div>
+          </el-form-item>
+
           <el-form-item label="启用">
             <el-switch v-model="form.is_active" />
           </el-form-item>
@@ -75,7 +91,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
-import { getAdminModel, createModel, updateModel } from '@/api/model'
+import { getAdminModel, createModel, updateModel, getAdminModels } from '@/api/model'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,11 +110,24 @@ const form = ref({
   embedding_api_url: '',
   embedding_api_key: '',
   embedding_model_name: '',
+  search_model_id: null,
   is_active: true,
   sort_order: 0
 })
 
+const searchModelCandidates = ref([])
+
 onMounted(async () => {
+  // 预加载所有模型作为搜索模型候选
+  try {
+    const res = await getAdminModels()
+    if (res.code === 0) {
+      searchModelCandidates.value = (res.data || []).filter(
+        m => m.provider === 'glm' || m.provider === 'zhipu'
+      )
+    }
+  } catch { /* ignore */ }
+
   if (isEdit.value) {
     try {
       const res = await getAdminModel(route.params.id)

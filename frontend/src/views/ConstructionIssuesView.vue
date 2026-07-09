@@ -361,8 +361,7 @@ function resolveColor(code) {
 
 // ---- 数据加载 ----
 onMounted(async () => {
-  await loadDicts()
-  await loadProjectOptions()
+  await Promise.all([loadDicts(), loadProjectOptions()])
   fetchData()
 })
 

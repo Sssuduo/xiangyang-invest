@@ -175,7 +175,7 @@ def chat():
 # ============================================================
 @api_bp.route('/upload', methods=['POST'])
 def upload_image():
-    """上传图片"""
+    """上传文件（图片/文档），保持原始文件名"""
     from flask import current_app
 
     if 'file' not in request.files:
@@ -186,8 +186,8 @@ def upload_image():
         return jsonify({'code': 1, 'message': '未选择文件'}), 400
 
     try:
-        url = save_uploaded_image(file, current_app.config['UPLOAD_FOLDER'])
-        return jsonify({'code': 0, 'data': {'url': url}})
+        result = save_uploaded_image(file, current_app.config['UPLOAD_FOLDER'], keep_original_name=True)
+        return jsonify({'code': 0, 'data': {'url': result['url'], 'original_name': result['original_name']}})
     except ValueError as e:
         return jsonify({'code': 1, 'message': str(e)}), 400
 

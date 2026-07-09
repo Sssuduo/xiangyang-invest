@@ -10,7 +10,7 @@ from extensions import db
 from routes import admin_lead_bp
 from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
-from services.llm_service import call_llm, build_messages
+from services.llm_service import call_llm, build_messages, call_llm_with_web_search
 from services.word_service import generate_assessment_docx
 from services.html_service import generate_assessment_html
 
@@ -712,16 +712,43 @@ def _run_assessment_async(app, lead_id, model_id):
             knowledge_context = _search_knowledge(lead)
             messages = _build_assessment_messages(lead_context, knowledge_context, prompt_template, system_prompt)
 
-            result = call_llm(
-                model_config={
-                    'api_base_url': model.api_base_url,
-                    'api_key': model.api_key,
-                    'model_name': model.model_name
-                },
-                messages=messages,
-                temperature=model.temperature,
-                max_tokens=model.max_tokens
-            )
+            # 旧版异步研判也支持两阶段搜索
+            if model.search_model_id:
+                search_model = LLMModel.query.get(model.search_model_id)
+            else:
+                search_model = None
+
+            if search_model and search_model.api_key:
+                resp = call_llm_with_web_search(
+                    main_config={
+                        'api_base_url': model.api_base_url,
+                        'api_key': model.api_key,
+                        'model_name': model.model_name,
+                        'provider': model.provider
+                    },
+                    search_config={
+                        'api_base_url': search_model.api_base_url,
+                        'api_key': search_model.api_key,
+                        'model_name': search_model.model_name
+                    },
+                    messages=messages,
+                    temperature=model.temperature,
+                    max_tokens=model.max_tokens,
+                    lead_context=lead_context
+                )
+                result = resp['result']
+            else:
+                result = call_llm(
+                    model_config={
+                        'api_base_url': model.api_base_url,
+                        'api_key': model.api_key,
+                        'model_name': model.model_name,
+                        'provider': model.provider
+                    },
+                    messages=messages,
+                    temperature=model.temperature,
+                    max_tokens=model.max_tokens
+                )
 
             lead.ai_assessment_result = result
             lead.ai_assessment_at = datetime.utcnow()
@@ -924,17 +951,43 @@ def create_assessment_session(lead_id):
     db.session.commit()
 
     try:
-        # 同步调用 LLM
-        result = call_llm(
-            model_config={
+        # 判断是否有关联的搜索模型
+        search_model = None
+        if model.search_model_id:
+            search_model = LLMModel.query.get(model.search_model_id)
+
+        # 使用两阶段管线（联网搜索 → DeepSeek 合成）
+        if search_model and search_model.api_key:
+            main_config = {
                 'api_base_url': model.api_base_url,
                 'api_key': model.api_key,
                 'model_name': model.model_name
-            },
-            messages=messages,
-            temperature=model.temperature,
-            max_tokens=model.max_tokens
-        )
+            }
+            search_config = {
+                'api_base_url': search_model.api_base_url,
+                'api_key': search_model.api_key,
+                'model_name': search_model.model_name
+            }
+            resp = call_llm_with_web_search(
+                main_config=main_config,
+                search_config=search_config,
+                messages=messages,
+                temperature=model.temperature,
+                max_tokens=model.max_tokens,
+                lead_context=lead_context
+            )
+            result = resp['result']
+        else:
+            result = call_llm(
+                model_config={
+                    'api_base_url': model.api_base_url,
+                    'api_key': model.api_key,
+                    'model_name': model.model_name
+                },
+                messages=messages,
+                temperature=model.temperature,
+                max_tokens=model.max_tokens
+            )
 
         # 生成 Word 文档
         file_url, file_name = generate_assessment_docx(

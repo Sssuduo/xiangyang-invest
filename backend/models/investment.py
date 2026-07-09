@@ -147,6 +147,7 @@ class LeadAssessmentSession(db.Model):
     lead_id = db.Column(db.Integer, db.ForeignKey('investment_leads.id'), nullable=False, index=True)
     model_id = db.Column(db.Integer, db.ForeignKey('llm_models.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False, default='AI 研判')
+    knowledge_context = db.Column(db.Text, default='')  # 研判时检索的知识库上下文（用于反馈阶段复用）
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -292,7 +293,9 @@ class ActivityLedger(db.Model):
     linked_project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
     linked_activity_id = db.Column(db.Integer, db.ForeignKey('investment_activities.id'), nullable=True)
     # 录音文件相关字段
-    audio_file = db.Column(db.Text, nullable=True)       # 压缩后录音文件路径
+    audio_file = db.Column(db.Text, nullable=True)       # 原始录音文件路径（可在线播放）
+    audio_archive = db.Column(db.Text, nullable=True)     # 夜间压缩包路径（.zip，可下载，不可在线播放）
+    audio_archive_size = db.Column(db.Integer, nullable=True) # 压缩包大小（字节）
     audio_transcript = db.Column(db.Text, nullable=True)  # 语音转文字结果
     audio_summary = db.Column(db.Text, nullable=True)     # 文字内容总结
     audio_status = db.Column(db.String(20), default=None) # pending/processing/completed/failed
@@ -329,6 +332,8 @@ class ActivityLedger(db.Model):
         """完整详情（含录音转写和总结）"""
         d = self.to_dict()
         d['audio_file'] = self.audio_file
+        d['audio_archive'] = self.audio_archive
+        d['audio_archive_size'] = self.audio_archive_size
         d['audio_transcript'] = self.audio_transcript
         d['audio_summary'] = self.audio_summary
         d['audio_status'] = self.audio_status

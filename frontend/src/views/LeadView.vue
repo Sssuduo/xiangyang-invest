@@ -1,3 +1,4 @@
+<!-- LeadView.vue: 招商线索研判 — AI对话式研判 + Word文档生成 + 知识库管理 -->
 <template>
   <div class="lead-page">
     <BusinessNavbar variant="light" />
@@ -10,6 +11,9 @@
             <el-option v-for="d in dicts.project_types" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
           <div class="toolbar-spacer" />
+          <el-button v-if="selectedIds.length > 0" type="danger" @click="handleBatchDelete">
+            <el-icon><Delete /></el-icon> 批量删除 ({{ selectedIds.length }})
+          </el-button>
           <el-button v-if="businessAuth.hasPermission('lead', 'add')" type="primary" @click="openCreate">
             <el-icon><Plus /></el-icon> 添加线索
           </el-button>
@@ -167,33 +171,7 @@
                   <el-icon><CopyDocument /></el-icon> 复制提示词
                 </el-button>
                 <el-button v-if="!row.converted_project_id && businessAuth.hasPermission('lead', 'convert')" size="small" link type="warning" @click="handleConvert(row)">转为项目</el-button>
-                <el-dropdown v-if="businessAuth.hasPermission('lead', 'delete')" trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
-                  <el-button size="small" link class="action-more">
-                    <el-icon><MoreFilled /></el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="view">
-                        <el-icon><View /></el-icon> 线索详情
-                      </el-dropdown-item>
-                      <el-dropdown-item command="delete" divided>
-                        <el-icon><Delete /></el-icon> 删除
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-                <el-dropdown v-else trigger="click" @command="(cmd) => handleRowCmd(cmd, row)">
-                  <el-button size="small" link class="action-more">
-                    <el-icon><MoreFilled /></el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="view">
-                        <el-icon><View /></el-icon> 线索详情
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <el-button v-if="businessAuth.hasPermission('lead', 'delete')" size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
               </div>
             </template>
           </el-table-column>
@@ -512,11 +490,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Connection, InfoFilled, Edit, Cpu, CopyDocument } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, ArrowDown, ArrowUp, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Connection, InfoFilled, Edit, Cpu, CopyDocument } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import LeadDrawer from '@/components/lead/LeadDrawer.vue'
 import LeadAssessmentDrawer from '@/components/lead/LeadAssessmentDrawer.vue'
-import { getLeads, getDicts, createLead, updateLead, getLead, deleteLead, getMaxOrderNo, convertLead, getPromptPreview } from '@/api/lead'
+import { getLeads, getDicts, createLead, updateLead, getLead, deleteLead, batchDeleteLeads, getMaxOrderNo, convertLead, getPromptPreview } from '@/api/lead'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent, maskPhone } from '@/utils/mask'
 
@@ -756,7 +734,7 @@ const rules = {
   responsible_unit_code: [{ required: false, message: '请选择责任单位', trigger: 'change' }]
 }
 
-onMounted(async () => { await loadDicts(); fetchData() })
+onMounted(async () => { loadDicts(); fetchData() })
 
 async function loadDicts() {
   try { const res = await getDicts(); if (res.code === 0) Object.assign(dicts, res.data) } catch { /* ignore */ }
@@ -1051,6 +1029,22 @@ async function handleDelete(row) {
     })
     await deleteLead(row.id)
     ElMessage.success('线索已删除')
+    fetchData()
+  } catch { /* cancelled */ }
+}
+
+// ---- 批量删除 ----
+async function handleBatchDelete() {
+  if (selectedIds.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.length} 条线索吗？`,
+      '批量删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    await batchDeleteLeads(selectedIds.value)
+    ElMessage.success(`已删除 ${selectedIds.value.length} 条线索`)
+    selectedIds.value = []
     fetchData()
   } catch { /* cancelled */ }
 }

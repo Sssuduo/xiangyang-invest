@@ -2,7 +2,8 @@
 from models.base import TimestampMixin
 from models.auth import AdminUser, BusinessUser, Staff
 from models.content import HomepageConfig, CarouselPage, ProvinceInfo, CityInfo, ContactInfo, PromoVideo
-from models.ai import LLMModel, QuickPrompt, KnowledgeEntry, KnowledgeDraft, KnowledgeUsageStat
+from models.ai import (LLMModel, QuickPrompt, KnowledgeEntry, KnowledgeDraft,
+    KnowledgeUsageStat, KnowledgeEntryChangeLog, KnowledgeEntryHistory)
 from models.dicts import (FollowStatusDict, MeetingStatusDict, OrganizationDict,
     ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict,
     ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict)

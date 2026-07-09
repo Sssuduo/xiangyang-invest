@@ -45,8 +45,25 @@
             {{ name }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item v-if="project.project_doc" label="项目文档" :span="2">
-          <a :href="project.project_doc" target="_blank" class="doc-link"><el-icon><Document /></el-icon> 查看文档</a>
+        <el-descriptions-item v-if="projectDocs.length > 0" label="项目文档" :span="2">
+          <div class="doc-list">
+            <div v-for="(doc, idx) in projectDocs" :key="idx" class="doc-item">
+              <el-icon class="doc-item-icon"><Document /></el-icon>
+              <span class="doc-item-name" :title="doc.name">{{ doc.name }}</span>
+              <el-button size="small" link type="primary" @click="previewFile(doc.url, doc.name)">预览</el-button>
+              <el-button size="small" link type="success" @click="downloadFile(doc.url, doc.name)">下载</el-button>
+            </div>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="planDocs.length > 0" label="投资计划书" :span="2">
+          <div class="doc-list">
+            <div v-for="(doc, idx) in planDocs" :key="idx" class="doc-item">
+              <el-icon class="doc-item-icon"><Document /></el-icon>
+              <span class="doc-item-name" :title="doc.name">{{ doc.name }}</span>
+              <el-button size="small" link type="primary" @click="previewFile(doc.url, doc.name)">预览</el-button>
+              <el-button size="small" link type="success" @click="downloadFile(doc.url, doc.name)">下载</el-button>
+            </div>
+          </div>
         </el-descriptions-item>
 
         <!-- 企业诉求 -->
@@ -83,6 +100,7 @@ import { computed } from 'vue'
 import { Document, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
 import { maskName, maskContent, maskPhone } from '@/utils/mask'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { ElMessage } from 'element-plus'
 
 const businessAuth = useBusinessAuthStore()
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
@@ -93,6 +111,50 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   project: { type: Object, default: null }
 })
+
+function parseDocList(raw) {
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((item, i) => {
+      if (typeof item === 'string') return { url: item, name: item.split('/').pop() || `文件${i + 1}` }
+      return { url: item.url, name: item.original_name || item.url?.split('/').pop() || `文件${i + 1}` }
+    })
+  } catch { return [] }
+}
+
+const projectDocs = computed(() => parseDocList(props.project?.project_doc))
+const planDocs = computed(() => parseDocList(props.project?.investment_plan))
+
+// 支持在线预览的文件类型
+const PREVIEWABLE = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp']
+function getFileExt(name) { return (name || '').split('.').pop().toLowerCase() }
+function canPreview(name) { return PREVIEWABLE.includes(getFileExt(name)) }
+
+// Office 文件预览提示
+const OFFICE_EXTS = ['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx']
+function isOfficeFile(name) { return OFFICE_EXTS.includes(getFileExt(name)) }
+
+function previewFile(url, name) {
+  if (canPreview(name)) {
+    window.open(url, '_blank')
+  } else if (isOfficeFile(name)) {
+    ElMessage.info('Office 文件需下载后查看，点击"下载"按钮即可')
+  } else {
+    ElMessage.info('该文件类型不支持在线预览，请下载后查看')
+  }
+}
+
+function downloadFile(url, name) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
 
 const emit = defineEmits(['update:modelValue'])
 const visible = computed({ get: () => props.modelValue, set: v => emit('update:modelValue', v) })
@@ -126,6 +188,30 @@ function dStatusName(s) { return { pending: '待回应', processing: '协调中'
 .text-block { white-space: pre-wrap; line-height: 1.7; font-size: 13px; color: #303133; max-height: 200px; overflow-y: auto; }
 .text-block-lg { max-height: 400px; }
 .amount-txt { color: #e6a23c; font-size: 16px; }
+
+/* 文件列表 */
+.doc-list { width: 100%; }
+.doc-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: #f8f9fb;
+  border-radius: 4px;
+  border: 1px solid #ebeef5;
+}
+.doc-item:last-child { margin-bottom: 0; }
+.doc-item-icon { color: #409eff; flex-shrink: 0; }
+.doc-item-name {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .doc-link { color: #409eff; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .doc-link:hover { text-decoration: underline; }
 .project-type-tag {

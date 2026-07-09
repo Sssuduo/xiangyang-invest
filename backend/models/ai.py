@@ -23,6 +23,9 @@ class LLMModel(db.Model):
     embedding_api_key = db.Column(db.String(512), default='')
     embedding_model_name = db.Column(db.String(128), default='')
 
+    # 关联搜索模型（GLM-4-Flash 等支持 Web Search 的模型），用于联网搜索阶段
+    search_model_id = db.Column(db.Integer, db.ForeignKey('llm_models.id'), nullable=True)
+
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
 
@@ -43,6 +46,7 @@ class LLMModel(db.Model):
             'sort_order': self.sort_order,
             'embedding_api_url': self.embedding_api_url or '',
             'embedding_model_name': self.embedding_model_name or '',
+            'search_model_id': self.search_model_id,
             # 不返回 api_key
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -53,6 +57,7 @@ class LLMModel(db.Model):
         d = self.to_dict()
         d['api_key'] = self.api_key
         d['embedding_api_key'] = self.embedding_api_key or ''
+        d['search_model_id'] = self.search_model_id
         return d
 
     def get_embedding_config(self):
@@ -94,6 +99,64 @@ class QuickPrompt(db.Model):
         }
 
 
+class KnowledgeEntryHistory(db.Model):
+    """知识条目历史版本"""
+    __tablename__ = 'knowledge_entry_histories'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('knowledge_entries.id', ondelete='CASCADE'), nullable=False, index=True)
+    title = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(64), nullable=False)
+    tags = db.Column(db.Text, default='[]')
+    source = db.Column(db.String(255), default='')
+    attach_files = db.Column(db.Text, default='[]')
+    version = db.Column(db.Integer, default=1)
+    changed_by = db.Column(db.String(128), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'entry_id': self.entry_id,
+            'title': self.title,
+            'content': self.content,
+            'category': self.category,
+            'tags': json.loads(self.tags) if self.tags else [],
+            'source': self.source or '',
+            'attach_files': json.loads(self.attach_files) if self.attach_files else [],
+            'version': self.version,
+            'changed_by': self.changed_by or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class KnowledgeEntryChangeLog(db.Model):
+    """知识条目变更审计日志"""
+    __tablename__ = 'knowledge_entry_change_logs'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('knowledge_entries.id', ondelete='CASCADE'), nullable=False, index=True)
+    action = db.Column(db.String(16), nullable=False)  # create / update / delete / toggle
+    changed_by = db.Column(db.String(128), default='')
+    changed_fields = db.Column(db.Text, default='')
+    old_values = db.Column(db.Text, default='')
+    new_values = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'entry_id': self.entry_id,
+            'action': self.action,
+            'changed_by': self.changed_by or '',
+            'changed_fields': json.loads(self.changed_fields) if self.changed_fields else [],
+            'old_values': json.loads(self.old_values) if self.old_values else {},
+            'new_values': json.loads(self.new_values) if self.new_values else {},
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class KnowledgeEntry(db.Model):
     """本地招商知识库"""
     __tablename__ = 'knowledge_entries'
@@ -114,6 +177,10 @@ class KnowledgeEntry(db.Model):
     search_count = db.Column(db.Integer, default=0)
     last_used_at = db.Column(db.DateTime, nullable=True)
 
+    # 审计追溯
+    created_by = db.Column(db.String(128), default='')
+    updated_by = db.Column(db.String(128), default='')
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -128,6 +195,8 @@ class KnowledgeEntry(db.Model):
             'has_embedding': bool(self.embedding),
             'embedding_model': self.embedding_model or '',
             'search_count': self.search_count or 0,
+            'created_by': self.created_by or '',
+            'updated_by': self.updated_by or '',
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -176,7 +245,7 @@ class KnowledgeUsageStat(db.Model):
     __tablename__ = 'knowledge_usage_stats'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    entry_id = db.Column(db.Integer, nullable=False, index=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('knowledge_entries.id', ondelete='CASCADE'), nullable=False, index=True)
     session_id = db.Column(db.Integer, nullable=False, index=True)
     lead_id = db.Column(db.Integer, nullable=False)
     was_used = db.Column(db.Boolean, default=False)

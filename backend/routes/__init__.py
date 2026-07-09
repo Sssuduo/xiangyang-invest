@@ -75,7 +75,8 @@ def register_routes(app):
     from routes import admin_activity_export as _admin_activity_export
     from routes import admin_activity_import as _admin_activity_import
     from routes import admin_activity_ledger as _admin_activity_ledger
-    from routes import admin_activity_ledger_audio as _admin_activity_ledger_audio
+    # TODO: 录音模块暂时禁用，待后续迭代完善后重新启用
+    # from routes import admin_activity_ledger_audio as _admin_activity_ledger_audio
     from routes import admin_demand as _admin_demand
     from routes import admin_construction as _admin_construction
     from routes import admin_construction_import as _admin_construction_import

@@ -1,33 +1,49 @@
 """
-音频压缩服务
+音频文件服务
 
-使用 FFmpeg 将录音文件压缩为 Opus 格式（高效语音编码），
-大幅减小文件体积，适合服务器存储。
+职责分为两部分：
+1. 上传时：直接保存原始文件（不压缩），供在线播放
+2. 夜间定时任务：压缩超过 50MB 的大文件为 Opus 格式并打包为 zip
+   （压缩后文件不可在线播放，只支持下载解压）
+
+开发环境（无 FFmpeg）：自动降级为保留原始文件。
+生产环境：必须安装 FFmpeg 以启用压缩。
 """
 import os
+import shutil
 import subprocess
 import uuid
+import zipfile
+import logging
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
 
-# 压缩目标：Opus 32kbps 单声道（语音场景足够清晰）
+# 压缩目标：Opus 32kbps 单声道（语音足够清晰）
 AUDIO_CODEC = 'libopus'
 AUDIO_BITRATE = '32k'
-AUDIO_SAMPLE_RATE = 16000  # 16kHz
-AUDIO_CHANNELS = 1         # 单声道
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_CHANNELS = 1
 OUTPUT_EXT = 'opus'
+
+# 全局标记 FFmpeg 是否可用（只检查一次）
+_ffmpeg_available = None
 
 
 def _check_ffmpeg():
-    """检查 FFmpeg 是否可用"""
+    """检查 FFmpeg 是否可用（带缓存）"""
+    global _ffmpeg_available
+    if _ffmpeg_available is not None:
+        return _ffmpeg_available
     try:
         subprocess.run(
             ['ffmpeg', '-version'], capture_output=True, timeout=5,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
-        return True
+        _ffmpeg_available = True
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        _ffmpeg_available = False
+    return _ffmpeg_available
 
 
 def get_audio_duration(filepath):
@@ -50,108 +66,236 @@ def get_audio_duration(filepath):
     return 0.0
 
 
-def compress_audio(input_path, output_dir):
+# ======================== 上传阶段：保存原始文件 ========================
+
+
+def save_original_audio(input_filepath, upload_folder):
     """
-    压缩音频文件
+    上传时直接保存原始音频文件（不做压缩）
+
+    原始文件保存在 static/uploads/audio/ 目录下，支持在线播放。
 
     Args:
-        input_path: 原始音频文件路径
-        output_dir: 输出目录（如 static/uploads/audio）
+        input_filepath: 临时文件绝对路径
+        upload_folder: 上传根目录（如 static/uploads）
 
     Returns:
-        tuple: (output_path, duration_seconds, original_size, compressed_size)
-               - output_path: 压缩后文件的完整绝对路径
-               - duration: 音频时长（秒）
-               - original_size: 原始文件大小（字节）
-               - compressed_size: 压缩后文件大小（字节）
-
-    Raises:
-        RuntimeError: FFmpeg 不可用时抛出
-        Exception: 压缩失败时抛出
+        dict: {
+            'file_path': str,         # 保存后的文件绝对路径
+            'relative_url': str,      # 相对 URL 路径
+            'duration': float,        # 时长(秒)
+            'file_size': int,         # 文件大小(字节)
+        }
     """
-    if not _check_ffmpeg():
-        raise RuntimeError(
-            'FFmpeg 不可用，请在生产服务器上安装 FFmpeg：\n'
-            '  CentOS/RHEL: yum install -y ffmpeg\n'
-            '  Ubuntu/Debian: apt install -y ffmpeg\n'
-            '  Windows: 下载 https://ffmpeg.org/download.html'
-        )
+    audio_dir = os.path.join(upload_folder, 'audio')
+    os.makedirs(audio_dir, exist_ok=True)
 
-    # 确保输出目录存在
-    os.makedirs(output_dir, exist_ok=True)
+    # 保留原始扩展名
+    _, ext = os.path.splitext(input_filepath)
+    ext = ext.lower() or '.audio'
 
-    # 生成唯一输出文件名
     date_prefix = datetime.now().strftime('%Y%m%d')
     unique_id = uuid.uuid4().hex[:8]
-    output_filename = f'{date_prefix}_{unique_id}.{OUTPUT_EXT}'
+    output_filename = f'{date_prefix}_{unique_id}_orig{ext}'
+    output_path = os.path.join(audio_dir, output_filename)
+
+    shutil.copy2(input_filepath, output_path)
+
+    file_size = os.path.getsize(output_path)
+    duration = get_audio_duration(output_path)
+    relative_url = f'/static/uploads/audio/{output_filename}'
+
+    logger.info(f'原始音频已保存：{output_filename}，{file_size / 1024 / 1024:.1f}MB，{duration:.0f}s')
+
+    return {
+        'file_path': output_path,
+        'relative_url': relative_url,
+        'duration': round(duration, 1),
+        'file_size': file_size,
+    }
+
+
+# ======================== 夜间压缩阶段 ========================
+
+
+def _compress_single_file(input_path, output_dir):
+    """
+    将单个音频文件压缩为 Opus 格式
+
+    Args:
+        input_path: 原始文件路径
+        output_dir: 输出目录
+
+    Returns:
+        str: 压缩后的文件路径，失败返回 None
+    """
+    if not _check_ffmpeg():
+        logger.warning(f'FFmpeg 未安装，跳过压缩：{input_path}')
+        return None
+
+    date_prefix = datetime.now().strftime('%Y%m%d')
+    unique_id = uuid.uuid4().hex[:8]
+    output_filename = f'{date_prefix}_{unique_id}_compressed.{OUTPUT_EXT}'
     output_path = os.path.join(output_dir, output_filename)
 
-    # 原始文件大小
-    original_size = os.path.getsize(input_path)
-
-    # 获取音频时长
-    duration = get_audio_duration(input_path)
-
-    # 使用 FFmpeg 压缩
     cmd = [
-        'ffmpeg', '-y',  # -y 覆盖已有文件
+        'ffmpeg', '-y',
         '-i', input_path,
         '-c:a', AUDIO_CODEC,
         '-b:a', AUDIO_BITRATE,
         '-ar', str(AUDIO_SAMPLE_RATE),
         '-ac', str(AUDIO_CHANNELS),
-        '-vn',  # 去除视频轨道
-        '-map_metadata', '-1',  # 去除元数据（减小体积）
+        '-vn',
+        '-map_metadata', '-1',
         output_path
     ]
 
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=180,
-        creationflags=creationflags
-    )
+    try:
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600,
+            creationflags=creationflags
+        )
+        if result.returncode != 0 or not os.path.exists(output_path):
+            logger.error(f'压缩失败：{input_path}，错误：{result.stderr[-300:] if result.stderr else "未知"}')
+            return None
 
-    if result.returncode != 0:
-        raise Exception(f'音频压缩失败：{result.stderr[-500:] if result.stderr else "未知错误"}')
-
-    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-        raise Exception('音频压缩失败：输出文件为空')
-
-    compressed_size = os.path.getsize(output_path)
-
-    return output_path, duration, original_size, compressed_size
+        orig_size = os.path.getsize(input_path)
+        comp_size = os.path.getsize(output_path)
+        logger.info(f'压缩完成：{orig_size / 1024 / 1024:.1f}MB → {comp_size / 1024 / 1024:.1f}MB')
+        return output_path
+    except Exception as e:
+        logger.error(f'压缩异常：{input_path}，{e}')
+        return None
 
 
-def compress_audio_to_storage(input_filepath, upload_folder):
+def compress_to_archive(input_path, upload_folder):
     """
-    高层接口：压缩音频文件并保存到存储目录
+    将原始音频文件压缩为 Opus 并打包为 zip 压缩包
+
+    压缩包保存在 static/uploads/audio/archives/ 目录下。
 
     Args:
-        input_filepath: 原始文件绝对路径
-        upload_folder: 上传根目录（如 static/uploads）
+        input_path: 原始文件绝对路径
+        upload_folder: 上传根目录
 
     Returns:
-        dict: {
-            'output_path': str,          # 压缩后文件的绝对路径
-            'relative_url': str,         # 相对 URL 路径（用于数据库存储）
-            'duration': float,           # 时长(秒)
-            'original_size': int,        # 原始大小(字节)
-            'compressed_size': int,      # 压缩后大小(字节)
-            'compression_ratio': float   # 压缩比
-        }
+        dict: { 'archive_path': str, 'archive_url': str, 'archive_size': int }
+        或 None（压缩失败时）
     """
+    archive_dir = os.path.join(upload_folder, 'audio', 'archives')
+    os.makedirs(archive_dir, exist_ok=True)
+
+    # 第一步：压缩为 Opus
+    temp_dir = os.path.join(upload_folder, 'audio', '_temp_compress')
+    os.makedirs(temp_dir, exist_ok=True)
+    compressed_path = _compress_single_file(input_path, temp_dir)
+
+    if not compressed_path:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return None
+
+    # 第二步：打包为 zip
+    date_prefix = datetime.now().strftime('%Y%m%d')
+    unique_id = uuid.uuid4().hex[:8]
+    zip_filename = f'{date_prefix}_{unique_id}_audio.zip'
+    zip_path = os.path.join(archive_dir, zip_filename)
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(compressed_path, os.path.basename(compressed_path))
+        archive_size = os.path.getsize(zip_path)
+        archive_url = f'/static/uploads/audio/archives/{zip_filename}'
+
+        orig_size = os.path.getsize(input_path)
+        logger.info(
+            f'归档完成：{os.path.basename(input_path)} '
+            f'{orig_size / 1024 / 1024:.1f}MB → {archive_size / 1024 / 1024:.1f}MB zip'
+        )
+
+        return {
+            'archive_path': zip_path,
+            'archive_url': archive_url,
+            'archive_size': archive_size,
+        }
+    except Exception as e:
+        logger.error(f'打包失败：{e}')
+        return None
+    finally:
+        # 清理临时压缩文件
+        try:
+            if os.path.exists(compressed_path):
+                os.remove(compressed_path)
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def run_night_compression(threshold_bytes=50 * 1024 * 1024):
+    """
+    夜间批量压缩：扫描所有超过阈值的原始录音文件，压缩并打包
+
+    Args:
+        threshold_bytes: 文件大小阈值（字节），默认 50MB
+
+    Returns:
+        dict: { 'processed': int, 'compressed': int, 'skipped': int, 'errors': int }
+    """
+    from models import ActivityLedger
+    from extensions import db
     from config import Config
-    audio_dir = os.path.join(upload_folder, 'audio')
-    output_path, duration, orig_size, comp_size = compress_audio(input_filepath, audio_dir)
 
-    # 计算相对 URL（/static/uploads/audio/xxx.opus）
-    relative_url = '/static/uploads/audio/' + os.path.basename(output_path)
+    items = ActivityLedger.query.filter(
+        ActivityLedger.audio_file.isnot(None)
+    ).all()
 
-    return {
-        'output_path': output_path,
-        'relative_url': relative_url,
-        'duration': round(duration, 1),
-        'original_size': orig_size,
-        'compressed_size': comp_size,
-        'compression_ratio': round(orig_size / comp_size, 1) if comp_size > 0 else 0
-    }
+    upload_folder = Config.UPLOAD_FOLDER
+    result = {'processed': 0, 'compressed': 0, 'skipped': 0, 'errors': 0}
+
+    for item in items:
+        result['processed'] += 1
+
+        # 已有压缩包的跳过
+        if item.audio_archive:
+            result['skipped'] += 1
+            continue
+
+        # 找到原始文件
+        try:
+            file_rel = item.audio_file.lstrip('/')
+            file_abs = os.path.join(os.path.dirname(upload_folder), file_rel)
+        except Exception:
+            result['errors'] += 1
+            continue
+
+        if not os.path.exists(file_abs):
+            logger.warning(f'夜间压缩：文件不存在 {file_abs}')
+            result['skipped'] += 1
+            continue
+
+        file_size = os.path.getsize(file_abs)
+        if file_size < threshold_bytes:
+            result['skipped'] += 1
+            continue
+
+        # 执行压缩
+        archive_result = compress_to_archive(file_abs, upload_folder)
+        if archive_result:
+            item.audio_archive = archive_result['archive_url']
+            item.audio_archive_size = archive_result['archive_size']
+            db.session.commit()
+            result['compressed'] += 1
+            logger.info(f'夜间压缩成功：id={item.id}，{file_size / 1024 / 1024:.0f}MB')
+        else:
+            result['errors'] += 1
+
+    logger.info(
+        f'夜间压缩完成：处理 {result["processed"]}，'
+        f'压缩 {result["compressed"]}，'
+        f'跳过 {result["skipped"]}，'
+        f'错误 {result["errors"]}'
+    )
+    return result

@@ -1,3 +1,4 @@
+<!-- InvestmentView.vue: 招商对接项目库管理 — CRUD + 企业诉求子表 + 抽屉式编辑 + 标签筛选 -->
 <template>
   <div class="investment-page">
     <BusinessNavbar variant="light" />
@@ -368,6 +369,15 @@
                     <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                   </el-upload>
                   <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <!-- 已上传文件列表（带预览/下载） -->
+                  <div v-if="fileList.length > 0" class="file-preview-list" style="margin-top: 8px;">
+                    <div v-for="(f, idx) in fileList" :key="idx" class="file-preview-item">
+                      <el-icon><Document /></el-icon>
+                      <span class="file-preview-name" :title="f.originalName || f.name">{{ f.originalName || f.name }}</span>
+                      <el-button size="small" link type="primary" @click="previewUploadedFile(f.url, f.originalName || f.name)">预览</el-button>
+                      <el-button size="small" link type="success" @click="downloadUploadedFile(f.url, f.originalName || f.name)">下载</el-button>
+                    </div>
+                  </div>
                 </div>
               </el-form-item>
               <el-form-item label="项目投资计划书">
@@ -390,6 +400,15 @@
                     <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                   </el-upload>
                   <div class="el-upload__tip" style="margin-top: 6px;">支持 PDF/DOC/DOCX/PPT/XLS/图片，可上传多个</div>
+                  <!-- 已上传计划书列表（带预览/下载） -->
+                  <div v-if="planFileList.length > 0" class="file-preview-list" style="margin-top: 8px;">
+                    <div v-for="(f, idx) in planFileList" :key="idx" class="file-preview-item">
+                      <el-icon><Document /></el-icon>
+                      <span class="file-preview-name" :title="f.originalName || f.name">{{ f.originalName || f.name }}</span>
+                      <el-button size="small" link type="primary" @click="previewUploadedFile(f.url, f.originalName || f.name)">预览</el-button>
+                      <el-button size="small" link type="success" @click="downloadUploadedFile(f.url, f.originalName || f.name)">下载</el-button>
+                    </div>
+                  </div>
                 </div>
               </el-form-item>
 
@@ -890,7 +909,7 @@ const rules = {
   responsible_unit_code: [{ required: false, message: '请选择责任单位', trigger: 'change' }]
 }
 
-onMounted(async () => { await loadDicts(); fetchData() })
+onMounted(async () => { loadDicts(); fetchData() })
 
 async function loadDicts() {
   try { const res = await getDicts(); if (res.code === 0) Object.assign(dicts, res.data) } catch { /* ignore */ }
@@ -1087,14 +1106,24 @@ async function openEdit(row) {
       form.project_doc = d.project_doc || ''
       form.investment_plan = d.investment_plan || ''
       form.conclusion = d.conclusion || ''
-      // 解析已有的文件列表
+      // 解析已有的文件列表（兼容旧纯 URL 字符串和新 {url, original_name} 对象）
       try {
         const parsed = typeof form.project_doc === 'string' ? JSON.parse(form.project_doc) : form.project_doc
-        fileList.value = Array.isArray(parsed) ? parsed.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
+        fileList.value = Array.isArray(parsed)
+          ? parsed.map((item, i) => {
+              if (typeof item === 'string') return { name: item.split('/').pop() || `文件${i + 1}`, url: item }
+              return { name: item.original_name || item.url?.split('/').pop() || `文件${i + 1}`, url: item.url, originalName: item.original_name }
+            })
+          : []
       } catch { fileList.value = [] }
       try {
         const parsedPlan = typeof d.investment_plan === 'string' ? JSON.parse(d.investment_plan) : d.investment_plan
-        planFileList.value = Array.isArray(parsedPlan) ? parsedPlan.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
+        planFileList.value = Array.isArray(parsedPlan)
+          ? parsedPlan.map((item, i) => {
+              if (typeof item === 'string') return { name: item.split('/').pop() || `文件${i + 1}`, url: item }
+              return { name: item.original_name || item.url?.split('/').pop() || `文件${i + 1}`, url: item.url, originalName: item.original_name }
+            })
+          : []
       } catch { planFileList.value = [] }
       form.follow_status_code = d.follow_status_code || ''
       form.meeting_status_code = d.meeting_status_code || 'not_meeting'
@@ -1162,6 +1191,7 @@ function demandStatusLabel(s) {
 function handleUploadSuccess(response, file) {
   if (response.code === 0) {
     file.url = response.data.url
+    file.originalName = response.data.original_name || file.name
   }
 }
 function handleUploadError() { ElMessage.error('文件上传失败') }
@@ -1179,11 +1209,41 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 function handlePlanUploadSuccess(response, file) {
-  if (response.code === 0) { file.url = response.data.url }
+  if (response.code === 0) {
+    file.url = response.data.url
+    file.originalName = response.data.original_name || file.name
+  }
 }
 function handlePlanFileRemove(file) {
   const idx = planFileList.value.findIndex(f => f.url === file.url || f.uid === file.uid)
   if (idx > -1) planFileList.value.splice(idx, 1)
+}
+
+// ---- 文件预览/下载辅助 ----
+const PREVIEWABLE = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp']
+const OFFICE_EXTS = ['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx']
+function getFileExt(name) { return (name || '').split('.').pop().toLowerCase() }
+function canPreview(name) { return PREVIEWABLE.includes(getFileExt(name)) }
+function isOffice(name) { return OFFICE_EXTS.includes(getFileExt(name)) }
+
+function previewUploadedFile(url, name) {
+  if (canPreview(name)) {
+    window.open(url, '_blank')
+  } else if (isOffice(name)) {
+    ElMessage.info('Office 文件需下载后查看，点击"下载"按钮即可')
+  } else {
+    ElMessage.info('该文件类型不支持在线预览，请下载后查看')
+  }
+}
+
+function downloadUploadedFile(url, name) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 // ---- 保存 ----
@@ -1204,14 +1264,14 @@ async function handleSave() {
         d.demand_type_code = ''
       }
     })
-    // 构建 project_doc JSON 数组
+    // 构建 project_doc JSON 数组（带 original_name）
     const docUrls = fileList.value
       .filter(f => f.url)
-      .map(f => f.url)
+      .map(f => ({ url: f.url, original_name: f.originalName || f.name || f.url.split('/').pop() }))
     const projectDoc = JSON.stringify(docUrls)
     const planUrls = planFileList.value
       .filter(f => f.url)
-      .map(f => f.url)
+      .map(f => ({ url: f.url, original_name: f.originalName || f.name || f.url.split('/').pop() }))
     const investmentPlan = JSON.stringify(planUrls)
 
     const data = {

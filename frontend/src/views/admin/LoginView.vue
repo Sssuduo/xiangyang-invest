@@ -8,7 +8,7 @@
           <el-input
             v-model="username"
             placeholder="用户名"
-            prefix-icon="User"
+            :prefix-icon="User"
             size="large"
           />
         </el-form-item>
@@ -17,7 +17,7 @@
             v-model="password"
             type="password"
             placeholder="密码"
-            prefix-icon="Lock"
+            :prefix-icon="Lock"
             size="large"
             show-password
           />
@@ -45,7 +45,9 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { User, Lock } from '@element-plus/icons-vue'
 import { useAdminStore } from '@/stores/admin'
+import { clearAuthCache } from '@/router'
 
 const router = useRouter()
 const adminStore = useAdminStore()
@@ -64,6 +66,7 @@ async function handleLogin() {
     const res = await adminStore.login(username.value, password.value)
     if (res.code === 0) {
       ElMessage.success('登录成功')
+      clearAuthCache()
       router.push('/admin')
     } else {
       ElMessage.error(res.message || '登录失败')

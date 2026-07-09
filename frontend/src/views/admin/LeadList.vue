@@ -55,13 +55,9 @@
               <span v-else class="text-muted">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="280" fixed="right">
+          <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="handleView(row)">查看</el-button>
-              <el-button size="small" link type="success" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" link type="warning" @click="openAssess(row)">
-                <el-icon><Cpu /></el-icon> 研判
-              </el-button>
               <el-button
                 size="small"
                 link
@@ -284,7 +280,7 @@ import { Search, Plus, Delete, InfoFilled, OfficeBuilding, Connection, ChatLineS
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import LeadAssessmentDrawer from '@/components/lead/LeadAssessmentDrawer.vue'
-import { getDicts, getLeads, createLead, updateLead, getLead, deleteLead, batchDeleteLeads, getMaxOrderNo, convertLead } from '@/api/lead'
+import { getDicts, getLeads, createLead, updateLead, getLead, deleteLead, batchDeleteLeads, getMaxOrderNo, convertLead, getPromptPreview } from '@/api/lead'
 
 const projects = ref([])
 const loading = ref(false)
@@ -559,6 +555,21 @@ function openAssess(row) {
   assessmentLeadId.value = row.id
   assessmentLeadName.value = row.project_name
   assessmentDrawerVisible.value = true
+}
+
+// ---- 复制提示词 ----
+async function copyPrompt(row) {
+  try {
+    const res = await getPromptPreview(row.id)
+    if (res.code === 0) {
+      await navigator.clipboard.writeText(res.data)
+      ElMessage.success('研判提示词已复制到剪贴板，可粘贴到 AI 工具中使用')
+    } else {
+      ElMessage.error(res.message || '获取提示词失败')
+    }
+  } catch (err) {
+    ElMessage.error('复制失败：' + (err.message || '未知错误'))
+  }
 }
 
 // ---- 转为项目 ----

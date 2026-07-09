@@ -103,9 +103,9 @@
               </el-descriptions-item>
               <el-descriptions-item v-if="viewEntry.attach_files && viewEntry.attach_files.length > 0" label="附件">
                 <div class="attach-list">
-                  <a v-for="(url, idx) in viewEntry.attach_files" :key="idx" :href="url" target="_blank" class="attach-link">
+                  <a v-for="(item, idx) in viewEntry.attach_files" :key="idx" :href="typeof item === 'string' ? item : item.url" target="_blank" class="attach-link" :download="typeof item === 'string' ? (item.split('/').pop() || '') : (item.original_name || '')">
                     <el-icon><Link /></el-icon>
-                    {{ url.split('/').pop() || `附件${idx + 1}` }}
+                    {{ typeof item === 'string' ? item.split('/').pop() : (item.original_name || item.url?.split('/').pop() || `附件${idx + 1}`) }}
                   </a>
                 </div>
               </el-descriptions-item>
@@ -222,6 +222,15 @@
                     </template>
                   </el-upload>
                 </div>
+                <!-- 已上传文件列表（带预览/下载） -->
+                <div v-if="fileList.length > 0" class="file-preview-list" style="margin-top: 8px;">
+                  <div v-for="(f, idx) in fileList" :key="idx" class="file-preview-item">
+                    <el-icon><Document /></el-icon>
+                    <span class="file-preview-name" :title="f.originalName || f.name">{{ f.originalName || f.name }}</span>
+                    <el-button size="small" link type="primary" @click="previewKBFile(f.url, f.originalName || f.name)">预览</el-button>
+                    <el-button size="small" link type="success" @click="downloadKBFile(f.url, f.originalName || f.name)">下载</el-button>
+                  </div>
+                </div>
               </el-form-item>
 
               <div class="drawer-footer">
@@ -241,28 +250,19 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, InfoFilled, Document, UploadFilled, PriceTag, Paperclip, View, Edit, Link } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
-import { getEntries, createEntry, updateEntry, getEntry, deleteEntry } from '@/api/knowledge'
+import { getEntries, createEntry, updateEntry, getEntry, deleteEntry, getCategories } from '@/api/knowledge'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 
 const businessAuth = useBusinessAuthStore()
 
-const CATEGORY_MAP = {
-  industry_policy: '产业政策',
-  park_info: '园区信息',
-  supporting: '配套能力',
-  land_cost: '土地成本',
-  case_study: '招商案例',
-  demand_pattern: '企业诉求',
-  market_data: '市场数据',
-  competitor: '周边竞争'
+// 分类从后端 API 动态获取
+const categoryOptions = ref([])
+async function loadCategories() {
+  try {
+    const res = await getCategories()
+    if (res.code === 0) categoryOptions.value = res.data || []
+  } catch { /* ignore */ }
 }
-
-const entries = ref([])
-const loading = ref(false)
-const searchText = ref('')
-const filterCategory = ref('')
-const includeInactive = ref(false)
-const categoryOptions = Object.entries(CATEGORY_MAP).map(([code, name]) => ({ code, name }))
 
 // 分页
 const currentPage = ref(1)
@@ -307,11 +307,7 @@ const rules = {
 
 let searchTimer = null
 
-onMounted(() => { fetchData() })
-
-function resolveCategory(code) {
-  return CATEGORY_MAP[code] || code || '-'
-}
+onMounted(() => { loadCategories(); fetchData() })
 
 function fmtDt(d) {
   if (!d) return '-'
@@ -378,7 +374,12 @@ async function openEdit(row) {
       form.sort_order = d.sort_order || 0
       form.attach_files = Array.isArray(d.attach_files) ? d.attach_files : []
       // 解析已有的文件列表
-      fileList.value = form.attach_files.map((url, i) => ({ name: url.split('/').pop() || `文件${i + 1}`, url }))
+      fileList.value = form.attach_files.map((item, i) => {
+        if (typeof item === 'string') {
+          return { name: item.split('/').pop() || `文件${i + 1}`, url: item }
+        }
+        return { name: item.original_name || item.url.split('/').pop(), url: item.url, originalName: item.original_name }
+      })
     }
     editDrawerVisible.value = true
   } catch (err) { ElMessage.error(err.message) }
@@ -410,7 +411,10 @@ function removeTag(idx) {
 
 // ---- 文件上传处理 ----
 function handleUploadSuccess(response, file) {
-  if (response.code === 0) { file.url = response.data.url }
+  if (response.code === 0) {
+    file.url = response.data.url
+    file.originalName = response.data.original_name || file.name
+  }
 }
 
 function handleUploadError() { ElMessage.error('文件上传失败') }
@@ -430,6 +434,27 @@ function handleFileRemove(file) {
   if (idx > -1) fileList.value.splice(idx, 1)
 }
 
+function previewKBFile(url, name) {
+  const ext = (name || '').split('.').pop().toLowerCase()
+  if (['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+    window.open(url, '_blank')
+  } else if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) {
+    ElMessage.info('Office 文件需下载后查看，点击"下载"按钮即可')
+  } else {
+    ElMessage.info('该文件类型不支持在线预览，请下载后查看')
+  }
+}
+
+function downloadKBFile(url, name) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 // ---- 保存 ----
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
@@ -437,7 +462,10 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const docUrls = fileList.value.filter(f => f.url).map(f => f.url)
+    const docUrls = fileList.value.filter(f => f.url).map(f => ({
+      url: f.url,
+      original_name: f.originalName || f.name || f.url.split('/').pop()
+    }))
     const data = {
       title: form.title,
       category: form.category,

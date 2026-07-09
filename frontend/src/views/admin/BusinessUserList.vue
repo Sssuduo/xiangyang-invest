@@ -42,7 +42,9 @@
                     <span v-if="row.permissions[mod.key].delete" class="perm-tag">删除</span>
                     <span v-if="row.permissions[mod.key].batch_delete" class="perm-tag">批量删</span>
                     <span v-if="row.permissions[mod.key].import !== false" class="perm-tag">导入</span>
-                    <span v-if="!row.permissions[mod.key].edit && !row.permissions[mod.key].delete && !row.permissions[mod.key].batch_delete" class="perm-tag perm-none">无</span>
+                    <span v-if="row.permissions[mod.key].assess" class="perm-tag">AI研判</span>
+                    <span v-if="row.permissions[mod.key].convert" class="perm-tag">转项目</span>
+                    <span v-if="!row.permissions[mod.key].edit && !row.permissions[mod.key].delete && !row.permissions[mod.key].batch_delete && !row.permissions[mod.key].assess && !row.permissions[mod.key].convert" class="perm-tag perm-none">无</span>
                   </span>
                 </template>
               </div>
@@ -134,6 +136,16 @@
               v-model="form.permissions[mod.key].import"
               :disabled="!form.permissions[mod.key]"
             >导入</el-checkbox>
+            <el-checkbox
+              v-if="mod.key === 'lead'"
+              v-model="form.permissions[mod.key].assess"
+              :disabled="!form.permissions[mod.key]"
+            >AI研判</el-checkbox>
+            <el-checkbox
+              v-if="mod.key === 'lead'"
+              v-model="form.permissions[mod.key].convert"
+              :disabled="!form.permissions[mod.key]"
+            >转为项目</el-checkbox>
           </div>
         </div>
         </template>
@@ -177,6 +189,11 @@ const defaultPermissions = () => {
   const p = {}
   modules.forEach(m => {
     p[m.key] = { add: true, edit: true, delete: true, batch_delete: true, import: true }
+    // 招商线索研判需要额外配置 AI研判 + 转为项目 按钮权限
+    if (m.key === 'lead') {
+      p[m.key].assess = true
+      p[m.key].convert = true
+    }
   })
   return p
 }

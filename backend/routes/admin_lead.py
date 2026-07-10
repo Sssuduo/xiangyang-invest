@@ -213,7 +213,7 @@ def create_lead():
     for i, d in enumerate(data.get('demands', []) or []):
         if d.get('demand_content', '').strip():
             db.session.add(EnterpriseDemand(
-                project_id=None,
+                project_id=0,
                 lead_id=lead.id,
                 demand_type_code=d.get('demand_type_code', ''),
                 demand_content=d['demand_content'],

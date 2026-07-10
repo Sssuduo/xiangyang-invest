@@ -179,11 +179,12 @@ def _glm_web_search(api_key, query, count=5):
     }
     payload = {
         'search_query': query,
-        'search_engine': 'search_std',
+        'search_engine': 'search_pro_sogou',
         'search_intent': False,
         'count': count,
-        'search_recency_filter': 'noLimit',
-        'request_id': str(uuid.uuid4())
+        'search_recency_filter': 'oneYear',
+        'request_id': str(uuid.uuid4()),
+        'content_size': 'high'
     }
     try:
         resp = requests.post(web_search_url, json=payload, headers=headers, timeout=30, verify=True)
@@ -218,19 +219,18 @@ def _extract_search_queries(lead_context):
         elif s.startswith('【项目内容】'):
             content = s.replace('【项目内容】', '').strip()[:100]
 
-    # Query 1: 企业舆情
+    # Query 1: 企业基础注册信息（指定天眼查/企查查检索）
     if enterprise:
-        queries.append(f'{enterprise} 经营风险 舆情')
-        queries.append(f'{enterprise} 最新新闻 投资')
+        queries.append(f'{enterprise} 企业注册信息 天眼查 企查查')
+        queries.append(f'{enterprise} 经营风险 舆情 最新新闻')
     # Query 2: 项目市场调研
     if enterprise and project:
-        queries.append(f'{project} 市场分析 行业前景')
+        queries.append(f'{project} 行业市场 竞争格局 前景')
     # Query 3: 区域布局
     if enterprise:
         queries.append(f'{enterprise} 湖北 产业布局 投资')
     # Query 4: 从项目内容中提取关键词
     if content:
-        # 取前 40 字作为搜索 query
         queries.append(content[:60])
 
     # 去重并限制长度

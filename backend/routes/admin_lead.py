@@ -188,8 +188,8 @@ def create_lead():
         order_no=data.get('order_no', 0),
         project_name=data['project_name'],
         invest_enterprise=data['invest_enterprise'],
-        enterprise_info=data['enterprise_info'],
-        project_content=data['project_content'],
+        enterprise_info=data.get('enterprise_info', ''),
+        project_content=data.get('project_content', ''),
         invest_amount=data.get('invest_amount', 0),
         follow_status_code=data.get('follow_status_code', ''),
         meeting_status_code=data.get('meeting_status_code', 'not_meeting'),
@@ -560,7 +560,11 @@ def _build_assessment_messages(lead_context, knowledge_context, prompt_template,
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
     full_prompt = prompt_template.replace('{{lead_context}}', lead_context)
-    full_prompt = full_prompt.replace('{{knowledge_context}}', knowledge_context)
+    if knowledge_context:
+        full_prompt = full_prompt.replace('{{knowledge_context}}', knowledge_context)
+    else:
+        # 无知识库数据时填入明确提示
+        full_prompt = full_prompt.replace('{{knowledge_context}}', '（暂无相关知识库数据，请基于联网搜索结果和模型自身知识进行分析）')
     messages.append({'role': 'user', 'content': full_prompt})
     return messages
 
@@ -585,7 +589,7 @@ def _search_knowledge(lead):
 
     entries = KnowledgeEntry.query.filter_by(is_active=True).all()
     if not entries:
-        return '（暂无相关知识库条目）'
+        return ''
 
     # 分离已向量化和未向量化的条目
     vec_entries = [e for e in entries if e.embedding]
@@ -612,12 +616,9 @@ def _search_knowledge(lead):
     # 限制返回 5 条
     scored = scored[:5]
 
-    # 如果向量和关键词都没搜到，兜底返回前几条活跃条目
+    # 无匹配结果时直接返回空（不再兜底返回列表）
     if not scored:
-        default_entries = KnowledgeEntry.query.filter_by(is_active=True)\
-            .order_by(KnowledgeEntry.sort_order).limit(3).all()
-        for e in default_entries:
-            scored.append((e, 0.3))
+        return ''
 
     # 更新检索计数和使用时间
     now = datetime.utcnow()

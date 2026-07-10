@@ -213,13 +213,8 @@ def batch_embed_entries():
     ids = data.get('ids')
 
     total = KnowledgeEntry.query.filter_by(is_active=True).count()
-    if total < KNOWLEDGE_EMBEDDING_THRESHOLD:
-        return jsonify({
-            'code': 1,
-            'message': f'当前知识库仅 {total} 条活跃条目，不足 {KNOWLEDGE_EMBEDDING_THRESHOLD} 条，暂不需要向量化。\n'
-                       f'系统将自动使用关键词匹配进行知识检索。\n'
-                       f'继续丰富知识库内容，达到 {KNOWLEDGE_EMBEDDING_THRESHOLD} 条后即可启用向量语义搜索。'
-        }), 400
+    # 移除阈值限制 —— 允许随时对少量条目进行向量化
+    # 阈值只影响是否自动触发，不阻塞手动操作
     if ids:
         entries = KnowledgeEntry.query.filter(KnowledgeEntry.id.in_(ids)).all()
     else:

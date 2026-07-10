@@ -191,7 +191,7 @@ def create_lead():
         enterprise_info=data['enterprise_info'],
         project_content=data['project_content'],
         invest_amount=data.get('invest_amount', 0),
-        follow_status_code=data['follow_status_code'],
+        follow_status_code=data.get('follow_status_code', ''),
         meeting_status_code=data.get('meeting_status_code', 'not_meeting'),
         recommend_unit_code=data.get('recommend_unit_code', ''),
         responsible_unit_code=data.get('responsible_unit_code', ''),

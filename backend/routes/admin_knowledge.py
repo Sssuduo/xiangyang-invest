@@ -351,13 +351,14 @@ def _batch_embed_sync(entries):
 
 def _build_embedding_config(model):
     """从 LLMModel 构建 embedding 服务所需的配置字典"""
+    ec = model.get_embedding_config() if hasattr(model, 'get_embedding_config') else {}
     return {
         'api_base_url': model.api_base_url,
         'api_key': model.api_key,
         'model_name': model.model_name,
-        'embedding_api_url': model.embedding_api_url or '',
-        'embedding_api_key': model.embedding_api_key or '',
-        'embedding_model_name': model.embedding_model_name or '',
+        'embedding_api_url': ec.get('url', ''),
+        'embedding_api_key': ec.get('key', ''),
+        'embedding_model_name': ec.get('model', ''),
     }
 
 

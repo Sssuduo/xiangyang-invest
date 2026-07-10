@@ -204,8 +204,8 @@ class EnterpriseDemand(db.Model):
     __tablename__ = 'enterprise_demands'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
-    lead_id = db.Column(db.Integer, db.ForeignKey('investment_leads.id'), nullable=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True, default=None)
+    lead_id = db.Column(db.Integer, db.ForeignKey('investment_leads.id'), nullable=True, default=None)
     demand_type_code = db.Column(db.String(255), default='')
     demand_content = db.Column(db.Text, nullable=False)
     resolution = db.Column(db.Text, default='')

@@ -87,6 +87,9 @@
                   <el-button size="small" link type="primary" @click="toggleExpand(msg)">
                     {{ expandedMsgs.has(msg.id) ? '收起' : '展开全文' }}
                   </el-button>
+                  <el-button size="small" link type="danger" @click="deleteMessage(msg)">
+                    <el-icon><Delete /></el-icon> 删除
+                  </el-button>
                 </div>
                 <div v-if="expandedMsgs.has(msg.id)" class="msg-text-full">{{ msg.content }}</div>
               </div>
@@ -136,8 +139,8 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Cpu, User, Document, Download, Loading, Promotion, CopyDocument, View } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Cpu, User, Document, Download, Loading, Promotion, CopyDocument, View, Delete } from '@element-plus/icons-vue'
 import { getModels, getAdminModels } from '@/api/model'
 import {
   createAssessmentSession,
@@ -145,7 +148,9 @@ import {
   getSessionMessages,
   sendFollowUpQuestion,
   getDownloadUrl,
-  getPromptPreview
+  getPromptPreview,
+  deleteAssessmentSession,
+  deleteAssessmentMessage
 } from '@/api/lead'
 
 const props = defineProps({
@@ -330,12 +335,51 @@ async function copyPrompt() {
     parts.push(data.prompt_text)
 
     const fullText = parts.join('\n')
-    await navigator.clipboard.writeText(fullText)
+    // 降级方案：优先 navigator.clipboard，非安全上下文时 fallback 到 textarea
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(fullText)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = fullText
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     ElMessage.success('提示词已复制到剪贴板')
   } catch (err) {
     ElMessage.error(err.message || '复制失败')
   } finally {
     copyPromptLoading.value = false
+  }
+}
+
+// ---- 删除研判消息 ----
+async function deleteMessage(msg) {
+  try {
+    await ElMessageBox.confirm('确定删除这条研判报告吗？关联的 Word/HTML 文件也会一并删除。', '确认删除', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch { return }
+
+  try {
+    const res = await deleteAssessmentMessage(currentSessionId.value, msg.id)
+    if (res.code === 0) {
+      ElMessage.success('已删除')
+      await loadSessionMessages(currentSessionId.value)
+      if (messages.value.length === 0) {
+        await loadSessions()
+        currentSessionId.value = null
+      }
+    } else {
+      ElMessage.error(res.message || '删除失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '删除失败')
   }
 }
 

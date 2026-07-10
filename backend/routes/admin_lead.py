@@ -1427,6 +1427,63 @@ def view_assessment_html(session_id, message_id):
 
 
 # ============================================================
+# 研判会话/消息删除
+# ============================================================
+
+def _delete_message_files(msg):
+    """删除消息关联的物理文件（Word + HTML）"""
+    import os as _os
+    backend_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    static_dir = _os.path.join(backend_dir, 'static')
+    for path_field in ['file_path', 'html_file_path']:
+        rel = getattr(msg, path_field, '') or ''
+        if rel.startswith('/static/'):
+            rel = rel[8:]
+        if rel:
+            full = _os.path.join(static_dir, rel)
+            if _os.path.exists(full):
+                try:
+                    _os.remove(full)
+                except Exception:
+                    pass
+
+
+@admin_lead_bp.route('/lead/assessment-sessions/<int:session_id>', methods=['DELETE'])
+@dual_login_required
+@visitor_block
+def delete_assessment_session(session_id):
+    """删除整个研判会话（含所有消息+关联文件）"""
+    session = LeadAssessmentSession.query.get_or_404(session_id)
+    msgs = LeadAssessmentMessage.query.filter_by(session_id=session_id).all()
+
+    # 删除关联文件
+    for msg in msgs:
+        _delete_message_files(msg)
+
+    # 删除关联的知识使用统计
+    KnowledgeUsageStat.query.filter_by(session_id=session_id).delete()
+
+    # 删除消息和会话
+    LeadAssessmentMessage.query.filter_by(session_id=session_id).delete()
+    db.session.delete(session)
+    db.session.commit()
+
+    return jsonify({'code': 0, 'message': '研判会话已删除'})
+
+
+@admin_lead_bp.route('/lead/assessment-sessions/<int:session_id>/messages/<int:message_id>', methods=['DELETE'])
+@dual_login_required
+@visitor_block
+def delete_assessment_message(session_id, message_id):
+    """删除单条研判消息（含关联文件）"""
+    msg = LeadAssessmentMessage.query.filter_by(id=message_id, session_id=session_id).first_or_404()
+    _delete_message_files(msg)
+    db.session.delete(msg)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '研判消息已删除'})
+
+
+# ============================================================
 # 转为招商项目
 # ============================================================
 

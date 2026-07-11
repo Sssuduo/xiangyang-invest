@@ -5,6 +5,7 @@ Flask-Login==0.6.3
 Flask-CORS==5.0.1
 Werkzeug==3.1.3
 requests==2.32.3
+# 录音识别已改为走笔记本 HTTP 服务 (services/asr_api.py)，生产环境不再依赖 funasr-onnx / onnxruntime
 python-dotenv==1.1.0
 gunicorn==23.0.0
 openpyxl==3.1.5

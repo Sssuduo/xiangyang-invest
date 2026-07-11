@@ -1,229 +1,179 @@
 """
-语音转文字服务
+语音转文字客户端 — 生产端纯 HTTP 调用笔记本 ASR 服务。
 
-使用腾讯云 ASR（录音文件识别）将音频转换为中文文字。
-流程：CreateRecTask → 轮询 DescribeTaskStatus → 获取识别结果
+部署架构：
+  笔记本运行 services/asr_api.py (port 5002)
+      → scripts/asr_service.sh SSH 反代到 123.56.9.243:15002
+      → 生产端 services.speech_to_text 走 Config.ASR_API_URL
 
-文件传输策略：
-- ≤5MB：base64 直接上传
-- >5MB：HTTP URL 方式，需要 SERVER_BASE_URL 指向服务器公网地址
+异常传播：
+  ConnectionError / Timeout / HTTPError / Exception → RuntimeError
+  标准前缀确保路由层写出统一的中文提示
+      「录音文件识别需依赖本地模型，请联系管理员苏铎」
+
+长音频：
+  ≤ ASR_SEGMENT_SECONDS (默认 600s)：直接调 /transcribe
+  >  ASR_SEGMENT_SECONDS：生产端先用 ffmpeg -f segment 切片，逐段 ASR，\n 拼接文本
+
+接口返回 dict: {'success': bool, 'text': str, 'duration': float}
 """
 import os
-import time
 import logging
+import tempfile
+import shutil
+import uuid
+import glob
+
+import requests
+
+from config import Config
 
 logger = logging.getLogger(__name__)
 
+# 长音频切片长度（production 端与笔记本 asr_api 端共用同一个语义）
+SEGMENT_DURATION = Config.ASR_SEGMENT_SECONDS
 
-def _get_asr_client():
-    """获取腾讯云 ASR 客户端"""
-    from tencentcloud.common import credential
-    from tencentcloud.common.profile.client_profile import ClientProfile
-    from tencentcloud.common.profile.http_profile import HttpProfile
-    from tencentcloud.asr.v20190614 import asr_client
+# ASR 不可达时的中文提示前缀，方便路由层识别并原样透传到 item.audio_summary
+_UNREACHABLE_HINT = '录音文件识别需依赖本地模型，请联系管理员苏铎'
 
-    from config import Config
 
-    secret_id = os.environ.get('TENCENT_SECRET_ID', Config.TENCENT_SECRET_ID)
-    secret_key = os.environ.get('TENCENT_SECRET_KEY', Config.TENCENT_SECRET_KEY)
-
-    if not secret_id or not secret_key:
-        raise ValueError(
-            '未配置腾讯云 API 密钥。请在环境变量中设置 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY，\n'
-            '或在 .env 文件中添加：\n'
-            '  TENCENT_SECRET_ID=your_secret_id\n'
-            '  TENCENT_SECRET_KEY=your_secret_key\n'
-            '获取密钥：https://console.cloud.tencent.com/cam/capi'
+def _get_audio_duration(filepath):
+    """获取音频时长（秒）。用 ffprobe，失败返回 0.0。"""
+    ffprobe = os.environ.get('FFPROBE')
+    if not ffprobe:
+        # 退路：按 ffmpeg 同目录
+        ffprobe = os.environ.get('FFMPEG', 'ffprobe')
+        if os.path.isfile(ffprobe):
+            ffprobe = os.path.join(os.path.dirname(ffprobe), 'ffprobe')
+    cmd = [
+        ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', filepath,
+    ]
+    try:
+        import subprocess
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
-
-    cred = credential.Credential(secret_id, secret_key)
-    httpProfile = HttpProfile()
-    httpProfile.endpoint = "asr.tencentcloudapi.com"
-    clientProfile = ClientProfile()
-    clientProfile.httpProfile = httpProfile
-    clientProfile.signMethod = "TC3-HMAC-SHA256"
-
-    region = os.environ.get('ASR_REGION', Config.ASR_REGION)
-    return asr_client.AsrClient(cred, region, clientProfile)
+        if r.returncode == 0 and r.stdout.strip():
+            return float(r.stdout.strip())
+    except Exception:
+        pass
+    return 0.0
 
 
-def _create_recognition_task(audio_file_path, base_url=None):
+def _split_audio_ffmpeg(input_path, output_dir, segment_duration=SEGMENT_DURATION):
+    """FFmpeg 按 segment_duration 秒切分长音频到 output_dir，返回绝对路径升序列表。
+
+    切分失败返回 []；调用方需对返回值判空。
     """
-    创建录音文件识别任务
+    import subprocess
+    prefix = uuid.uuid4().hex[:8]
+    output_pattern = os.path.join(output_dir, f'_seg_{prefix}_%03d.wav')
+    cmd = [
+        'ffmpeg', '-y', '-i', input_path,
+        '-f', 'segment', '-segment_time', str(segment_duration),
+        '-c', 'copy', '-reset_timestamps', '1',
+        output_pattern,
+    ]
+    try:
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                           creationflags=creationflags)
+        if r.returncode != 0:
+            logger.error(f'切片失败：{r.stderr[-300:] if r.stderr else ""}')
+            return []
+        segs = sorted(glob.glob(os.path.join(output_dir, f'_seg_{prefix}_*.wav')))
+        logger.info(f'切分完成：{len(segs)} 段，每段 {segment_duration}s')
+        return segs
+    except Exception as e:
+        logger.error(f'切片异常：{e}')
+        return []
 
-    小文件（≤5MB）：base64 编码直接上传
-    大文件（>5MB）：通过 HTTP URL 方式让腾讯云下载
 
-    Args:
-        audio_file_path: 音频文件绝对路径
-        base_url: 服务器公网地址（如 http://your-server.com:5000），URL 方式必需
+def _post_single(filepath, url, timeout, language='zh'):
+    """把单段音频 POST 到 {url}/transcribe，返回 text。
 
-    Returns:
-        int: 任务 ID (task_id)
-
-    Raises:
-        Exception: API 调用失败或配置缺失
+    失败抛 RuntimeError（含 _UNREACHABLE_HINT 作为路由层识别锚点）。
     """
-    from tencentcloud.asr.v20190614 import models
-    import base64
-
-    MAX_BASE64_SIZE = 5 * 1024 * 1024  # 腾讯云 ASR base64 限制 5MB
-
-    client = _get_asr_client()
-    req = models.CreateRecTaskRequest()
-    file_size = os.path.getsize(audio_file_path)
-    engine_model = os.environ.get('ASR_ENGINE_MODEL', '16k_zh')
-
-    if file_size <= MAX_BASE64_SIZE:
-        # base64 方式（小文件）
-        with open(audio_file_path, 'rb') as f:
-            audio_data = base64.b64encode(f.read()).decode('utf-8')
-
-        req.EngineModelType = engine_model
-        req.ChannelNum = 1
-        req.ResTextFormat = 0
-        req.SourceType = 1  # base64 数据源
-        req.Data = audio_data
-        logger.info(f'ASR: base64 上传，文件 {file_size / 1024:.1f}KB')
-    else:
-        # URL 方式（大文件，需要公网地址）
-        from config import Config
-        if not base_url:
-            base_url = os.environ.get('SERVER_BASE_URL', Config.SERVER_BASE_URL)
-
-        if not base_url:
-            raise ValueError(
-                f'音频文件过大（{file_size / 1024 / 1024:.1f}MB），无法通过 base64 上传。\n'
-                '请配置 SERVER_BASE_URL 环境变量为服务器的公网访问地址，\n'
-                '例如：http://your-server.com:5000\n'
-                '配置后腾讯云 ASR 将通过该地址下载音频文件进行识别。'
-            )
-
-        # 从 static/uploads 路径计算公开 URL
-        upload_folder = Config.UPLOAD_FOLDER
-        if audio_file_path.startswith(upload_folder):
-            relative = audio_file_path[len(upload_folder):].replace('\\', '/')
-            if not relative.startswith('/'):
-                relative = '/' + relative
-            audio_url = f'{base_url.rstrip("/")}/static/uploads{relative}'
-        else:
-            raise ValueError(
-                f'音频文件不在 static/uploads 目录下，无法通过 URL 访问：{audio_file_path}'
-            )
-
-        req.EngineModelType = engine_model
-        req.ChannelNum = 1
-        req.ResTextFormat = 0
-        req.SourceType = 0  # URL 数据源
-        req.Url = audio_url
-        logger.info(
-            f'ASR: URL 上传，文件 {file_size / 1024 / 1024:.1f}MB，URL: {audio_url}'
+    base_url = url.rstrip('/')
+    with open(filepath, 'rb') as fb:
+        resp = requests.post(
+            f'{base_url}/transcribe',
+            files={'file': (os.path.basename(filepath), fb, 'application/octet-stream')},
+            data={'language': language},
+            timeout=timeout,
         )
-
-    resp = client.CreateRecTask(req)
-    result = resp.to_json_string()
-    import json
-    data = json.loads(result)
-
-    task_id = data.get('Data', {}).get('TaskId')
-    if not task_id:
-        raise Exception(f'创建识别任务失败：{result}')
-
-    logger.info(f'ASR: 任务创建成功，TaskId={task_id}')
-    return int(task_id)
-
-
-def _poll_task_status(task_id, max_wait_seconds=300, poll_interval=3):
-    """
-    轮询录音识别任务状态，直到完成或超时
-
-    Args:
-        task_id: 任务 ID
-        max_wait_seconds: 最长等待时间（秒），默认 5 分钟
-        poll_interval: 轮询间隔（秒），默认 3 秒
-
-    Returns:
-        dict: 包含识别结果的字典
-            {
-                'status': int,    # 0=成功, 1=进行中, 2=失败
-                'result': str,    # 识别文本（成功时）
-                'duration': int,  # 音频时长（秒）
-            }
-
-    Raises:
-        TimeoutError: 超时
-        Exception: 识别失败
-    """
-    from tencentcloud.asr.v20190614 import models
-    import json
-
-    client = _get_asr_client()
-    req = models.DescribeTaskStatusRequest()
-    req.TaskId = task_id
-
-    elapsed = 0
-    while elapsed < max_wait_seconds:
-        resp = client.DescribeTaskStatus(req)
-        data = json.loads(resp.to_json_string())
-
-        task_data = data.get('Data', {})
-        status = task_data.get('Status', 1)
-
-        if status == 2:  # 成功
-            result_text = task_data.get('Result', '')
-            result_text = _clean_asr_result(result_text)
-            duration = task_data.get('AudioDuration', 0)
-            logger.info(f'ASR: 识别完成，文本长度 {len(result_text)} 字符，音频时长 {duration}s')
-            return {
-                'status': 0,
-                'result': result_text,
-                'duration': duration
-            }
-        elif status == 3:  # 失败
-            error_msg = task_data.get('ErrorMsg', '未知错误')
-            raise Exception(f'语音识别失败：{error_msg}')
-
-        time.sleep(poll_interval)
-        elapsed += poll_interval
-
-    raise TimeoutError(f'语音识别超时（等待 {max_wait_seconds} 秒），TaskId={task_id}')
-
-
-def _clean_asr_result(text):
-    """清理 ASR 返回文本中的时间戳标记"""
-    import re
-    text = re.sub(r'\[\d+:\d+\.\d+,\d+:\d+\.\d+,\d+\]', '', text)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    if resp.status_code != 200:
+        raise requests.HTTPError(
+            f'HTTP {resp.status_code}: {resp.text[:300]}', response=resp
+        )
+    try:
+        r = resp.json()
+    except ValueError:
+        raise RuntimeError(f'{_UNREACHABLE_HINT}（返回非 JSON：{resp.text[:200]}）')
+    if r.get('code', 0) != 0:
+        raise RuntimeError(f'{_UNREACHABLE_HINT}（远端 code={r.get("code")} msg={str(r.get("message",""))[:200]}）')
+    text = r.get('text', '') or ''
     return text.strip()
 
 
 def transcribe_audio(audio_file_path, base_url=None):
-    """
-    高层接口：将音频文件转换为文字
+    """将音频文件转换为文字（纯 HTTP 客户端，不引 funasr-onnx）。
 
     Args:
         audio_file_path: 音频文件绝对路径
-        base_url: 服务器公网地址（如 http://your-server.com:5000），
-                  大文件（>5MB）通过 URL 方式时需要
+        base_url: ASR 服务基础 URL；None 时取 Config.ASR_API_URL
+            （笔记本反代后生产端用 http://localhost:15002）
 
     Returns:
-        dict: {
-            'success': bool,
-            'text': str,         # 转写文本
-            'duration': float,   # 音频时长(秒)
-            'task_id': int       # ASR 任务 ID
-        }
+        dict: {'success': True, 'text': str, 'duration': float}
 
     Raises:
-        ValueError: API 密钥未配置或文件过大且无公网地址
-        Exception: 识别失败
+        RuntimeError: 任何失败场景，消息均含 _UNREACHABLE_HINT
     """
-    task_id = _create_recognition_task(audio_file_path, base_url=base_url)
-    result = _poll_task_status(task_id, max_wait_seconds=600)
+    duration = _get_audio_duration(audio_file_path) or 0.0
+    url = (base_url or Config.ASR_API_URL)
+    timeout = Config.ASR_API_TIMEOUT
 
-    return {
-        'success': True,
-        'text': result['result'],
-        'duration': float(result.get('duration', 0)),
-        'task_id': task_id
-    }
+    logger.info(f'ASR 开始：{os.path.basename(audio_file_path)}，{duration:.0f}s，endpoint={url}')
+
+    try:
+        if duration <= SEGMENT_DURATION:
+            text = _post_single(audio_file_path, url, timeout)
+        else:
+            logger.info(f'长音频（{duration:.0f}s），切片 {SEGMENT_DURATION}s/段后逐段 ASR')
+            tmp = tempfile.mkdtemp(prefix='asr_seg_')
+            try:
+                segs = _split_audio_ffmpeg(audio_file_path, tmp, SEGMENT_DURATION)
+                if not segs:
+                    logger.warning('切片失败，回退到整段请求')
+                    text = _post_single(audio_file_path, url, timeout)
+                else:
+                    parts = []
+                    for i, seg in enumerate(segs):
+                        logger.info(f'ASR 段 [{i + 1}/{len(segs)}]: {os.path.basename(seg)}')
+                        parts.append(_post_single(seg, url, timeout))
+                    text = '\n'.join(parts)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+        logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
+        return {'success': True, 'text': text, 'duration': duration}
+
+    except (requests.ConnectionError, requests.Timeout) as e:
+        raise RuntimeError(
+            f'{_UNREACHABLE_HINT}（ASR 服务 {url} 不可达，{type(e).__name__}）'
+        ) from e
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else '?'
+        raise RuntimeError(
+            f'{_UNREACHABLE_HINT}（ASR 服务返回 HTTP {status}）'
+        ) from e
+    except RuntimeError:
+        # 已包装过的 RuntimeError 直接抛出，避免双层包装
+        raise
+    except Exception as e:
+        raise RuntimeError(
+            f'{_UNREACHABLE_HINT}（未知错误：{type(e).__name__}: {str(e)[:200]}）'
+        ) from e

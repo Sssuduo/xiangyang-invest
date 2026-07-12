@@ -81,22 +81,17 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
-import { getDrafts, approveDraft, rejectDraft } from '@/api/knowledge'
+import { getDrafts, approveDraft, rejectDraft, getCategories } from '@/api/knowledge'
 
-const CATEGORY_MAP = {
-  industry_policy: '产业政策', park_info: '园区信息', supporting: '配套能力',
-  land_cost: '土地成本', case_study: '招商案例', demand_pattern: '企业诉求',
-  market_data: '市场数据', competitor: '周边竞争'
+// 分类从后端 API 动态获取
+const categoryOptions = ref([])
+async function loadCategories() {
+  try {
+    const res = await getCategories()
+    if (res.code === 0) categoryOptions.value = res.data || []
+  } catch { /* ignore */ }
 }
-
-const drafts = ref([])
-const loading = ref(false)
-const filterStatus = ref('')
-const detailVisible = ref(false)
-const currentDraft = ref(null)
-const approveLoadingId = ref(null)
-
-function resolveCategory(code) { return CATEGORY_MAP[code] || code || '-' }
+function resolveCategory(code) { return categoryOptions.value.find(c => c.code === code)?.name || code || '-' }
 function statusType(s) { return { draft: 'warning', approved: 'success', rejected: 'danger' }[s] || 'info' }
 function statusLabel(s) { return { draft: '待审核', approved: '已批准', rejected: '已拒绝' }[s] || s }
 function fmtDt(d) { if (!d) return '-'; return new Date(d + 'Z').toLocaleString('zh-CN', { hour12: false }) }
@@ -104,10 +99,10 @@ function fmtDt(d) { if (!d) return '-'; return new Date(d + 'Z').toLocaleString(
 async function fetchData() {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: 1, page_size: 200 }
     if (filterStatus.value) params.status = filterStatus.value
     const res = await getDrafts(params)
-    if (res.code === 0) drafts.value = res.data || []
+    if (res.code === 0) drafts.value = res.data?.items || []
   } catch { drafts.value = [] }
   finally { loading.value = false }
 }
@@ -154,7 +149,7 @@ async function handleReject(row) {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => { loadCategories(); fetchData() })
 </script>
 
 <style scoped>

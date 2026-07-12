@@ -34,10 +34,12 @@ export function unlinkFromProject(id) {
   return api.post(`/admin/activity-ledger/${id}/unlink`)
 }
 
-// 录音文件上传（FormData）
-export function uploadAudio(id, file, onProgress) {
+// 录音文件上传（FormData，异步处理：上传后立即返回，ASR 后台执行）
+// appendMode: true 时追加到已有文件列表而非覆盖
+export function uploadAudio(id, file, onProgress, appendMode = false) {
   const formData = new FormData()
   formData.append('file', file)
+  if (appendMode) formData.append('append', 'true')
   return api.post(`/admin/activity-ledger/${id}/audio`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: onProgress,
@@ -45,12 +47,27 @@ export function uploadAudio(id, file, onProgress) {
   })
 }
 
-// 获取录音详情
+// 获取录音处理状态及详情（用于轮询）
 export function getAudioDetail(id) {
   return api.get(`/admin/activity-ledger/${id}/audio`)
+}
+
+// 手动编辑转写文本/总结
+export function updateAudioTranscript(id, data) {
+  return api.put(`/admin/activity-ledger/${id}/audio/transcript`, data)
+}
+
+// 重新识别（失败重试）
+export function retryAudioRecognition(id) {
+  return api.post(`/admin/activity-ledger/${id}/audio/retry`)
 }
 
 // 删除录音
 export function deleteAudio(id) {
   return api.delete(`/admin/activity-ledger/${id}/audio`)
+}
+
+// 删除单个录音文件
+export function deleteAudioFile(id, fileIndex) {
+  return api.delete(`/admin/activity-ledger/${id}/audio/${fileIndex}`)
 }

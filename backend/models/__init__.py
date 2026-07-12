@@ -1,8 +1,10 @@
 """模型聚合入口 —— 保持 from models import Xxx 完全兼容"""
 from models.base import TimestampMixin
-from models.auth import AdminUser, BusinessUser, Staff
+from models.auth import AdminUser, BusinessUser, Staff, ClientUser
+from models.client_app import ClientChatSession, ClientChatMessage, ClientBrief, ClientBriefRead
 from models.content import HomepageConfig, CarouselPage, ProvinceInfo, CityInfo, ContactInfo, PromoVideo
-from models.ai import LLMModel, QuickPrompt, KnowledgeEntry, KnowledgeDraft, KnowledgeUsageStat
+from models.ai import (LLMModel, QuickPrompt, KnowledgeEntry, KnowledgeDraft,
+    KnowledgeUsageStat, KnowledgeEntryChangeLog, KnowledgeEntryHistory)
 from models.dicts import (FollowStatusDict, MeetingStatusDict, OrganizationDict,
     ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict,
     ConstructionProjectTypeDict, DispatchStatusDict, IssueTypeDict, ResolutionStatusDict)

@@ -312,35 +312,70 @@ const router = createRouter({
 
 // 路由守卫 - 后台页面需要登录（AdminUser）
 // 业务页面需要登录（BusinessUser）
+// 缓存鉴权结果，避免每次导航都发起阻塞式 HTTP 请求
+
+let _adminAuthCache = { checked: false, valid: false, promise: null }
+let _businessAuthCache = { checked: false, valid: false, promise: null }
+
+function _checkAdminAuth() {
+  if (_adminAuthCache.checked) {
+    return Promise.resolve(_adminAuthCache.valid)
+  }
+  // 并发去重：多个守卫同时触发时复用同一个 promise
+  if (_adminAuthCache.promise) return _adminAuthCache.promise
+  _adminAuthCache.promise = fetch('/api/admin/check')
+    .then(r => r.json())
+    .then(d => {
+      _adminAuthCache.valid = d.code === 0
+      _adminAuthCache.checked = true
+      return _adminAuthCache.valid
+    })
+    .catch(() => {
+      _adminAuthCache.valid = false
+      _adminAuthCache.checked = true
+      return false
+    })
+    .finally(() => { _adminAuthCache.promise = null })
+  return _adminAuthCache.promise
+}
+
+function _checkBusinessAuth() {
+  if (_businessAuthCache.checked) {
+    return Promise.resolve(_businessAuthCache.valid)
+  }
+  if (_businessAuthCache.promise) return _businessAuthCache.promise
+  _businessAuthCache.promise = fetch('/api/auth/check')
+    .then(r => r.json())
+    .then(d => {
+      _businessAuthCache.valid = d.code === 0
+      _businessAuthCache.checked = true
+      return _businessAuthCache.valid
+    })
+    .catch(() => {
+      _businessAuthCache.valid = false
+      _businessAuthCache.checked = true
+      return false
+    })
+    .finally(() => { _businessAuthCache.promise = null })
+  return _businessAuthCache.promise
+}
+
+// 登录/登出后调用，清除缓存强制重新检查
+export function clearAuthCache() {
+  _adminAuthCache = { checked: false, valid: false, promise: null }
+  _businessAuthCache = { checked: false, valid: false, promise: null }
+}
+
 router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth) {
-    try {
-      const res = await fetch('/api/admin/check')
-      const data = await res.json()
-      if (data.code === 0) {
-        next()
-      } else {
-        next('/admin/login')
-      }
-    } catch {
-      next('/admin/login')
-    }
+    const ok = await _checkAdminAuth()
+    if (ok) { next() } else { next('/admin/login') }
     return
   }
 
   if (to.meta.requiresBusinessAuth) {
-    try {
-      const res = await fetch('/api/auth/check')
-      const data = await res.json()
-      if (data.code === 0) {
-        next()
-      } else {
-        // 未登录业务用户 → 回到首页，可通过导航栏登录
-        next('/')
-      }
-    } catch {
-      next('/')
-    }
+    const ok = await _checkBusinessAuth()
+    if (ok) { next() } else { next('/') }
     return
   }
 

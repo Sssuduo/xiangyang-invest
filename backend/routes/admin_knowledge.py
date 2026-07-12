@@ -1,19 +1,18 @@
 import json
 from flask import request, jsonify
+from flask_login import current_user
 from models import KnowledgeEntry
 from extensions import db
 from routes import admin_knowledge_bp
 from routes.business_auth import dual_login_required, visitor_block
+from constants import CATEGORY_MAP, CATEGORY_OPTIONS
 
-CATEGORY_MAP = {
-    'industry_policy': '产业政策', 'park_info': '园区信息', 'supporting': '配套能力',
-    'land_cost': '土地成本', 'case_study': '招商案例', 'demand_pattern': '企业诉求',
-    'market_data': '市场数据', 'competitor': '周边竞争'
-}
 
-CATEGORY_OPTIONS = [
-    {'code': k, 'name': v} for k, v in CATEGORY_MAP.items()
-]
+def _get_user_display_name():
+    """获取当前登录用户的显示名称"""
+    if current_user.is_authenticated:
+        return current_user.display_name or current_user.username
+    return 'admin'
 
 
 @admin_knowledge_bp.route('/knowledge/categories', methods=['GET'])
@@ -105,10 +104,15 @@ def create_entry():
         source=data.get('source', ''),
         attach_files=json.dumps(data.get('attach_files', []), ensure_ascii=False),
         is_active=data.get('is_active', True),
-        sort_order=data.get('sort_order', 0)
+        sort_order=data.get('sort_order', 0),
+        created_by=_get_user_display_name(),
     )
     db.session.add(entry)
     db.session.commit()
+
+    # 记录审计日志 + 历史版本
+    _log_knowledge_change(entry, 'create', _get_user_display_name())
+    _save_entry_history(entry, 1, _get_user_display_name())
 
     # 异步向量化新条目
     _embed_entry_async(entry.id)
@@ -150,7 +154,13 @@ def update_entry(entry_id):
     if 'sort_order' in data:
         entry.sort_order = data['sort_order']
 
+    entry.updated_by = _get_user_display_name()
     db.session.commit()
+
+    # 记录审计日志 + 保存历史版本
+    _log_knowledge_change(entry, 'update', _get_user_display_name(),
+                          changed_fields=list(data.keys()))
+    _save_entry_history(entry, (entry._history_version or 0) + 1, _get_user_display_name())
 
     # 内容变更后重新向量化
     _embed_entry_async(entry_id)
@@ -162,8 +172,15 @@ def update_entry(entry_id):
 @dual_login_required
 @visitor_block
 def delete_entry(entry_id):
-    """删除知识条目"""
+    """删除知识条目（级联删除关联的使用统计和草稿）"""
+    from models import KnowledgeUsageStat, KnowledgeDraft
     entry = KnowledgeEntry.query.get_or_404(entry_id)
+    # 清理关联数据
+    KnowledgeUsageStat.query.filter_by(entry_id=entry_id).delete()
+    KnowledgeDraft.query.filter_by(target_entry_id=entry_id).update(
+        {'target_entry_id': None}, synchronize_session=False
+    )
+    _log_knowledge_change(entry, 'delete', _get_user_display_name())
     db.session.delete(entry)
     db.session.commit()
     return jsonify({'code': 0, 'message': '知识条目已删除'})
@@ -187,9 +204,17 @@ def embed_entry(entry_id):
 @dual_login_required
 @visitor_block
 def batch_embed_entries():
-    """批量向量化所有未向量化的知识条目"""
+    """批量向量化所有未向量化的知识条目。
+
+    知识库沉淀阶段（条目数 < 500）：提示无需向量化。
+    """
+    from constants import KNOWLEDGE_EMBEDDING_THRESHOLD
     data = request.get_json() or {}
     ids = data.get('ids')
+
+    total = KnowledgeEntry.query.filter_by(is_active=True).count()
+    # 移除阈值限制 —— 允许随时对少量条目进行向量化
+    # 阈值只影响是否自动触发，不阻塞手动操作
     if ids:
         entries = KnowledgeEntry.query.filter(KnowledgeEntry.id.in_(ids)).all()
     else:
@@ -205,9 +230,73 @@ def batch_embed_entries():
     return jsonify({'code': 0, 'data': {'count': count}, 'message': f'已向量化 {count} 条'})
 
 
+@admin_knowledge_bp.route('/knowledge/entries/<int:entry_id>/history', methods=['GET'])
+@dual_login_required
+def get_entry_history(entry_id):
+    """获取知识条目的历史版本列表"""
+    from models import KnowledgeEntryHistory
+    histories = KnowledgeEntryHistory.query.filter_by(entry_id=entry_id)\
+        .order_by(KnowledgeEntryHistory.version.desc()).all()
+    return jsonify({'code': 0, 'data': [h.to_dict() for h in histories]})
+
+
 # ---- embedding helpers ----
 
-def _embed_entry_async(entry_id):
+def _log_knowledge_change(entry, action, changed_by, changed_fields=None):
+    """记录知识条目变更审计日志"""
+    from models import KnowledgeEntryChangeLog
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        log_entry = KnowledgeEntryChangeLog(
+            entry_id=entry.id,
+            action=action,
+            changed_by=changed_by,
+            changed_fields=json.dumps(changed_fields or [], ensure_ascii=False),
+            old_values=_snapshot_entry_fields(entry) if action in ('update', 'delete') else '{}',
+            new_values=_snapshot_entry_fields(entry) if action in ('create', 'update') else '{}',
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.warning(f'审计日志写入失败 entry_id={entry.id}: {e}')
+
+
+def _snapshot_entry_fields(entry):
+    """快照知识条目关键字段"""
+    d = entry.to_dict()
+    snap = {}
+    for k in ('title', 'content', 'category', 'tags', 'source', 'is_active', 'sort_order'):
+        if k in d:
+            snap[k] = d[k]
+    return json.dumps(snap, ensure_ascii=False)
+
+
+def _save_entry_history(entry, version, changed_by):
+    """保存知识条目历史版本"""
+    from models import KnowledgeEntryHistory
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        hist = KnowledgeEntryHistory(
+            entry_id=entry.id,
+            title=entry.title,
+            content=entry.content,
+            category=entry.category,
+            tags=entry.tags,
+            source=entry.source or '',
+            attach_files=entry.attach_files or '[]',
+            version=version,
+            changed_by=changed_by,
+        )
+        db.session.add(hist)
+        # 在 entry 上标记当前版本号（不增加新列，用 __dict__ 暂存）
+        entry._history_version = version
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.warning(f'历史版本保存失败 entry_id={entry.id}: {e}')
     """在后台线程中异步向量化单条知识条目"""
     import threading
     from flask import current_app
@@ -218,6 +307,8 @@ def _embed_entry_async(entry_id):
 
 def _embed_in_context(app, entry_id):
     """在应用上下文中执行向量化"""
+    import logging
+    logger = logging.getLogger(__name__)
     with app.app_context():
         entry = KnowledgeEntry.query.get(entry_id)
         if not entry:
@@ -225,8 +316,9 @@ def _embed_in_context(app, entry_id):
         try:
             _embed_entry_sync(entry)
             db.session.commit()
-        except Exception:
+        except Exception as e:
             db.session.rollback()
+            logger.error(f'向量化失败 entry_id={entry_id}: {e}', exc_info=True)
 
 
 def _embed_entry_sync(entry):
@@ -259,13 +351,14 @@ def _batch_embed_sync(entries):
 
 def _build_embedding_config(model):
     """从 LLMModel 构建 embedding 服务所需的配置字典"""
+    ec = model.get_embedding_config() if hasattr(model, 'get_embedding_config') else {}
     return {
         'api_base_url': model.api_base_url,
         'api_key': model.api_key,
         'model_name': model.model_name,
-        'embedding_api_url': model.embedding_api_url or '',
-        'embedding_api_key': model.embedding_api_key or '',
-        'embedding_model_name': model.embedding_model_name or '',
+        'embedding_api_url': ec.get('url', ''),
+        'embedding_api_key': ec.get('key', ''),
+        'embedding_model_name': ec.get('model', ''),
     }
 
 
@@ -290,14 +383,26 @@ def _build_entry_text(entry):
 @admin_knowledge_bp.route('/knowledge/drafts', methods=['GET'])
 @dual_login_required
 def list_drafts():
-    """获取知识草稿列表"""
+    """获取知识草稿列表（支持状态筛选和分页）"""
     from models import KnowledgeDraft
     status = request.args.get('status', '').strip()
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('page_size', 20))
     q = KnowledgeDraft.query
     if status:
         q = q.filter_by(status=status)
-    drafts = q.order_by(KnowledgeDraft.created_at.desc()).limit(100).all()
-    return jsonify({'code': 0, 'data': [d.to_dict() for d in drafts]})
+    total = q.count()
+    drafts = q.order_by(KnowledgeDraft.created_at.desc())\
+        .offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify({
+        'code': 0,
+        'data': {
+            'items': [d.to_dict() for d in drafts],
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }
+    })
 
 
 @admin_knowledge_bp.route('/knowledge/drafts/<int:draft_id>/approve', methods=['POST'])
@@ -364,7 +469,7 @@ def approve_draft(draft_id):
     draft.status = 'approved'
     draft.target_entry_id = entry.id
     draft.reviewed_at = datetime.utcnow()
-    draft.reviewed_by = getattr(request, 'current_user_name', '') or 'admin'
+    draft.reviewed_by = _get_user_display_name()
     db.session.commit()
 
     return jsonify({'code': 0, 'data': {'entry_id': entry.id}, 'message': '草稿已批准，知识条目已生成'})
@@ -384,7 +489,7 @@ def reject_draft(draft_id):
     draft.status = 'rejected'
     draft.review_note = data.get('note', '')
     draft.reviewed_at = datetime.utcnow()
-    draft.reviewed_by = getattr(request, 'current_user_name', '') or 'admin'
+    draft.reviewed_by = _get_user_display_name()
     db.session.commit()
 
     return jsonify({'code': 0, 'message': '草稿已拒绝'})

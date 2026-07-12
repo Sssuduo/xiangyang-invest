@@ -25,6 +25,9 @@ def get_embedding(text, model_config, embedding_model=None):
         requests.RequestException: 网络错误
         ValueError: API 返回错误
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     # 优先使用独立 embedding 配置，否则复用 chat 配置
     if model_config.get('embedding_api_url'):
         url = model_config['embedding_api_url'].rstrip('/').rstrip('/embeddings') + '/embeddings'
@@ -51,12 +54,13 @@ def get_embedding(text, model_config, embedding_model=None):
         'input': text
     }
 
-    response = requests.post(url, json=payload, headers=headers, timeout=60)
+    response = requests.post(url, json=payload, headers=headers, timeout=60, verify=True)
     response.raise_for_status()
 
     data = response.json()
     embedding = data['data'][0]['embedding']
 
+    logger.info(f'Embedding API: model={model_name}, text_len={len(text)}, vec_dim={len(embedding)}')
     return embedding, model_name
 
 
@@ -83,8 +87,16 @@ def cosine_similarity(vec_a, vec_b):
     return dot_product / (norm_a * norm_b)
 
 
+def _numpy_cosine_similarity(vec_a, vec_b):
+    """使用 numpy 加速的批量余弦相似度（当向量维度较大时自动启用）"""
+    import numpy as np
+    a = np.array(vec_a)
+    b = np.array(vec_b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
 def batch_embed_entries(entries, model_config, embedding_model=None):
-    """批量向量化知识条目
+    """批量向量化知识条目。自动跳过已使用当前模型的条目，仅处理模型版本不一致的。
 
     Args:
         entries: KnowledgeEntry 对象列表
@@ -94,9 +106,20 @@ def batch_embed_entries(entries, model_config, embedding_model=None):
     Returns:
         int: 成功向量化的条目数
     """
+    # 确定当前使用的模型名
+    if embedding_model:
+        current_model = embedding_model
+    elif model_config.get('embedding_model_name'):
+        current_model = model_config['embedding_model_name']
+    else:
+        current_model = model_config.get('model_name', 'text-embedding-3-small')
+
     count = 0
-    model_name = None
     for entry in entries:
+        # 跳过已使用相同模型向量化的条目
+        if entry.embedding and entry.embedding_model == current_model:
+            count += 1  # 计为"已就绪"
+            continue
         try:
             text = _build_entry_embedding_text(entry)
             vec, model_name = get_embedding(text, model_config, embedding_model)
@@ -130,24 +153,48 @@ def search_by_embedding(query_text, entries, model_config, embedding_model=None,
     except Exception:
         return []
 
+    # 使用 numpy 加速批量余弦计算（条目较多时显著提升性能）
     scored = []
-    for entry in entries:
-        if not entry.embedding:
-            continue
-        try:
-            entry_vec = json.loads(entry.embedding)
-            sim = cosine_similarity(query_vec, entry_vec)
-            if sim >= min_score:
-                scored.append((entry, sim))
-        except (json.JSONDecodeError, TypeError):
-            continue
+    try:
+        import numpy as np
+        query_np = np.array(query_vec)
+        entry_vecs = []
+        for entry in entries:
+            if not entry.embedding:
+                continue
+            try:
+                entry_vecs.append((entry, np.array(json.loads(entry.embedding))))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if entry_vecs:
+            q_norm = np.linalg.norm(query_np)
+            if q_norm > 0:
+                for entry, vec in entry_vecs:
+                    v_norm = np.linalg.norm(vec)
+                    if v_norm > 0:
+                        sim = float(np.dot(query_np, vec) / (q_norm * v_norm))
+                        if sim >= min_score:
+                            scored.append((entry, sim))
+    except ImportError:
+        # numpy 不可用时回退到纯 Python 循环
+        for entry in entries:
+            if not entry.embedding:
+                continue
+            try:
+                entry_vec = json.loads(entry.embedding)
+                sim = cosine_similarity(query_vec, entry_vec)
+                if sim >= min_score:
+                    scored.append((entry, sim))
+            except (json.JSONDecodeError, TypeError):
+                continue
 
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored[:top_k]
 
 
 def _build_entry_embedding_text(entry):
-    """构建用于向量化的条目文本（标题 + 分类 + 内容）"""
+    """构建用于向量化的条目文本（标题 + 分类 + 内容），去除敏感信息"""
+    import re
     parts = [entry.title]
     if entry.tags:
         try:
@@ -156,5 +203,9 @@ def _build_entry_embedding_text(entry):
                 parts.extend(tags)
         except Exception:
             pass
-    parts.append(entry.content or '')
+    content = (entry.content or '')
+    # 脱敏常见敏感模式：金额数字、手机号
+    content = re.sub(r'\d{11}', '[手机号]', content)
+    content = re.sub(r'\d{1,3}(,\d{3})*(\.\d+)?\s*万元', '[金额]万元', content)
+    parts.append(content)
     return ' '.join(parts)

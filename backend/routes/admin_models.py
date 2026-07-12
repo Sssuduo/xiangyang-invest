@@ -42,6 +42,7 @@ def create_model():
         embedding_api_url=data.get('embedding_api_url', ''),
         embedding_api_key=data.get('embedding_api_key', ''),
         embedding_model_name=data.get('embedding_model_name', ''),
+        search_model_id=data.get('search_model_id'),
         is_active=data.get('is_active', True),
         sort_order=data.get('sort_order', 0)
     )
@@ -62,7 +63,8 @@ def update_model(model_id):
     updatable_fields = [
         'name', 'provider', 'api_base_url', 'api_key', 'model_name',
         'temperature', 'max_tokens', 'system_prompt', 'is_active', 'sort_order',
-        'embedding_api_url', 'embedding_api_key', 'embedding_model_name'
+        'embedding_api_url', 'embedding_api_key', 'embedding_model_name',
+        'search_model_id'
     ]
     for field in updatable_fields:
         if field in data:

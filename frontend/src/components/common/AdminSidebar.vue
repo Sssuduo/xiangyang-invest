@@ -145,6 +145,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
+import { clearAuthCache } from '@/router'
 import { ElMessage } from 'element-plus'
 import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading } from '@element-plus/icons-vue'
 
@@ -157,6 +158,7 @@ const activeMenu = computed(() => route.path)
 
 async function handleLogout() {
   await adminStore.logout()
+  clearAuthCache()
   ElMessage.success('已退出登录')
   router.push('/admin/login')
 }

@@ -13,7 +13,7 @@ from models import AdminUser
 
 def _run_auto_migrations(app):
     """自动向已存在的数据库表添加缺失的列（简化版迁移，适用于 SQLite）。
-    
+
     生产环境新增模型字段后，db.create_all() 不会修改已有表结构，
     此处逐表检查并补上缺失列，避免 500 错误。
     """
@@ -23,12 +23,32 @@ def _run_auto_migrations(app):
     # 各表缺失列映射：{表名: [(列名, 列类型), ...]}
     MIGRATIONS = {
         'activity_ledger': [
+            ('audio_files', 'TEXT'),
             ('audio_archive', 'TEXT'),
             ('audio_archive_size', 'INTEGER'),
         ],
         'work_progress': [
             ('import_user_id', 'INTEGER'),
             ('import_user_name', 'VARCHAR(128)'),
+        ],
+        'knowledge_entries': [
+            ('created_by', 'VARCHAR(128)'),
+            ('updated_by', 'VARCHAR(128)'),
+        ],
+        'knowledge_entry_change_logs': [
+            # 新表自动创建，无需 ALTER
+        ],
+        'knowledge_entry_histories': [
+            # 新表自动创建，无需 ALTER
+        ],
+        'knowledge_usage_stats': [
+            # entry_id 添加外键（已有列，ALTER TABLE 不支持修改约束，仅新增缺失列）
+        ],
+        'lead_assessment_sessions': [
+            ('knowledge_context', 'TEXT'),
+        ],
+        'llm_models': [
+            ('search_model_id', 'INTEGER'),
         ],
         # 后续如有新增字段，在此追加即可
     }
@@ -82,12 +102,20 @@ def create_app(config_name=None):
 
     # 自动创建数据库表（非测试环境才初始化种子数据）
     if not app.config.get('TESTING'):
+        # 自动添加缺失的数据库列（必须在种子数据加载之前执行）
+        _run_auto_migrations(app)
+
         with app.app_context():
             from seed_data import init_database
             init_database(app)
 
-        # 自动添加缺失的数据库列（简化迁移）
-        _run_auto_migrations(app)
+        # 启动夜间压缩调度器（每天凌晨 2:00-3:00 自动压缩音频文件）
+        try:
+            from services.night_scheduler import start_night_scheduler
+            start_night_scheduler(app)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
 
     return app
 

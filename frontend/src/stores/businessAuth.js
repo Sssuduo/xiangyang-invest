@@ -60,8 +60,8 @@ export const useBusinessAuthStore = defineStore('businessAuth', () => {
     const perm = permissions.value?.[module]
     if (!perm) return false
     if (perm[action] !== undefined) return perm[action] === true
-    // 向后兼容：历史数据未包含 add/import 字段时，默认允许
-    if (action === 'add' || action === 'import') return true
+    // 向后兼容：历史数据未包含以下字段时，默认允许
+    if (action === 'add' || action === 'import' || action === 'assess' || action === 'convert') return true
     return false
   }
 

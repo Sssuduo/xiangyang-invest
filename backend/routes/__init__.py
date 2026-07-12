@@ -56,6 +56,9 @@ admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix
 admin_lead_bp = Blueprint('admin_lead', __name__, url_prefix='/api/admin')
 admin_knowledge_bp = Blueprint('admin_knowledge', __name__, url_prefix='/api/admin')
 
+# C 端 App 只读蓝图（内部人员查看 + AI 研判 + 周报）
+client_bp = Blueprint('client', __name__, url_prefix='/api/client')
+
 
 def register_routes(app):
     """注册所有蓝图"""
@@ -124,6 +127,10 @@ def register_routes(app):
     app.register_blueprint(admin_business_users.admin_business_users_bp)
     app.register_blueprint(admin_lead.admin_lead_bp)
     app.register_blueprint(admin_knowledge.admin_knowledge_bp)
+
+    # 注册 C 端 App 只读蓝图
+    from routes import client as _client
+    app.register_blueprint(client.client_bp)
 
     # 注册 debug 路由和错误处理器
     _admin_debug.register_debug_routes(app)

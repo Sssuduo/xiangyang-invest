@@ -1,11 +1,20 @@
 """
 活动台账 - 录音文件上传 API
 
-支持录音上传 → 音频压缩 → 语音转文字 → 内容总结 的完整流程
+流程：
+1. 上传：支持多个录音文件，逐个保存 → 逐个 ASR 转写 → 拼接全文 → LLM 总结
+2. 夜间定时：压缩所有音频文件为 zip 下载包
+3. 失败重试：POST /audio/retry 重新调用识别接口
+
+多文件结构：
+- audio_files JSON 数组：[{url, name, duration, size, status: 'ok'|'error', error: ''}, ...]
+- audio_transcript: 多文件转写全文（按序拼接）
+- audio_summary: 基于合并全文的 LLM 总结
 """
 import os
 import json
-from flask import request, jsonify
+import threading
+from flask import request, jsonify, current_app
 from models import ActivityLedger
 from extensions import db
 from routes import admin_activity_ledger_bp
@@ -22,32 +31,159 @@ def _allowed_audio(filename):
     return ext in AUDIO_EXTENSIONS
 
 
+def _get_audio_files(item):
+    """解析 audio_files JSON"""
+    return json.loads(item.audio_files or '[]')
+
+
+def _set_audio_files(item, files_list):
+    """设置 audio_files JSON"""
+    item.audio_files = json.dumps(files_list, ensure_ascii=False)
+
+
+def _resolve_audio_path_by_url(url):
+    """根据文件 URL 解析文件绝对路径。
+
+    DB 里 URL 形如 /static/uploads/audio/20260712_xxx.mp3。
+    直接派生自 Config.UPLOAD_FOLDER：
+        UPLOAD_FOLDER = <project_root>/static/uploads
+        dirname(dirname(UPLOAD_FOLDER)) = <project_root>
+    加 url.lstrip('/') 拼接得到正确绝对路径，避免早年旧代码中
+    "static/static/uploads" 重复拼接导致录音文件找不到、状态被标记 error。
+    """
+    file_rel = url.lstrip('/')
+    project_root = os.path.dirname(os.path.dirname(Config.UPLOAD_FOLDER))
+    return os.path.join(project_root, file_rel)
+
+
+def _run_async_processing(app, item_id):
+    """
+    后台线程：对 audio_files 中所有文件逐个 ASR 转写 → 拼接 → LLM 总结
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    with app.app_context():
+        try:
+            item = ActivityLedger.query.get(item_id)
+            if not item:
+                logger.error(f'后台处理：活动台账 {item_id} 不存在')
+                return
+
+            files = _get_audio_files(item)
+            if not files:
+                item.audio_status = 'failed'
+                item.audio_summary = '处理失败：没有录音文件'
+                db.session.commit()
+                return
+
+            from services.speech_to_text import transcribe_audio
+
+            all_texts = []
+            total_ok = 0
+            total_err = 0
+            # 内存中转写缓存：status==='ok' 时，记录转写文本供本轮后续文件复用；不落 JSON
+            _transcript_cache = {}
+
+            for i, af in enumerate(files):
+                if af.get('status') == 'ok' and i in _transcript_cache:
+                    all_texts.append(_transcript_cache[i])
+                    continue  # 已成功识别过的跳过（重试场景复用旧转写）
+
+                file_path = _resolve_audio_path_by_url(af['url'])
+                if not os.path.exists(file_path):
+                    af['status'] = 'error'
+                    af['error'] = '文件不存在'
+                    total_err += 1
+                    all_texts.append('')
+                    continue
+
+                logger.info(f'后台 ASR [{i + 1}/{len(files)}]：{af["name"]}')
+                try:
+                    asr_result = transcribe_audio(file_path)
+                    text = asr_result['text']
+                    af['status'] = 'ok'
+                    af['error'] = ''
+                    af['_transcript'] = text  # 临时保存，JSON 持久化前需 strip
+                    _transcript_cache[i] = text
+                    all_texts.append(text)
+                    total_ok += 1
+                    # 逐个保存进度；持久化前 strip 掉 _transcript，避免污染 audio_files JSON
+                    af.pop('_transcript', None)
+                    _set_audio_files(item, files)
+                    db.session.commit()
+                    logger.info(f'后台 ASR [{i + 1}/{len(files)}] 完成：{len(text)} 字')
+                except Exception as e:
+                    logger.error(f'后台 ASR [{i + 1}/{len(files)}] 失败：{e}')
+                    af['status'] = 'error'
+                    af['error'] = str(e)[:300]
+                    total_err += 1
+                    all_texts.append(f'[识别失败：{af["name"]}]')
+
+            # 拼接全文
+            full_text_parts = []
+            for i, af in enumerate(files):
+                if all_texts[i]:
+                    full_text_parts.append(f'【{af["name"]}】\n{all_texts[i]}')
+
+            separator = '\n\n---\n\n'
+            full_text = separator.join(full_text_parts)
+            item.audio_transcript = full_text
+            db.session.commit()
+
+            # LLM 总结
+            if full_text.strip():
+                from services.text_summarizer import summarize_with_llm
+                logger.info(f'后台总结开始：item_id={item_id}，{len(full_text)} 字')
+                try:
+                    summary = summarize_with_llm(full_text)
+                    item.audio_summary = summary
+                except Exception as e:
+                    logger.error(f'LLM 总结失败：{e}')
+                    item.audio_summary = f'（总结生成失败：{str(e)[:200]}）'
+            else:
+                item.audio_summary = '（转写内容为空，无法生成总结）'
+
+            item.audio_status = 'completed'
+            db.session.commit()
+            logger.info(f'后台处理完成：item_id={item_id}，{len(files)}个文件，{total_ok}成功/{total_err}失败')
+
+        except Exception as e:
+            logger.error(f'后台处理失败：item_id={item_id}，错误：{e}', exc_info=True)
+            try:
+                item = ActivityLedger.query.get(item_id)
+                if item:
+                    item.audio_status = 'failed'
+                    err_msg = str(e)[:500]
+                    # 已是统一中文 message 则原样；否则包装一层通用兜底
+                    item.audio_summary = err_msg if '请联系管理员苏铎' in err_msg else f'处理失败：{err_msg}'
+                    db.session.commit()
+            except Exception:
+                pass
+
+
+# ======================== 上传 ========================
+
+
 @admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['POST'])
 @dual_login_required
 @visitor_block
 def upload_audio(item_id):
     """
-    上传录音文件并自动进行压缩、语音转文字和内容总结
+    上传录音文件（支持多文件，异步处理）
+
+    多文件可以一次上传多个（前端逐次调用），也可以多次调用逐个追加。
+    每次上传的文件加入 audio_files 列表，全部上传完成后自动开始处理。
 
     Form Data:
         file: 录音文件（wav, mp3, m4a, ogg, flac, wma, aac, amr, opus, weba）
+        append: 追加模式（可选，"true"=保留已有文件追加）
 
     Returns:
-        JSON:
-        - code: 0
-        - data: {
-            audio_file: str,       # 压缩后录音文件路径
-            audio_transcript: str, # 语音转文字结果
-            audio_summary: str,    # 内容总结
-            audio_duration: float, # 录音时长(秒)
-            original_size: int,   # 原始文件大小
-            compressed_size: int, # 压缩后文件大小
-            compression_ratio: float # 压缩比
-          }
+        JSON: { code: 0, data: { audio_files, audio_status: 'processing', ... } }
     """
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
 
-    # 检查文件
     if 'file' not in request.files:
         return jsonify({'code': 1, 'message': '请选择录音文件'}), 400
 
@@ -62,7 +198,6 @@ def upload_audio(item_id):
             'message': f'不支持的音频格式：.{ext}，支持：{", ".join(sorted(AUDIO_EXTENSIONS))}'
         }), 400
 
-    # 1. 暂存原始文件
     import uuid
     upload_dir = Config.UPLOAD_FOLDER
     os.makedirs(upload_dir, exist_ok=True)
@@ -72,49 +207,64 @@ def upload_audio(item_id):
     try:
         file.save(tmp_path)
 
-        # 2. 压缩音频
-        from services.audio_compressor import compress_audio_to_storage
-        compress_result = compress_audio_to_storage(tmp_path, upload_dir)
+        # 直接保存原始文件
+        from services.audio_compressor import save_original_audio
+        save_result = save_original_audio(tmp_path, upload_dir)
 
-        # 3. 语音转文字
-        from services.speech_to_text import transcribe_audio
-        asr_result = transcribe_audio(compress_result['output_path'])
+        # 构建文件条目
+        new_file_entry = {
+            'url': save_result['relative_url'],
+            'name': file.filename,
+            'duration': save_result['duration'],
+            'size': save_result['file_size'],
+            'status': 'pending',
+            'error': ''
+        }
 
-        # 4. 内容总结
-        from services.text_summarizer import summarize_with_llm
-        summary = summarize_with_llm(asr_result['text'])
+        # 获取已有文件列表
+        append_mode = request.form.get('append', 'false') == 'true'
+        existing = _get_audio_files(item) if append_mode else []
+        existing.append(new_file_entry)
+        _set_audio_files(item, existing)
 
-        # 5. 更新数据库
-        item.audio_file = compress_result['relative_url']
-        item.audio_transcript = asr_result['text']
-        item.audio_summary = summary
-        item.audio_status = 'completed'
-        item.audio_duration = round(compress_result['duration'], 1)
+        # 计算总时长
+        total_duration = sum(f.get('duration', 0) for f in existing)
+
+        # 设置状态
+        item.audio_archive = None
+        item.audio_archive_size = None
+        item.audio_status = 'processing'
+        item.audio_duration = total_duration
+        item.audio_transcript = None
+        item.audio_summary = None
         db.session.commit()
+
+        # 启动后台处理
+        app = current_app._get_current_object()
+        thread = threading.Thread(
+            target=_run_async_processing,
+            args=(app, item_id),
+            daemon=True
+        )
+        thread.start()
 
         return jsonify({
             'code': 0,
-            'message': '录音处理完成',
+            'message': '录音已上传，正在后台处理...',
             'data': {
-                'audio_file': compress_result['relative_url'],
-                'audio_transcript': asr_result['text'],
-                'audio_summary': summary,
-                'audio_duration': round(compress_result['duration'], 1),
-                'original_size': compress_result['original_size'],
-                'compressed_size': compress_result['compressed_size'],
-                'compression_ratio': compress_result['compression_ratio']
+                'audio_files': existing,
+                'audio_status': 'processing',
+                'audio_duration': total_duration,
             }
         })
 
     except Exception as e:
-        # 记录失败状态
         item.audio_status = 'failed'
+        item.audio_summary = f'上传失败：{str(e)}'
         db.session.commit()
-        error_msg = str(e)
-        return jsonify({'code': 1, 'message': f'录音处理失败：{error_msg}'}), 500
+        return jsonify({'code': 1, 'message': f'录音处理失败：{str(e)}'}), 500
 
     finally:
-        # 清理临时文件
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -122,45 +272,296 @@ def upload_audio(item_id):
                 pass
 
 
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/batch', methods=['POST'])
+@dual_login_required
+@visitor_block
+def upload_audio_batch(item_id):
+    """
+    批量上传多个录音文件
+
+    Form Data:
+        files: 多个录音文件（使用 HTML5 multiple）
+
+    Returns:
+        JSON: { code: 0, data: { audio_files, audio_status, ... } }
+    """
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    uploaded = request.files.getlist('files')
+    if not uploaded:
+        return jsonify({'code': 1, 'message': '请选择录音文件'}), 400
+
+    import uuid
+    upload_dir = Config.UPLOAD_FOLDER
+    os.makedirs(upload_dir, exist_ok=True)
+
+    existing = _get_audio_files(item)
+    saved_files = []
+    errors = []
+
+    for file in uploaded:
+        if not file or not file.filename:
+            continue
+        if not _allowed_audio(file.filename):
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else '未知'
+            errors.append(f'{file.filename}：不支持的格式 .{ext}')
+            continue
+
+        tmp_filename = f'_tmp_audio_{uuid.uuid4().hex[:8]}_{file.filename}'
+        tmp_path = os.path.join(upload_dir, tmp_filename)
+
+        try:
+            file.save(tmp_path)
+            from services.audio_compressor import save_original_audio
+            save_result = save_original_audio(tmp_path, upload_dir)
+            existing.append({
+                'url': save_result['relative_url'],
+                'name': file.filename,
+                'duration': save_result['duration'],
+                'size': save_result['file_size'],
+                'status': 'pending',
+                'error': ''
+            })
+            saved_files.append(file.filename)
+        except Exception as e:
+            errors.append(f'{file.filename}：{str(e)[:100]}')
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    if not saved_files:
+        return jsonify({'code': 1, 'message': f'所有文件上传失败：{"; ".join(errors)}'}), 400
+
+    _set_audio_files(item, existing)
+    total_duration = sum(f.get('duration', 0) for f in existing)
+
+    item.audio_archive = None
+    item.audio_archive_size = None
+    item.audio_status = 'processing'
+    item.audio_duration = total_duration
+    item.audio_transcript = None
+    item.audio_summary = None
+    db.session.commit()
+
+    # 启动后台处理
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_run_async_processing,
+        args=(app, item_id),
+        daemon=True
+    )
+    thread.start()
+
+    msg = f'{len(saved_files)} 个文件已上传'
+    if errors:
+        msg += f'，{len(errors)} 个失败：{"; ".join(errors[:3])}'
+
+    return jsonify({
+        'code': 0,
+        'message': msg,
+        'data': {
+            'audio_files': existing,
+            'audio_status': 'processing',
+            'audio_duration': total_duration,
+            'errors': errors
+        }
+    })
+
+
+# ======================== 查询 ========================
+
+
 @admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['GET'])
 @dual_login_required
 def get_audio_detail(item_id):
-    """获取录音详情（转写文本 + 总结）"""
+    """获取录音处理状态及详情"""
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    files = _get_audio_files(item)
+    data = {
+        'audio_files': files,
+        'audio_file': files[0]['url'] if files else None,
+        'audio_archive': item.audio_archive,
+        'audio_archive_size': item.audio_archive_size,
+        'audio_transcript': item.audio_transcript,
+        'audio_summary': item.audio_summary,
+        'audio_status': item.audio_status,
+        'audio_duration': item.audio_duration,
+    }
+
+    # 补充文件大小信息（实时查询）
+    for af in files:
+        if af.get('size'):
+            continue
+        try:
+            abs_path = _resolve_audio_path_by_url(af['url'])
+            if os.path.exists(abs_path):
+                af['size'] = os.path.getsize(abs_path)
+        except Exception:
+            pass
+
+    return jsonify({'code': 0, 'data': data})
+
+
+# ======================== 重新识别 ========================
+
+
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/retry', methods=['POST'])
+@dual_login_required
+@visitor_block
+def retry_audio_recognition(item_id):
+    """重新调用语音识别"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    files = _get_audio_files(item)
+    if not files:
+        return jsonify({'code': 1, 'message': '没有录音文件，无法重新识别'}), 400
+
+    # 重置所有文件状态
+    for af in files:
+        af['status'] = 'pending'
+        af['error'] = ''
+        af.pop('_transcript', None)
+
+    _set_audio_files(item, files)
+    item.audio_status = 'processing'
+    item.audio_transcript = None
+    item.audio_summary = None
+    db.session.commit()
+
+    app = current_app._get_current_object()
+    threading.Thread(target=_run_async_processing, args=(app, item_id), daemon=True).start()
+
     return jsonify({
         'code': 0,
-        'data': {
-            'audio_file': item.audio_file,
-            'audio_transcript': item.audio_transcript,
-            'audio_summary': item.audio_summary,
-            'audio_status': item.audio_status,
-            'audio_duration': item.audio_duration
-        }
+        'message': '已重新开始语音识别，请等待处理完成...',
+        'data': {'audio_status': 'processing'}
     })
+
+
+# ======================== 删除单个文件 ========================
+
+
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/<int:file_index>', methods=['DELETE'])
+@dual_login_required
+@visitor_block
+def delete_audio_file(item_id, file_index):
+    """删除单个录音文件"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    files = _get_audio_files(item)
+    if file_index < 0 or file_index >= len(files):
+        return jsonify({'code': 1, 'message': '文件索引无效'}), 400
+
+    removed = files.pop(file_index)
+
+    # 删除磁盘文件
+    try:
+        abs_path = _resolve_audio_path_by_url(removed['url'])
+        if os.path.exists(abs_path):
+            os.remove(abs_path)
+    except OSError:
+        pass
+
+    if not files:
+        # 清空所有音频数据
+        item.audio_files = '[]'
+        item.audio_archive = None
+        item.audio_archive_size = None
+        item.audio_transcript = None
+        item.audio_summary = None
+        item.audio_status = None
+        item.audio_duration = None
+    else:
+        _set_audio_files(item, files)
+        item.audio_duration = sum(f.get('duration', 0) for f in files)
+
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '文件已删除', 'data': {'audio_files': files}})
+
+
+# ======================== 编辑 ========================
+
+
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/transcript', methods=['PUT'])
+@dual_login_required
+@visitor_block
+def update_audio_transcript(item_id):
+    """
+    手动编辑转写文本或总结
+
+    JSON Body:
+        transcript: str   # （可选）新的转写文本
+        summary: str       # （可选）新的总结文本
+
+    Returns:
+        JSON: { code: 0, message: '...' }
+    """
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    files = _get_audio_files(item)
+    if not files:
+        return jsonify({'code': 1, 'message': '该台账没有录音文件'}), 400
+
+    data = request.get_json(silent=True) or {}
+    transcript = data.get('transcript')
+    summary = data.get('summary')
+
+    updated = False
+    if transcript is not None:
+        item.audio_transcript = transcript
+        updated = True
+    if summary is not None:
+        item.audio_summary = summary
+        updated = True
+
+    if not updated:
+        return jsonify({'code': 1, 'message': '未提供需要更新的内容'}), 400
+
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '转写内容已更新'})
+
+
+# ======================== 全部删除 ========================
 
 
 @admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['DELETE'])
 @dual_login_required
 @visitor_block
 def delete_audio(item_id):
-    """删除录音文件及转写/总结数据"""
+    """删除所有录音文件、压缩包及转写/总结数据"""
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
 
-    if not item.audio_file:
+    files = _get_audio_files(item)
+    if not files:
         return jsonify({'code': 1, 'message': '该台账没有录音文件'}), 400
 
-    # 删除物理文件
-    from config import Config
-    file_rel_path = item.audio_file.lstrip('/')
-    file_abs_path = os.path.join(os.path.dirname(Config.UPLOAD_FOLDER), file_rel_path)
-    if os.path.exists(file_abs_path):
+    # 删除所有原始文件
+    for af in files:
         try:
-            os.remove(file_abs_path)
+            abs_path = _resolve_audio_path_by_url(af['url'])
+            if os.path.exists(abs_path):
+                os.remove(abs_path)
+        except OSError:
+            pass
+
+    # 删除压缩包
+    if item.audio_archive:
+        try:
+            archive_rel = item.audio_archive.lstrip('/')
+            archive_abs = os.path.join(os.path.dirname(Config.UPLOAD_FOLDER), archive_rel)
+            if os.path.exists(archive_abs):
+                os.remove(archive_abs)
         except OSError:
             pass
 
     # 清除数据库字段
-    item.audio_file = None
+    item.audio_files = '[]'
+    item.audio_archive = None
+    item.audio_archive_size = None
     item.audio_transcript = None
     item.audio_summary = None
     item.audio_status = None
@@ -168,3 +569,27 @@ def delete_audio(item_id):
     db.session.commit()
 
     return jsonify({'code': 0, 'message': '录音文件及数据已删除'})
+
+
+# ======================== 夜间压缩 ========================
+
+
+@admin_activity_ledger_bp.route('/admin/audio/compress-night', methods=['POST'])
+@dual_login_required
+@visitor_block
+def compress_night():
+    """手动触发夜间压缩"""
+    from services.audio_compressor import run_night_compression
+
+    try:
+        result = run_night_compression(threshold_bytes=Config.AUDIO_ARCHIVE_THRESHOLD)
+        return jsonify({
+            'code': 0,
+            'message': f'压缩完成：处理 {result["processed"]} 个，'
+                       f'压缩 {result["compressed"]} 个，'
+                       f'跳过 {result["skipped"]} 个，'
+                       f'错误 {result["errors"]} 个',
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'message': f'压缩任务失败：{str(e)}'}), 500

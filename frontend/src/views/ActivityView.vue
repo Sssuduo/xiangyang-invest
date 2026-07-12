@@ -517,8 +517,7 @@ const rules = {
 }
 
 onMounted(async () => {
-  await loadProjects()
-  await loadDicts()
+  await Promise.all([loadProjects(), loadDicts()])
   fetchData()
 })
 

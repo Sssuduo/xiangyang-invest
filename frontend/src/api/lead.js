@@ -54,3 +54,9 @@ export function getPromptPreview(leadId, modelId = null) {
   const params = modelId ? { model_id: modelId } : {}
   return api.get(`/admin/lead/leads/${leadId}/prompt-preview`, { params })
 }
+export function deleteAssessmentSession(sessionId) {
+  return api.delete(`/admin/lead/assessment-sessions/${sessionId}`)
+}
+export function deleteAssessmentMessage(sessionId, messageId) {
+  return api.delete(`/admin/lead/assessment-sessions/${sessionId}/messages/${messageId}`)
+}

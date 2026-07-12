@@ -140,6 +140,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, UserFilled, User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
+import { clearAuthCache } from '@/router'
 
 const props = defineProps({
   variant: { type: String, default: 'light' }, // 'home' | 'light' | 'overlay' | 'contact'
@@ -197,6 +198,7 @@ async function handleLogin() {
   if (result.success) {
     showLoginDialog.value = false
     loginForm.value = { username: '', password: '' }
+    clearAuthCache()
     ElMessage.success('登录成功')
   } else {
     loginError.value = result.message || '登录失败'
@@ -205,6 +207,7 @@ async function handleLogin() {
 
 async function handleLogout() {
   await businessAuth.logout()
+  clearAuthCache()
   ElMessage.success('已退出登录')
   // 如果在需要登录的页面，跳回首页
   if (route.meta.requiresBusinessAuth) {

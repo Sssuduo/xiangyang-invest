@@ -493,8 +493,7 @@ const importErrorCount = ref(0)
 const route = useRoute()
 
 onMounted(async () => {
-  await loadDicts()
-  await loadProjects()
+  await Promise.all([loadDicts(), loadProjects()])
   fetchData()
 })
 

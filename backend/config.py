@@ -1,4 +1,5 @@
 import os
+from os import getenv
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -35,11 +36,19 @@ class Config:
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB 上传限制（含大视频）
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-    # 腾讯云语音识别（ASR）配置
-    TENCENT_SECRET_ID = os.environ.get('TENCENT_SECRET_ID', '')
-    TENCENT_SECRET_KEY = os.environ.get('TENCENT_SECRET_KEY', '')
-    ASR_ENGINE_MODEL = '16k_zh'  # 16k 中文普通话
-    ASR_REGION = 'ap-shanghai'   # 上海区域
+    # 音频压缩包阈值（字节），默认 0 = 压缩所有文件
+    AUDIO_ARCHIVE_THRESHOLD = int(os.environ.get('AUDIO_ARCHIVE_THRESHOLD', '0'))
+
+    # 笔记本 SenseVoice ASR 服务
+    # 启动：笔记本运行 services/asr_api.py (port 5002)
+    #       → scripts/asr_service.sh SSH 反代到 123.56.9.243:15002
+    #       → 生产端 transcribe_audio 走 Config.ASR_API_URL
+    ASR_API_URL = getenv('ASR_API_URL', 'http://localhost:15002').rstrip('/')
+    ASR_API_TIMEOUT = int(getenv('ASR_API_TIMEOUT', '600'))       # 单次 HTTP 调用超时（秒）
+    ASR_SEGMENT_SECONDS = int(getenv('ASR_SEGMENT_SECONDS', '600'))  # 长音频切片长度（秒）
+
+    # 服务器公网地址
+    SERVER_BASE_URL = os.environ.get('SERVER_BASE_URL', '')
 
     # Session 配置
     PERMANENT_SESSION_LIFETIME = 8 * 3600  # 8 小时

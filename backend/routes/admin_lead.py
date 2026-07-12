@@ -10,7 +10,7 @@ from extensions import db
 from routes import admin_lead_bp
 from routes.business_auth import dual_login_required, visitor_block
 from utils import get_current_user_info, log_changes
-from services.llm_service import call_llm, build_messages
+from services.llm_service import call_llm, build_messages, call_llm_with_web_search
 from services.word_service import generate_assessment_docx
 from services.html_service import generate_assessment_html
 
@@ -188,10 +188,10 @@ def create_lead():
         order_no=data.get('order_no', 0),
         project_name=data['project_name'],
         invest_enterprise=data['invest_enterprise'],
-        enterprise_info=data['enterprise_info'],
-        project_content=data['project_content'],
+        enterprise_info=data.get('enterprise_info', ''),
+        project_content=data.get('project_content', ''),
         invest_amount=data.get('invest_amount', 0),
-        follow_status_code=data['follow_status_code'],
+        follow_status_code=data.get('follow_status_code', ''),
         meeting_status_code=data.get('meeting_status_code', 'not_meeting'),
         recommend_unit_code=data.get('recommend_unit_code', ''),
         responsible_unit_code=data.get('responsible_unit_code', ''),
@@ -213,7 +213,7 @@ def create_lead():
     for i, d in enumerate(data.get('demands', []) or []):
         if d.get('demand_content', '').strip():
             db.session.add(EnterpriseDemand(
-                project_id=None,
+                project_id=0,
                 lead_id=lead.id,
                 demand_type_code=d.get('demand_type_code', ''),
                 demand_content=d['demand_content'],
@@ -560,7 +560,11 @@ def _build_assessment_messages(lead_context, knowledge_context, prompt_template,
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
     full_prompt = prompt_template.replace('{{lead_context}}', lead_context)
-    full_prompt = full_prompt.replace('{{knowledge_context}}', knowledge_context)
+    if knowledge_context:
+        full_prompt = full_prompt.replace('{{knowledge_context}}', knowledge_context)
+    else:
+        # 无知识库数据时填入明确提示
+        full_prompt = full_prompt.replace('{{knowledge_context}}', '（暂无相关知识库数据，请基于联网搜索结果和模型自身知识进行分析）')
     messages.append({'role': 'user', 'content': full_prompt})
     return messages
 
@@ -585,7 +589,7 @@ def _search_knowledge(lead):
 
     entries = KnowledgeEntry.query.filter_by(is_active=True).all()
     if not entries:
-        return '（暂无相关知识库条目）'
+        return ''
 
     # 分离已向量化和未向量化的条目
     vec_entries = [e for e in entries if e.embedding]
@@ -612,12 +616,9 @@ def _search_knowledge(lead):
     # 限制返回 5 条
     scored = scored[:5]
 
-    # 如果向量和关键词都没搜到，兜底返回前几条活跃条目
+    # 无匹配结果时直接返回空（不再兜底返回列表）
     if not scored:
-        default_entries = KnowledgeEntry.query.filter_by(is_active=True)\
-            .order_by(KnowledgeEntry.sort_order).limit(3).all()
-        for e in default_entries:
-            scored.append((e, 0.3))
+        return ''
 
     # 更新检索计数和使用时间
     now = datetime.utcnow()
@@ -712,16 +713,43 @@ def _run_assessment_async(app, lead_id, model_id):
             knowledge_context = _search_knowledge(lead)
             messages = _build_assessment_messages(lead_context, knowledge_context, prompt_template, system_prompt)
 
-            result = call_llm(
-                model_config={
-                    'api_base_url': model.api_base_url,
-                    'api_key': model.api_key,
-                    'model_name': model.model_name
-                },
-                messages=messages,
-                temperature=model.temperature,
-                max_tokens=model.max_tokens
-            )
+            # 旧版异步研判也支持两阶段搜索
+            if model.search_model_id:
+                search_model = LLMModel.query.get(model.search_model_id)
+            else:
+                search_model = None
+
+            if search_model and search_model.api_key:
+                resp = call_llm_with_web_search(
+                    main_config={
+                        'api_base_url': model.api_base_url,
+                        'api_key': model.api_key,
+                        'model_name': model.model_name,
+                        'provider': model.provider
+                    },
+                    search_config={
+                        'api_base_url': search_model.api_base_url,
+                        'api_key': search_model.api_key,
+                        'model_name': search_model.model_name
+                    },
+                    messages=messages,
+                    temperature=model.temperature,
+                    max_tokens=model.max_tokens,
+                    lead_context=lead_context
+                )
+                result = resp['result']
+            else:
+                result = call_llm(
+                    model_config={
+                        'api_base_url': model.api_base_url,
+                        'api_key': model.api_key,
+                        'model_name': model.model_name,
+                        'provider': model.provider
+                    },
+                    messages=messages,
+                    temperature=model.temperature,
+                    max_tokens=model.max_tokens
+                )
 
             lead.ai_assessment_result = result
             lead.ai_assessment_at = datetime.utcnow()
@@ -924,17 +952,43 @@ def create_assessment_session(lead_id):
     db.session.commit()
 
     try:
-        # 同步调用 LLM
-        result = call_llm(
-            model_config={
+        # 判断是否有关联的搜索模型
+        search_model = None
+        if model.search_model_id:
+            search_model = LLMModel.query.get(model.search_model_id)
+
+        # 使用两阶段管线（联网搜索 → DeepSeek 合成）
+        if search_model and search_model.api_key:
+            main_config = {
                 'api_base_url': model.api_base_url,
                 'api_key': model.api_key,
                 'model_name': model.model_name
-            },
-            messages=messages,
-            temperature=model.temperature,
-            max_tokens=model.max_tokens
-        )
+            }
+            search_config = {
+                'api_base_url': search_model.api_base_url,
+                'api_key': search_model.api_key,
+                'model_name': search_model.model_name
+            }
+            resp = call_llm_with_web_search(
+                main_config=main_config,
+                search_config=search_config,
+                messages=messages,
+                temperature=model.temperature,
+                max_tokens=model.max_tokens,
+                lead_context=lead_context
+            )
+            result = resp['result']
+        else:
+            result = call_llm(
+                model_config={
+                    'api_base_url': model.api_base_url,
+                    'api_key': model.api_key,
+                    'model_name': model.model_name
+                },
+                messages=messages,
+                temperature=model.temperature,
+                max_tokens=model.max_tokens
+            )
 
         # 生成 Word 文档
         file_url, file_name = generate_assessment_docx(
@@ -1371,6 +1425,63 @@ def view_assessment_html(session_id, message_id):
         return jsonify({'code': 1, 'message': '文件不存在或已被删除'}), 404
 
     return send_file(file_path, mimetype='text/html; charset=utf-8')
+
+
+# ============================================================
+# 研判会话/消息删除
+# ============================================================
+
+def _delete_message_files(msg):
+    """删除消息关联的物理文件（Word + HTML）"""
+    import os as _os
+    backend_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    static_dir = _os.path.join(backend_dir, 'static')
+    for path_field in ['file_path', 'html_file_path']:
+        rel = getattr(msg, path_field, '') or ''
+        if rel.startswith('/static/'):
+            rel = rel[8:]
+        if rel:
+            full = _os.path.join(static_dir, rel)
+            if _os.path.exists(full):
+                try:
+                    _os.remove(full)
+                except Exception:
+                    pass
+
+
+@admin_lead_bp.route('/lead/assessment-sessions/<int:session_id>', methods=['DELETE'])
+@dual_login_required
+@visitor_block
+def delete_assessment_session(session_id):
+    """删除整个研判会话（含所有消息+关联文件）"""
+    session = LeadAssessmentSession.query.get_or_404(session_id)
+    msgs = LeadAssessmentMessage.query.filter_by(session_id=session_id).all()
+
+    # 删除关联文件
+    for msg in msgs:
+        _delete_message_files(msg)
+
+    # 删除关联的知识使用统计
+    KnowledgeUsageStat.query.filter_by(session_id=session_id).delete()
+
+    # 删除消息和会话
+    LeadAssessmentMessage.query.filter_by(session_id=session_id).delete()
+    db.session.delete(session)
+    db.session.commit()
+
+    return jsonify({'code': 0, 'message': '研判会话已删除'})
+
+
+@admin_lead_bp.route('/lead/assessment-sessions/<int:session_id>/messages/<int:message_id>', methods=['DELETE'])
+@dual_login_required
+@visitor_block
+def delete_assessment_message(session_id, message_id):
+    """删除单条研判消息（含关联文件）"""
+    msg = LeadAssessmentMessage.query.filter_by(id=message_id, session_id=session_id).first_or_404()
+    _delete_message_files(msg)
+    db.session.delete(msg)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '研判消息已删除'})
 
 
 # ============================================================

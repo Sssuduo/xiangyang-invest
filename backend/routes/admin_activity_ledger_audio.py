@@ -17,7 +17,8 @@ import threading
 from flask import request, jsonify, current_app
 from models import ActivityLedger
 from extensions import db
-from routes import admin_activity_ledger_bp
+from routes import admin_activity_ledger_bp, admin_activity_ledger_audio_bp
+from extensions import db
 from routes.business_auth import dual_login_required, visitor_block
 from utils.image_upload import AUDIO_EXTENSIONS
 from config import Config
@@ -131,17 +132,55 @@ def _run_async_processing(app, item_id):
             item.audio_transcript = full_text
             db.session.commit()
 
-            # LLM 总结
+            # === V15.0: 结构化总结 (三版: 发言分段 + 清洁版 + 摘要版) ===
             if full_text.strip():
-                from services.text_summarizer import summarize_with_llm
-                logger.info(f'后台总结开始：item_id={item_id}，{len(full_text)} 字')
+                from services.text_summarizer import summarize_meeting
+                from services.meeting_document import generate_meeting_docx
+                import os
+                logger.info(f'后台结构化总结开始：item_id={item_id}，{len(full_text)} 字')
                 try:
-                    summary = summarize_with_llm(full_text)
-                    item.audio_summary = summary
+                    summary_result = summarize_meeting(full_text)
+                    item.audio_transcript_segmented = summary_result.get('segmented', '')
+                    item.audio_transcript_clean = summary_result.get('clean', '')
+                    item.audio_summary_structured = summary_result.get('summary', '')
+                    # 生成 docx
+                    try:
+                        docx_url, docx_name = generate_meeting_docx(
+                            activity=item,
+                            segmented_text=summary_result.get('segmented', ''),
+                            clean_text=summary_result.get('clean', ''),
+                            summary_text=summary_result.get('summary', '')
+                        )
+                        item.audio_docx_path = docx_url
+                        # 计算文件大小
+                        docx_abs = os.path.join(
+                            os.path.dirname(current_app.instance_path), '..',
+                            'static', docx_url.replace('/static/', '')
+                        )
+                        if os.path.exists(docx_abs):
+                            item.audio_docx_size = os.path.getsize(docx_abs)
+                    except Exception as docx_err:
+                        logger.error(f'meeting docx generation failed: {docx_err}', exc_info=True)
+                    # backward compat: audio_summary 指向摘要版
+                    item.audio_summary = summary_result.get('summary', '')
+                    db.session.commit()
+                    logger.info(f'后台结构化总结完成：segmented={len(summary_result.get("segmented",""))} clean={len(summary_result.get("clean",""))} summary={len(summary_result.get("summary",""))} docx={item.audio_docx_path or "none"}')
                 except Exception as e:
-                    logger.error(f'LLM 总结失败：{e}')
-                    item.audio_summary = f'（总结生成失败：{str(e)[:200]}）'
+                    logger.error(f'meeting summary generation failed: {e}', exc_info=True)
+                    item.audio_transcript_segmented = ''
+                    item.audio_transcript_clean = ''
+                    item.audio_summary_structured = ''
+                    item.audio_summary = f'（结构化总结生成失败：{str(e)[:200]}）'
+                    # 保留旧版 V14 单版作为兜底
+                    try:
+                        from services.text_summarizer import summarize_with_llm
+                        item.audio_summary = summarize_with_llm(full_text)
+                    except Exception:
+                        pass
             else:
+                item.audio_transcript_segmented = ''
+                item.audio_transcript_clean = ''
+                item.audio_summary_structured = ''
                 item.audio_summary = '（转写内容为空，无法生成总结）'
 
             item.audio_status = 'completed'
@@ -165,7 +204,7 @@ def _run_async_processing(app, item_id):
 # ======================== 上传 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['POST'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio', methods=['POST'])
 @dual_login_required
 @visitor_block
 def upload_audio(item_id):
@@ -272,7 +311,7 @@ def upload_audio(item_id):
                 pass
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/batch', methods=['POST'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/batch', methods=['POST'])
 @dual_login_required
 @visitor_block
 def upload_audio_batch(item_id):
@@ -374,7 +413,7 @@ def upload_audio_batch(item_id):
 # ======================== 查询 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['GET'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio', methods=['GET'])
 @dual_login_required
 def get_audio_detail(item_id):
     """获取录音处理状态及详情"""
@@ -409,7 +448,7 @@ def get_audio_detail(item_id):
 # ======================== 重新识别 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/retry', methods=['POST'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/retry', methods=['POST'])
 @dual_login_required
 @visitor_block
 def retry_audio_recognition(item_id):
@@ -445,7 +484,7 @@ def retry_audio_recognition(item_id):
 # ======================== 删除单个文件 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/<int:file_index>', methods=['DELETE'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/<int:file_index>', methods=['DELETE'])
 @dual_login_required
 @visitor_block
 def delete_audio_file(item_id, file_index):
@@ -486,7 +525,7 @@ def delete_audio_file(item_id, file_index):
 # ======================== 编辑 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio/transcript', methods=['PUT'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/transcript', methods=['PUT'])
 @dual_login_required
 @visitor_block
 def update_audio_transcript(item_id):
@@ -528,7 +567,7 @@ def update_audio_transcript(item_id):
 # ======================== 全部删除 ========================
 
 
-@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/audio', methods=['DELETE'])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio', methods=['DELETE'])
 @dual_login_required
 @visitor_block
 def delete_audio(item_id):
@@ -574,7 +613,7 @@ def delete_audio(item_id):
 # ======================== 夜间压缩 ========================
 
 
-@admin_activity_ledger_bp.route('/admin/audio/compress-night', methods=['POST'])
+@admin_activity_ledger_audio_bp.route('/admin/audio/compress-night', methods=['POST'])
 @dual_login_required
 @visitor_block
 def compress_night():
@@ -593,3 +632,44 @@ def compress_night():
         })
     except Exception as e:
         return jsonify({'code': 1, 'message': f'压缩任务失败：{str(e)}'}), 500
+
+
+# ===================== V15.0 结构化总结端点 ========================
+
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/versions', methods=['GET'])
+@dual_login_required
+def get_audio_versions(item_id):
+    """获取结构化总结多版本数据
+
+    Returns:
+        JSON: { code:0, data: { transcript, transcript_segmented, transcript_clean, summary_structured, docx_path, docx_size } }
+    """
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    return jsonify({'code': 0, 'data': {
+        'transcript': item.audio_transcript,
+        'transcript_segmented': item.audio_transcript_segmented,
+        'transcript_clean': item.audio_transcript_clean,
+        'summary_structured': item.audio_summary_structured,
+        'docx_path': item.audio_docx_path,
+        'docx_size': item.audio_docx_size,
+    }})
+
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/docx', methods=['GET'])
+@dual_login_required
+def download_audio_docx(item_id):
+    """下载结构化总结 docx 文件"""
+    from flask import send_from_directory
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    if not item.audio_docx_path:
+        return jsonify({'code': 1, 'message': '尚未生成 Word 文档，请等待处理完成或重新识别'}), 404
+    docx_abs = os.path.join(
+        os.path.dirname(current_app.instance_path), '..',
+        'static', item.audio_docx_path.replace('/static/', '')
+    )
+    if not os.path.exists(docx_abs):
+        return jsonify({'code': 1, 'message': 'Word 文件不存在，请重新生成'}), 404
+    dir_name = os.path.dirname(docx_abs)
+    basename = os.path.basename(docx_abs)
+    return send_from_directory(dir_name, basename, as_attachment=True)

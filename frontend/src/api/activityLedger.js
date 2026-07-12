@@ -62,6 +62,16 @@ export function retryAudioRecognition(id) {
   return api.post(`/admin/activity-ledger/${id}/audio/retry`)
 }
 
+// 获取结构化总结多版本 (segmented/clean/summary/docx)
+export function getAudioVersions(id) {
+  return api.get(`/admin/activity-ledger/${id}/audio/versions`)
+}
+
+// 下载结构化总结 docx
+export function getAudioDocxUrl(id) {
+  return `/api/admin/activity-ledger/${id}/audio/docx`
+}
+
 // 删除录音
 export function deleteAudio(id) {
   return api.delete(`/admin/activity-ledger/${id}/audio`)

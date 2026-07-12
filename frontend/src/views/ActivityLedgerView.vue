@@ -180,14 +180,26 @@
                 </div>
                 <div v-if="viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
                   <div class="audio-section-header">
-                    <span class="section-label">语音转文字</span>
-                    <el-tag size="small" type="primary" effect="plain">{{ viewItem.audio_transcript.length }} 字</el-tag>
+                    <span class="section-label">录音识别内容</span>
+                    <a v-if="viewItem.audio_docx_path" :href="viewItem.audio_docx_path" target="_blank" class="docx-download-link">
+                      <el-icon><Download /></el-icon> 下载 Word
+                    </a>
                   </div>
-                  <div class="audio-text-content">{{ viewItem.audio_transcript }}</div>
+                  <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
+                    <el-tab-pane label="分段原文" name="segmented">
+                      <div class="audio-text-content">{{ viewItem.audio_transcript_segmented || viewItem.audio_transcript || '暂无转写内容' }}</div>
+                    </el-tab-pane>
+                    <el-tab-pane label="清洁版" name="clean">
+                      <div class="audio-markdown-content" v-html="renderMd(viewItem.audio_transcript_clean)"></div>
+                    </el-tab-pane>
+                    <el-tab-pane label="摘要版" name="summary">
+                      <div class="audio-markdown-content" v-html="renderMd(viewItem.audio_summary_structured)"></div>
+                    </el-tab-pane>
+                  </el-tabs>
                 </div>
-                <div v-if="viewItem.audio_summary" class="view-audio-summary" style="margin-top: 8px;">
+                <div v-else-if="viewItem.audio_summary" class="view-audio-summary" style="margin-top: 8px;">
                   <div class="audio-section-header">
-                    <span class="section-label">AI 总结</span>
+                    <span class="section-label">AI 总结 (旧版)</span>
                   </div>
                   <div class="audio-summary-content">{{ viewItem.audio_summary }}</div>
                 </div>
@@ -369,41 +381,38 @@
                     <div class="audio-transcript-section">
                       <div class="audio-section-header">
                         <span class="section-label">
-                          <el-icon><Document /></el-icon> 语音转文字
+                          <el-icon><Document /></el-icon> 录音识别内容
                           <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
                         </span>
                         <div style="display: flex; gap: 6px;">
                           <el-button size="small" type="warning" text @click="handleRetryAudio">
                             <el-icon><RefreshRight /></el-icon> 重新识别
                           </el-button>
-                          <el-button v-if="!transcriptModified" size="small" text type="primary" @click="editTranscript = audioDetail?.audio_transcript || ''; watchTranscriptEdit()">编辑</el-button>
+                          <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank">
+                            <el-button size="small" text type="success">
+                              <el-icon><Download /></el-icon> 下载 Word
+                            </el-button>
+                          </a>
                         </div>
                       </div>
-                      <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript || '暂无转写内容' }}</div>
-                      <div v-else class="audio-edit-area">
-                        <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
-                        <div class="audio-edit-actions">
-                          <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
-                          <el-button v-if="transcriptModified" size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="audio-summary-section">
-                      <div class="audio-section-header">
-                        <span class="section-label">
-                          <el-icon><Star /></el-icon> AI 总结
-                        </span>
-                        <el-button v-if="!summaryModified" size="small" text type="primary" @click="editSummary = audioDetail?.audio_summary || ''; watchSummaryEdit()">编辑</el-button>
-                      </div>
-                      <div v-if="!summaryModified" class="audio-summary-content">{{ audioDetail?.audio_summary || '暂无总结内容' }}</div>
-                      <div v-else class="audio-edit-area">
-                        <el-input v-model="editSummary" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchSummaryEdit" />
-                        <div class="audio-edit-actions">
-                          <el-button size="small" @click="handleCancelSummaryEdit">取消</el-button>
-                          <el-button v-if="summaryModified" size="small" type="primary" @click="handleSaveSummary">保存总结</el-button>
-                        </div>
-                      </div>
+                      <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
+                        <el-tab-pane label="分段原文" name="segmented">
+                          <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript_segmented || audioDetail?.audio_transcript || '暂无转写内容' }}</div>
+                          <div v-else class="audio-edit-area">
+                            <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
+                            <div class="audio-edit-actions">
+                              <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
+                              <el-button v-if="transcriptModified" size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
+                            </div>
+                          </div>
+                        </el-tab-pane>
+                        <el-tab-pane label="清洁版" name="clean">
+                          <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_transcript_clean)"></div>
+                        </el-tab-pane>
+                        <el-tab-pane label="摘要版" name="summary">
+                          <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_summary_structured)"></div>
+                        </el-tab-pane>
+                      </el-tabs>
                     </div>
                   </template>
                 </div>
@@ -484,14 +493,15 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, getAudioVersions, getAudioDocxUrl } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
+import MarkdownIt from 'markdown-it'
 
 const businessAuth = useBusinessAuthStore()
 
@@ -551,6 +561,21 @@ const editTranscript = ref('')
 const editSummary = ref('')
 const transcriptModified = ref(false)
 const summaryModified = ref(false)
+// V15.0 结构化总结
+const audioActiveTab = ref('segmented')
+
+// Markdown 渲染器 (lazy init)
+let _md = null
+function getMd() {
+  if (!_md) {
+    _md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: true })
+  }
+  return _md
+}
+function renderMd(text) {
+  if (!text) return ''
+  try { return getMd().render(String(text)) } catch { return String(text).replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+}
 let _originalTranscript = ''
 let _originalSummary = ''
 let _pollTimer = null
@@ -936,6 +961,13 @@ async function loadAudioDetail(id) {
         startPolling(id)
       } else {
         audioProcessing.value = false
+        // V15.0: 拉取结构化总结多版本
+        try {
+          const vRes = await getAudioVersions(id)
+          if (vRes.code === 0 && vRes.data) {
+            audioDetail.value = { ...audioDetail.value, ...vRes.data }
+          }
+        } catch { /* ignore */ }
       }
     } else {
       audioDetail.value = null
@@ -966,6 +998,13 @@ function startPolling(id) {
         if (res.data.audio_status === 'completed') {
           stopPolling()
           audioProcessing.value = false
+          // V15.0: 拉取结构化总结多版本
+          try {
+            const vRes = await getAudioVersions(id)
+            if (vRes.code === 0 && vRes.data) {
+              audioDetail.value = { ...audioDetail.value, ...vRes.data }
+            }
+          } catch { /* ignore */ }
           editTranscript.value = res.data.audio_transcript || ''
           editSummary.value = res.data.audio_summary || ''
           _originalTranscript = res.data.audio_transcript || ''
@@ -1441,6 +1480,29 @@ async function handleDelete(row) {
   border-radius: 6px;
   border: 1px solid #ebeef5;
 }
+.audio-markdown-content {
+  line-height: 1.8;
+  font-size: 13px;
+  color: #303133;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
+}
+.audio-markdown-content h1 { font-size: 18px; margin: 12px 0 8px; color: #1a3a5c; }
+.audio-markdown-content h2 { font-size: 16px; margin: 14px 0 6px; color: #1a3a5c; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+.audio-markdown-content h3 { font-size: 14px; margin: 10px 0 4px; }
+.audio-markdown-content h4 { font-size: 13px; margin: 8px 0 4px; }
+.audio-markdown-content ul, .audio-markdown-content ol { padding-left: 20px; margin: 6px 0; }
+.audio-markdown-content li { margin: 3px 0; }
+.audio-markdown-content p { margin: 6px 0; }
+.audio-markdown-content table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.audio-markdown-content th, .audio-markdown-content td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 12px; }
+.audio-markdown-content th { background: #f0f3f8; }
+.docx-download-link { margin-left: 8px; color: #409eff; text-decoration: none; font-size: 12px; }
+.docx-download-link:hover { text-decoration: underline; }
 .audio-transcript-section,
 .audio-summary-section {
   margin-top: 12px;

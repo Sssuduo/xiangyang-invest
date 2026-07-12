@@ -26,6 +26,12 @@ def _run_auto_migrations(app):
             ('audio_files', 'TEXT'),
             ('audio_archive', 'TEXT'),
             ('audio_archive_size', 'INTEGER'),
+            # V15.0 结构化总结
+            ('audio_transcript_segmented', 'TEXT'),
+            ('audio_transcript_clean', 'TEXT'),
+            ('audio_summary_structured', 'TEXT'),
+            ('audio_docx_path', 'VARCHAR(255)'),
+            ('audio_docx_size', 'INTEGER'),
         ],
         'work_progress': [
             ('import_user_id', 'INTEGER'),

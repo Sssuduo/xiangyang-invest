@@ -72,6 +72,28 @@ export function getAudioDocxUrl(id) {
   return `/api/admin/activity-ledger/${id}/audio/docx`
 }
 
+// 单独重新总结（不重跑 ASR）
+export function retryAudioSummary(id) {
+  return api.post(`/admin/activity-ledger/${id}/audio/retry-summary`)
+}
+
+// ---- 术语校正 ----
+export function getTermCorrections() {
+  return api.get('/api/admin/term-corrections')
+}
+export function createTermCorrection(data) {
+  return api.post('/api/admin/term-corrections', data)
+}
+export function updateTermCorrection(id, data) {
+  return api.put(`/api/admin/term-corrections/${id}`, data)
+}
+export function deleteTermCorrection(id) {
+  return api.delete(`/api/admin/term-corrections/${id}`)
+}
+export function applyTermCorrections(itemId) {
+  return api.post('/api/admin/term-corrections/apply', { item_id: itemId })
+}
+
 // 删除录音
 export function deleteAudio(id) {
   return api.delete(`/admin/activity-ledger/${id}/audio`)

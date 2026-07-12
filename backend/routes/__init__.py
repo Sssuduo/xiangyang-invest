@@ -26,8 +26,10 @@ admin_activity_bp = Blueprint('admin_activity', __name__, url_prefix='/api/admin
 admin_activity_export_bp = Blueprint('admin_activity_export', __name__, url_prefix='/api/admin')
 admin_activity_import_bp = Blueprint('admin_activity_import', __name__, url_prefix='/api/admin')
 
-# 活动台账 - 主资源 CRUD
+# 活动台账 - 主资源 CRUD (含术语校正)
 admin_activity_ledger_bp = Blueprint('admin_activity_ledger', __name__, url_prefix='/api/admin')
+# 术语校正 (活动台账 / 研判 / 清洁摘要)
+admin_term_correction_bp = Blueprint('admin_term_correction', __name__, url_prefix='/api/admin')
 # 活动台账 - 录音文件与结构化总结 (独立 blueprint 避免命名冲突)
 admin_activity_ledger_audio_bp = Blueprint('admin_activity_ledger_audio', __name__, url_prefix='/api/admin')
 
@@ -81,6 +83,7 @@ def register_routes(app):
     from routes import admin_activity_import as _admin_activity_import
     from routes import admin_activity_ledger as _admin_activity_ledger
     from routes import admin_activity_ledger_audio as _admin_activity_ledger_audio
+    from routes import admin_term_correction as _admin_term_correction
     from routes import admin_demand as _admin_demand
     from routes import admin_construction as _admin_construction
     from routes import admin_construction_import as _admin_construction_import
@@ -114,6 +117,7 @@ def register_routes(app):
     app.register_blueprint(admin_activity_import.admin_activity_import_bp)
     app.register_blueprint(admin_activity_ledger.admin_activity_ledger_bp)
     app.register_blueprint(admin_activity_ledger_audio.admin_activity_ledger_audio_bp)
+    app.register_blueprint(admin_term_correction.admin_term_correction_bp)
     app.register_blueprint(admin_demand.admin_demand_bp)
     app.register_blueprint(admin_construction.admin_construction_bp)
     app.register_blueprint(admin_construction_import.admin_construction_import_bp)

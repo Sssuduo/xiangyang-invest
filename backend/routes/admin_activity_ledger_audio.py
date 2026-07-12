@@ -158,6 +158,27 @@ def _run_async_processing(app, item_id):
                 pass
 
 
+def _run_summary_only(app, item_id):
+    """后台线程入口: 仅跑 summary pass (基于现有 audio_transcript)。"""
+    with app.app_context():
+        from models import ActivityLedger
+        from services.term_correction import apply_corrections
+        item = ActivityLedger.query.get(item_id)
+        if not item:
+            return
+        clean_transcript, _ = apply_corrections(item.audio_transcript or '', 'clean')
+        try:
+            _apply_summary_to_item(item, clean_transcript)
+        except Exception as e:
+            item.audio_summary = f'总结失败: {str(e)[:200]}'
+            from extensions import db
+            db.session.commit()
+        finally:
+            from extensions import db
+            item.audio_status = 'completed'
+            db.session.commit()
+
+
 def _apply_summary_to_item(item, full_text):
     """对台账 item 生成结构化总结 (segmented + clean + summary + docx)。可独立调用用于 resume。"""
     import logging, os
@@ -519,18 +540,9 @@ def retry_audio_summary(item_id):
     item.audio_status = 'processing'
     db.session.commit()
 
-    def _summary_only():
-        with current_app._get_current_object().app_context():
-            try:
-                _apply_summary_to_item(item, clean_transcript)
-            except Exception as e:
-                item.audio_summary = f'总结失败: {str(e)[:200]}'
-                db.session.commit()
-            finally:
-                item.audio_status = 'completed'
-                db.session.commit()
-
-    threading.Thread(target=_summary_only, daemon=True).start()
+    # 拉起后台线程跑 summary pass
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=_run_summary_only, args=(app_obj, item.id), daemon=True).start()
     return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'processing'}})
 
 

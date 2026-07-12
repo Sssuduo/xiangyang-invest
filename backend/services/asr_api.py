@@ -13,10 +13,11 @@ SenseVoice ASR HTTP API 服务（笔记本端运行）。
     GET  /transcribe?url=...&split_sec=600  调试：按 URL 取音频并转写
     POST /transcribe    form-data: {file, language=zh, split_sec=600}
 
-长音频策略：
-    ≤ split_sec：单次 SenseVoice 推理
-    >  split_sec：ffmpeg -f segment 切到临时目录 → 逐段推理 → \n 拼接 text
-    funasr-onnx 支持较长输入；split_sec 仅作截止阀防止 OOM / 极长阻塞
+输入策略：
+    任意封装（mp3 / m4a / flac / opus / amr / ogg）一路 ffmpeg 解析；
+    长音频（> split_sec）切片 → 逐段推理 → \\n 拼接文本。
+    切片阶段用『-f segment + 流复制』秒级完成，整体时间 ≈ 纯 FunASR 推理时间。
+    若 funasr-onnx 内部解码报非法头/unspecified internal error，降级为: 整段 PCM WAV 重编码 + 推理。
 """
 import os
 import json
@@ -41,6 +42,41 @@ _model = None
 _model_dir = os.environ.get('SENSEVOICE_MODEL_DIR',
                             r'C:\temp_sensevoice\models\iic\SenseVoiceSmall')
 
+# FFmpeg 路径（笔记本端有 FunASR 环境）
+_FFMPEG_CANDIDATES = [
+    os.environ.get('FFMPEG', ''),
+    os.environ.get('FFPROBE', ''),
+    r'C:\Users\苏铎\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe',
+    r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+    'ffmpeg',
+]
+_FFPROBE_CANDIDATES = [
+    os.environ.get('FFPROBE', ''),
+    r'C:\Users\苏铎\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffprobe.exe',
+    r'C:\Program Files\ffmpeg\bin\ffprobe.exe',
+    'ffprobe',
+]
+
+
+def _find_exe(candidates):
+    """从可执行文件候选列表中找第一个可调用者"""
+    for c in candidates:
+        if not c:
+            continue
+        if os.path.isabs(c):
+            if os.path.isfile(c):
+                return c
+        else:
+            import shutil as _shutil
+            found = _shutil.which(c)
+            if found:
+                return found
+    return candidates[-1]
+
+
+FFMPEG = _find_exe(_FFMPEG_CANDIDATES)
+FFPROBE = _find_exe(_FFPROBE_CANDIDATES)
+
 # 默认长音频切片长度（秒）；可在请求中覆盖
 DEFAULT_SPLIT_SEC = int(os.environ.get('ASR_SPLIT_SEC', '600'))
 
@@ -64,7 +100,7 @@ def _ffprobe_duration(filepath):
     """取音频时长，错误返回 0.0"""
     try:
         r = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            [FFPROBE, '-v', 'error', '-show_entries', 'format=duration',
              '-of', 'default=noprint_wrappers=1:nokey=1', filepath],
             capture_output=True, text=True, timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -76,21 +112,48 @@ def _ffprobe_duration(filepath):
     return 0.0
 
 
-def _split_audio(input_path, output_dir, seg_sec):
-    """按 seg_sec 秒切片；返回排序后的分段路径列表；失败返回 []"""
+def _to_pcm_wav(input_path, output_path, sr=16000):
+    """把任意音频重编码为 PCM WAV 16-bit mono @ sr。
+
+    用于 funasr-onnx 无法直接解码原 mp3 时的降级链路。
+    代价高（秒到分钟级），仅在必要时调用。失败抛 RuntimeError。
+    """
+    cmd = [FFMPEG, '-y', '-i', input_path,
+           '-acodec', 'pcm_s16le', '-ac', '1', '-ar', str(sr),
+           '-vn', '-map_metadata', '-1',
+           output_path]
+    try:
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+    except FileNotFoundError:
+        raise RuntimeError('需要 ffmpeg 才能转 PCM')
+    if r.returncode != 0 or not os.path.exists(output_path):
+        raise RuntimeError(f'ffmpeg PCM 转写失败: {r.stderr[-300:] if r.stderr else "rc=%d" % r.returncode}')
+
+
+def _split_stream(input_path, output_dir, seg_sec):
+    """按 seg_sec 秒切片 PCM WAV，输出流复制 wav。
+
+    若输入本身是 wav PCM，使用 keycopy + 分段同时切到 16k 16-bit mono；
+    否则先 reencode 一次再切片（仅 mp3 走此分支），确保每段都能正确解码。
+    """
     prefix = uuid.uuid4().hex[:8]
     out_pat = os.path.join(output_dir, f'_seg_{prefix}_%03d.wav')
-    cmd = [
-        'ffmpeg', '-y', '-i', input_path,
-        '-f', 'segment', '-segment_time', str(seg_sec),
-        '-c', 'copy', '-reset_timestamps', '1',
-        out_pat,
-    ]
+    cmd = [FFMPEG, '-y', '-i', input_path]
+    # 强制转 PCM 16k mono 解码成 PCM 后分段 - segmentation 在 PCM 上无关键帧限制
+    cmd += ['-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000']
+    cmd += ['-f', 'segment', '-segment_time', str(seg_sec),
+            '-reset_timestamps', '1', '-map', '0',
+            out_pat]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
         if r.returncode != 0:
-            logger.error(f'切片失败：{r.stderr[-300:] if r.stderr else ""}')
+            logger.error(f'流复制切片失败：{r.stderr[-300:] if r.stderr else ""}')
             return []
         segs = sorted(glob.glob(os.path.join(output_dir, f'_seg_{prefix}_*.wav')))
         logger.info(f'切片完成：{len(segs)} 段')
@@ -101,7 +164,7 @@ def _split_audio(input_path, output_dir, seg_sec):
 
 
 def _infer_single(filepath, language='zh'):
-    """单段推理：返回文本"""
+    """单段推理：直接喂 funasr-onnx，内部解码会做 VAD。"""
     from funasr_onnx.utils.postprocess_utils import rich_transcription_postprocess
     model = get_model()
     res = model([filepath], language=language, use_itn=True)
@@ -109,36 +172,53 @@ def _infer_single(filepath, language='zh'):
 
 
 def transcribe_file(filepath, language='zh', split_sec=DEFAULT_SPLIT_SEC):
-    """核心转写：长音频切片 → 分段推理 → 拼接"""
+    """核心转写。
+
+    优先路径：流复制切片 → 逐段 FunASR 推理 → \\n 拼接。
+    任意 RuntimeError（主要是 funasr 解码异常）触发降级路径：
+    整段 PCM WAV → 重新切片 → 推理。
+    """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f'音频文件不存在：{filepath}')
-    duration = _ffprobe_duration(filepath)
 
+    duration = _ffprobe_duration(filepath)
     logger.info(f'transcribe_file：{os.path.basename(filepath)}，{duration:.0f}s，split_sec={split_sec}')
 
-    if duration <= split_sec:
-        return _infer_single(filepath, language)
+    def _pipeline(src):
+        """流复制切 + 推理；解码异常会抛 RuntimeError"""
+        if duration <= split_sec:
+            return _infer_single(src, language)
+        temp_dir = tempfile.mkdtemp(prefix='asr_long_')
+        try:
+            segs = _split_stream(src, temp_dir, split_sec)
+            if not segs:
+                return _infer_single(src, language)  # 切不掉赌整段
+            parts = []
+            for i, seg in enumerate(segs):
+                logger.info(f'推理段 [{i + 1}/{len(segs)}]：{os.path.basename(seg)}')
+                try:
+                    parts.append(_infer_single(seg, language))
+                except Exception as e:
+                    logger.error(f'推理段 [{i + 1}/{len(segs)}] 失败：{e}')
+                    parts.append(f'[第{i + 1}段识别失败]')
+            return '\n'.join(parts)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # 长音频切片
-    temp_dir = tempfile.mkdtemp(prefix='asr_long_')
     try:
-        segs = _split_audio(filepath, temp_dir, split_sec)
-        if not segs:
-            # 切片失败：单次赌一把（可能 OOM，但至少不挂）
-            logger.warning('切片失败，回退到整段推理')
-            return _infer_single(filepath, language)
-
-        parts = []
-        for i, seg in enumerate(segs):
-            logger.info(f'推理段 [{i + 1}/{len(segs)}]：{os.path.basename(seg)}')
+        return _pipeline(filepath)
+    except Exception as primary_err:
+        # 降级：把原文件一次性重编码为 PCM 后再走一次
+        logger.warning(f'主路径失败({type(primary_err).__name__}: {str(primary_err)[:250]})，降级 PCM 重编码')
+        pcm_path = tempfile.mkstemp(suffix='.wav', prefix='asr_pcm_fallback_')[1]
+        try:
+            _to_pcm_wav(filepath, pcm_path)
+            return _pipeline(pcm_path)
+        finally:
             try:
-                parts.append(_infer_single(seg, language))
-            except Exception as e:
-                logger.error(f'推理段 [{i + 1}/{len(segs)}] 失败：{e}')
-                parts.append(f'[第{i + 1}段识别失败]')
-        return '\n'.join(parts)
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+                os.remove(pcm_path)
+            except OSError:
+                pass
 
 
 @app.route('/info', methods=['GET'])
@@ -222,6 +302,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=5002)
     parser.add_argument('--host', default='0.0.0.0')
+    parser.add_argument('--threaded', action='store_true', default=True, help='启用多线程（大文件上传必须）')
     args = parser.parse_args()
-    logger.info(f'Starting SenseVoice ASR API on {args.host}:{args.port}')
-    app.run(host=args.host, port=args.port, debug=False, threaded=False)
+    logger.info(f'Starting SenseVoice ASR API on {args.host}:{args.port} threaded={args.threaded}')
+    app.run(host=args.host, port=args.port, debug=False, threaded=args.threaded)

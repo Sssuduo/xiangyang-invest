@@ -65,17 +65,20 @@ def _get_audio_duration(filepath):
 def _split_audio_ffmpeg(input_path, output_dir, segment_duration=SEGMENT_DURATION):
     """FFmpeg 按 segment_duration 秒切分长音频到 output_dir，返回绝对路径升序列表。
 
-    切分失败返回 []；调用方需对返回值判空。
+    失败返回 []；调用方需对返回值判空。
+
+    仅对 .wav 走流复制；对 .mp3/.m4a 等封装格式重编码为 PCM 后再切，
+    避免 -c copy 因帧边界不对齐造成解码异常。输出一律为 WAV PCM 16k/mono。
     """
     import subprocess
+    ext = (os.path.splitext(input_path)[1] or '.wav').lower()
     prefix = uuid.uuid4().hex[:8]
-    output_pattern = os.path.join(output_dir, f'_seg_{prefix}_%03d.wav')
-    cmd = [
-        'ffmpeg', '-y', '-i', input_path,
-        '-f', 'segment', '-segment_time', str(segment_duration),
-        '-c', 'copy', '-reset_timestamps', '1',
-        output_pattern,
-    ]
+    out_pat = os.path.join(output_dir, f'_seg_{prefix}_%03d.wav')
+    cmd = ['ffmpeg', '-y', '-i', input_path]
+    if ext != '.wav':
+        cmd += ['-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1']
+    cmd += ['-f', 'segment', '-segment_time', str(segment_duration),
+            '-reset_timestamps', '1', out_pat]
     try:
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600,

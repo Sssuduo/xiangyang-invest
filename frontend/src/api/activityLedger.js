@@ -94,6 +94,11 @@ export function applyTermCorrections(itemId) {
   return api.post('/api/admin/term-corrections/apply', { item_id: itemId })
 }
 
+// 取消正在进行的识别/总结
+export function cancelAudioProcessing(id) {
+  return api.post(`/admin/activity-ledger/${id}/audio/cancel`)
+}
+
 // 删除录音
 export function deleteAudio(id) {
   return api.delete(`/admin/activity-ledger/${id}/audio`)

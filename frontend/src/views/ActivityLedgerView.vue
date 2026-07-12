@@ -402,6 +402,7 @@
                     <el-icon class="is-loading" :size="24"><Loading /></el-icon>
                     <span>正在后台转写中，请稍候...（页面可关闭，后台继续处理）</span>
                     <el-progress :percentage="100" :indeterminate="true" :show-text="false" style="width: 100%; max-width: 400px;" />
+                    <el-button size="small" type="danger" text style="margin-top: 8px;" @click="handleCancelAudio">取消转写</el-button>
                   </div>
 
                   <!-- 失败状态 -->
@@ -542,7 +543,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -625,6 +626,23 @@ function formatEstimate(seconds) {
 
 function scopeLabel(scope) {
   return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
+}
+
+// 取消正在进行的识别/总结
+async function handleCancelAudio() {
+  if (!editingId.value) return
+  try {
+    const res = await cancelAudioProcessing(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success('已取消处理')
+      audioStatus.value = 'cancelled'
+      audioProcessing.value = false
+    } else {
+      ElMessage.error(res.message || '取消失败')
+    }
+  } catch (err) {
+    ElMessage.error('取消失败：' + (err.message || ''))
+  }
 }
 
 // 重新总结（不重跑 ASR）

@@ -42,9 +42,18 @@ def _set_audio_files(item, files_list):
 
 
 def _resolve_audio_path_by_url(url):
-    """根据文件 URL 解析文件绝对路径"""
+    """根据文件 URL 解析文件绝对路径。
+
+    DB 里 URL 形如 /static/uploads/audio/20260712_xxx.mp3。
+    直接派生自 Config.UPLOAD_FOLDER：
+        UPLOAD_FOLDER = <project_root>/static/uploads
+        dirname(dirname(UPLOAD_FOLDER)) = <project_root>
+    加 url.lstrip('/') 拼接得到正确绝对路径，避免早年旧代码中
+    "static/static/uploads" 重复拼接导致录音文件找不到、状态被标记 error。
+    """
     file_rel = url.lstrip('/')
-    return os.path.join(os.path.dirname(Config.UPLOAD_FOLDER), file_rel)
+    project_root = os.path.dirname(os.path.dirname(Config.UPLOAD_FOLDER))
+    return os.path.join(project_root, file_rel)
 
 
 def _run_async_processing(app, item_id):

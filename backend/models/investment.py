@@ -293,13 +293,20 @@ class ActivityLedger(db.Model):
     linked_project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
     linked_activity_id = db.Column(db.Integer, db.ForeignKey('investment_activities.id'), nullable=True)
     # 录音文件相关字段
-    audio_file = db.Column(db.Text, nullable=True)       # 原始录音文件路径（可在线播放）
-    audio_archive = db.Column(db.Text, nullable=True)     # 夜间压缩包路径（.zip，可下载，不可在线播放）
+    # audio_files: JSON数组 [{url, name, duration, size, status: 'ok'|'error', error: ''}, ...]
+    audio_files = db.Column(db.Text, default='[]')        # 多录音文件列表（可在线播放）
+    audio_archive = db.Column(db.Text, nullable=True)     # 夜间压缩包路径（所有文件合并 .zip，可下载）
     audio_archive_size = db.Column(db.Integer, nullable=True) # 压缩包大小（字节）
-    audio_transcript = db.Column(db.Text, nullable=True)  # 语音转文字结果
-    audio_summary = db.Column(db.Text, nullable=True)     # 文字内容总结
+    audio_transcript = db.Column(db.Text, nullable=True)  # 语音转文字结果（多文件合并后全文）
+    audio_summary = db.Column(db.Text, nullable=True)     # AI 总结（基于合并后全文）
     audio_status = db.Column(db.String(20), default=None) # pending/processing/completed/failed
-    audio_duration = db.Column(db.Float, nullable=True)   # 录音时长(秒)
+    audio_duration = db.Column(db.Float, nullable=True)   # 录音总时长(秒)（所有文件时长之和）
+    # 向后兼容：保留旧字段样式兼容引用
+    @property
+    def audio_file(self):
+        """兼容旧代码：返回第一个文件 URL 或 None"""
+        files = json.loads(self.audio_files or '[]')
+        return files[0]['url'] if files else None
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -319,19 +326,24 @@ class ActivityLedger(db.Model):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }
-        # 录音相关字段（可选返回）
-        if self.audio_file:
-            result['audio_file'] = self.audio_file
+        # 录音相关字段（始终返回状态，用于表格显示）
+        audio_files_list = json.loads(self.audio_files or '[]')
+        result['audio_files'] = audio_files_list
+        result['audio_file'] = audio_files_list[0]['url'] if audio_files_list else None
+        result['audio_status'] = self.audio_status
+        if audio_files_list:
             result['audio_transcript'] = self.audio_transcript
             result['audio_summary'] = self.audio_summary
-            result['audio_status'] = self.audio_status
             result['audio_duration'] = self.audio_duration
+            result['audio_archive'] = self.audio_archive
+            result['audio_archive_size'] = self.audio_archive_size
         return result
 
     def to_detail_dict(self):
         """完整详情（含录音转写和总结）"""
         d = self.to_dict()
-        d['audio_file'] = self.audio_file
+        audio_files_list = json.loads(self.audio_files or '[]')
+        d['audio_file'] = audio_files_list[0]['url'] if audio_files_list else None
         d['audio_archive'] = self.audio_archive
         d['audio_archive_size'] = self.audio_archive_size
         d['audio_transcript'] = self.audio_transcript

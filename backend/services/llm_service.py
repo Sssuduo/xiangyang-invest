@@ -1,3 +1,4 @@
+import json
 import requests
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -454,3 +455,61 @@ def build_messages(user_input, prompt_template=None, system_prompt=None):
         full_prompt = user_input
     messages.append({'role': 'user', 'content': full_prompt})
     return messages
+
+
+def stream_llm(model_config, messages, temperature=None, max_tokens=None):
+    """流式调用大模型，yield 文本增量（token/片段）。
+
+    支持 OpenAI 兼容格式（custom/deepseek/qwen/glm）的 SSE 透传；
+    文心无原生流式，降级为一次性返回全文。
+
+    Args:
+        model_config: dict with api_base_url, api_key, model_name, provider
+        messages: list of {"role": ..., "content": ...}
+        temperature / max_tokens: 可选
+
+    Yields:
+        str: 文本增量
+    """
+    provider = model_config.get('provider', 'custom')
+
+    if provider == 'wenxin':
+        # 文心无原生流式，降级为整段返回
+        text = _call_wenxin(model_config, messages, temperature, max_tokens)
+        yield text
+        return
+
+    base_url = model_config['api_base_url'].rstrip('/')
+    url = f'{base_url}/chat/completions'
+    headers = {
+        'Authorization': f'Bearer {model_config["api_key"]}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'model': model_config['model_name'],
+        'messages': messages,
+        'temperature': temperature if temperature is not None else 0.7,
+        'max_tokens': max_tokens if max_tokens is not None else 4096,
+        'stream': True,
+    }
+    if provider == 'qwen':
+        payload['enable_search'] = True
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=300, stream=True, verify=True)
+    resp.raise_for_status()
+    for raw in resp.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode('utf-8') if isinstance(raw, bytes) else raw
+        if not line.startswith('data:'):
+            continue
+        data = line[5:].strip()
+        if data == '[DONE]':
+            break
+        try:
+            obj = json.loads(data)
+            delta = obj['choices'][0]['delta'].get('content', '')
+            if delta:
+                yield delta
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            continue

@@ -97,3 +97,35 @@ class BusinessUser(UserMixin, db.Model):
             'permissions': self.get_permissions(),
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+
+class ClientUser(db.Model):
+    """C 端 App 内部用户（账号密码登录，token 鉴权，绑定 AI 对话历史）。
+
+    与 AdminUser / BusinessUser 完全独立，仅持有只读权限，不暴露任何写接口。
+    """
+    __tablename__ = 'client_users'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(256), nullable=False)
+    display_name = db.Column(db.String(128))
+    token = db.Column(db.String(64), unique=True, nullable=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password, method='scrypt')
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'display_name': self.display_name,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }

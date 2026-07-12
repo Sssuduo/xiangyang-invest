@@ -169,36 +169,42 @@ def _compress_single_file(input_path, output_dir):
         return None
 
 
-def compress_to_archive(input_path, upload_folder):
+def compress_to_archive(file_paths, upload_folder):
     """
-    将原始音频文件压缩为 Opus 并打包为 zip 压缩包
+    将多个音频文件压缩为 Opus 并打包为 zip 压缩包
 
     压缩包保存在 static/uploads/audio/archives/ 目录下。
 
     Args:
-        input_path: 原始文件绝对路径
+        file_paths: 原始文件绝对路径列表
         upload_folder: 上传根目录
 
     Returns:
         dict: { 'archive_path': str, 'archive_url': str, 'archive_size': int }
         或 None（压缩失败时）
     """
+    import zipfile
+
     archive_dir = os.path.join(upload_folder, 'audio', 'archives')
     os.makedirs(archive_dir, exist_ok=True)
 
-    # 第一步：压缩为 Opus
     temp_dir = os.path.join(upload_folder, 'audio', '_temp_compress')
     os.makedirs(temp_dir, exist_ok=True)
-    compressed_path = _compress_single_file(input_path, temp_dir)
 
-    if not compressed_path:
+    compressed_files = []
+    for fp in file_paths:
+        cp = _compress_single_file(fp, temp_dir)
+        if cp:
+            compressed_files.append(cp)
+
+    if not compressed_files:
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
         return None
 
-    # 第二步：打包为 zip
+    # 打包为 zip
     date_prefix = datetime.now().strftime('%Y%m%d')
     unique_id = uuid.uuid4().hex[:8]
     zip_filename = f'{date_prefix}_{unique_id}_audio.zip'
@@ -206,14 +212,15 @@ def compress_to_archive(input_path, upload_folder):
 
     try:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(compressed_path, os.path.basename(compressed_path))
+            for cp in compressed_files:
+                zf.write(cp, os.path.basename(cp))
         archive_size = os.path.getsize(zip_path)
         archive_url = f'/static/uploads/audio/archives/{zip_filename}'
 
-        orig_size = os.path.getsize(input_path)
+        total_orig = sum(os.path.getsize(fp) for fp in file_paths)
         logger.info(
-            f'归档完成：{os.path.basename(input_path)} '
-            f'{orig_size / 1024 / 1024:.1f}MB → {archive_size / 1024 / 1024:.1f}MB zip'
+            f'归档完成：{len(file_paths)} 个文件 '
+            f'{total_orig / 1024 / 1024:.1f}MB → {archive_size / 1024 / 1024:.1f}MB zip'
         )
 
         return {
@@ -226,30 +233,37 @@ def compress_to_archive(input_path, upload_folder):
         return None
     finally:
         # 清理临时压缩文件
+        for cp in compressed_files:
+            try:
+                if os.path.exists(cp):
+                    os.remove(cp)
+            except Exception:
+                pass
         try:
-            if os.path.exists(compressed_path):
-                os.remove(compressed_path)
             shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
 
 
-def run_night_compression(threshold_bytes=50 * 1024 * 1024):
+def run_night_compression(threshold_bytes=0):
     """
-    夜间批量压缩：扫描所有超过阈值的原始录音文件，压缩并打包
+    夜间批量压缩：扫描所有录音文件，压缩所有文件为 zip
 
     Args:
-        threshold_bytes: 文件大小阈值（字节），默认 50MB
+        threshold_bytes: 文件大小阈值（字节），默认 0 = 压缩所有文件
 
     Returns:
         dict: { 'processed': int, 'compressed': int, 'skipped': int, 'errors': int }
     """
+    import json
     from models import ActivityLedger
     from extensions import db
     from config import Config
 
     items = ActivityLedger.query.filter(
-        ActivityLedger.audio_file.isnot(None)
+        ActivityLedger.audio_files.isnot(None),
+        ActivityLedger.audio_files != '[]',
+        ActivityLedger.audio_files != ''
     ).all()
 
     upload_folder = Config.UPLOAD_FOLDER
@@ -258,37 +272,51 @@ def run_night_compression(threshold_bytes=50 * 1024 * 1024):
     for item in items:
         result['processed'] += 1
 
-        # 已有压缩包的跳过
-        if item.audio_archive:
-            result['skipped'] += 1
-            continue
-
-        # 找到原始文件
         try:
-            file_rel = item.audio_file.lstrip('/')
-            file_abs = os.path.join(os.path.dirname(upload_folder), file_rel)
+            files = json.loads(item.audio_files or '[]')
         except Exception:
             result['errors'] += 1
             continue
 
-        if not os.path.exists(file_abs):
-            logger.warning(f'夜间压缩：文件不存在 {file_abs}')
+        if not files:
             result['skipped'] += 1
             continue
 
-        file_size = os.path.getsize(file_abs)
-        if file_size < threshold_bytes:
+        # 收集存在的文件
+        file_paths = []
+        for af in files:
+            try:
+                url = af['url']
+                file_rel = url.lstrip('/')
+                file_abs = os.path.join(os.path.dirname(upload_folder), file_rel)
+                if os.path.exists(file_abs):
+                    if threshold_bytes <= 0 or os.path.getsize(file_abs) >= threshold_bytes:
+                        file_paths.append(file_abs)
+            except Exception:
+                pass
+
+        if not file_paths:
             result['skipped'] += 1
             continue
+
+        # 清除旧压缩包
+        if item.audio_archive:
+            try:
+                archive_rel = item.audio_archive.lstrip('/')
+                archive_abs = os.path.join(os.path.dirname(upload_folder), archive_rel)
+                if os.path.exists(archive_abs):
+                    os.remove(archive_abs)
+            except OSError:
+                pass
 
         # 执行压缩
-        archive_result = compress_to_archive(file_abs, upload_folder)
+        archive_result = compress_to_archive(file_paths, upload_folder)
         if archive_result:
             item.audio_archive = archive_result['archive_url']
             item.audio_archive_size = archive_result['archive_size']
             db.session.commit()
             result['compressed'] += 1
-            logger.info(f'夜间压缩成功：id={item.id}，{file_size / 1024 / 1024:.0f}MB')
+            logger.info(f'夜间压缩成功：id={item.id}，{len(file_paths)}个文件')
         else:
             result['errors'] += 1
 

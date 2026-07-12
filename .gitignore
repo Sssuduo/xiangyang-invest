@@ -63,3 +63,8 @@ temp/
 *.pem
 id_rsa*
 deploy_temp_key*
+
+# ASR front scripts (notebook-only, don't infect git)
+start_asr_api.bat
+scripts/asr_service.sh
+scripts/asr_tunnel_robust.sh

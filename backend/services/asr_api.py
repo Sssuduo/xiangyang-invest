@@ -87,7 +87,10 @@ FFMPEG = _find_exe(_FFMPEG_CANDIDATES)
 FFPROBE = _find_exe(_FFPROBE_CANDIDATES)
 
 # 默认长音频切片长度（秒）；可在请求中覆盖
-DEFAULT_SPLIT_SEC = int(os.environ.get('ASR_SPLIT_SEC', '300'))  # 默认 5 分钟段，平衡切片数与每段耗时
+# 实验证据：funasr-onnx 在单段 ≤30 秒时可完整识别 (~90 字/段)；
+#           单段 ≥60 秒后模型输出随时长急剧劣化 (300s 段只出 10 字乱码)。
+#           此常数与 SenseVoice 训练时每句 30s 的窗口对齐。
+DEFAULT_SPLIT_SEC = int(os.environ.get('ASR_SPLIT_SEC', '30'))  # 默认 30 秒段，与训练窗口对齐
 INFER_WORKERS = int(os.environ.get('ASR_INFER_WORKERS', '2'))    # 推理并发的 worker 数 (受限于 CPU/内存)
 
 # 中文路径安全
@@ -193,29 +196,72 @@ def _infer_in_subproc(args_tuple):
 
     参数打包成 tuple 因为 Pool.map 要求可序列化参数。
     (filepath, language) -> text
+
+    重要防御：对调用整体 try/except。因为 funasr-onnx 在某些段（
+    常见的如静音段 + VAD 判定静音 → 前端 lfr_cmvn 空矩阵 → apply_lfr 内部
+    IndexError "index 0 is out of bounds for axis 0 with size 0") 里会崩溃，
+    而本防御把这段变成空字符串，不冒泡成 HTTP 500。
     """
+    # 子进程里重新配 logger（spawn 子进程不继承父进程 logging 配置）
+    import logging as _logging
+    _sub_logger = _logging.getLogger('asr_subproc')
+    if not _sub_logger.handlers:
+        _h = _logging.StreamHandler()
+        _h.setFormatter(_logging.Formatter('%(asctime)s %(levelname)s [subproc %(process)d] %(message)s'))
+        _sub_logger.addHandler(_h)
+        _sub_logger.setLevel(_logging.INFO)
+
     filepath, language = args_tuple
-    from funasr_onnx.utils.postprocess_utils import rich_transcription_postprocess
-    model = get_model()
-    res = model([filepath], language=language, use_itn=True)
-    return rich_transcription_postprocess(res[0]) if (res and len(res) > 0) else ''
+    try:
+        _sub_logger.info(f'子进程推理开始：{os.path.basename(filepath)}')
+        from funasr_onnx.utils.postprocess_utils import rich_transcription_postprocess
+        _sub_logger.info('  importing model...')
+        model = get_model()
+        _sub_logger.info('  model loaded, calling model([filepath])...')
+        res = model([filepath], language=language, use_itn=True)
+        # 防御：某些段 funasr-onnx 返回空数组 (例如静音段 + VAD 全裁)，不索引 res[0]
+        if not (res and len(res) > 0):
+            _sub_logger.warning(f'推理返回空数组(段静音？)：{os.path.basename(filepath)}')
+            return ''
+        text = rich_transcription_postprocess(res[0])
+        _sub_logger.info(f'子进程推理完成：{os.path.basename(filepath)}，{len(text)}字')
+        return text
+    except Exception as e:
+        # 防御性兜底：funasr-onnx 模型内部报错不能冒泡成 HTTP 500——把该段变成空串，
+        # 让调用方（transcribe_file）依然能拿到形如 "...\n\n..." 的拼接结果，
+        # 不该段静音不会摧毁整段多文件转写结果。
+        _sub_logger.error(f'子进程推理异常，已吞掉返回空串：{os.path.basename(filepath)}，{type(e).__name__}: {str(e)[:500]}')
+        import traceback
+        _sub_logger.error('traceback:')
+        for line in traceback.format_exc().splitlines():
+            _sub_logger.error('  ' + line)
+        return ''
 
 
 def transcribe_file(filepath, language='zh', split_sec=DEFAULT_SPLIT_SEC):
     """核心转写。
 
-    链路: 统一 PCM WAV → 切片 → 进程池并发推理 → \n 拼接文本。
+    链路: 输入 → PCM  (仅非 WAV 封装格式) → 切片 → 进程池并发推理 → \n 拼接文本。
     HTTP 线程不被阻塞。
+
+    关键设计：
+      - 非 WAV 封装 (mp3/m4a/opus/amr/flac) 在入口强制做 PCM WAV 重编码，
+        把"mp3 帧边界/采样格式不对齐"这个导致 funasr-onnx 在某些段
+        抛 IndexError / 返回空数组 的问题消灭。
+      - 已经是 WAV 的输入 (16k/mono/16bit PCM) _不再_ 强制重编码：
+        对长段 WAV 做二次 PCM 重编码已经被证实会严重破坏模型推理结果
+        (60 段能出 271 字的输入，600s PCM 重编码后只出 7 字)；
+        静音/空数组防御已全部下沉到 _infer_in_subproc 的 try/except 里，
+        因此可以放心直接给 funasr 消费。
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f'音频文件不存在：{filepath}')
 
-    ext = (os.path.splitext(filepath)[1] or '.wav').lower()
-
     work_path = filepath
     tmp_pcm = None
+    # 仅对非 PCM 封装格式做一次重编码；WAV 输入直接走模型
+    ext = (os.path.splitext(filepath)[1] or '').lower()
     if ext != '.wav':
-        # 非 wav: 重编码为 PCM WAV 一次性解决
         tmp_pcm = tempfile.mkstemp(suffix='.wav', prefix='asr_pcm_')[1]
         _to_pcm_wav(filepath, tmp_pcm)
         work_path = tmp_pcm
@@ -225,9 +271,10 @@ def transcribe_file(filepath, language='zh', split_sec=DEFAULT_SPLIT_SEC):
         logger.info(f'transcribe_file：{os.path.basename(work_path)}，{duration:.0f}s，split_sec={split_sec}，workers={INFER_WORKERS}')
 
         if duration <= split_sec:
-            # 单段: 扔进进程池
+            # 单段: 扔进进程池 — 加 600s 超时保护
             pool = _get_pool()
-            text = pool.apply(_infer_in_subproc, ((work_path, language),))
+            job = pool.apply_async(_infer_in_subproc, ((work_path, language),))
+            text = job.get(timeout=600)
             return text
 
         # 长音频: 切片后并发推理
@@ -236,11 +283,14 @@ def transcribe_file(filepath, language='zh', split_sec=DEFAULT_SPLIT_SEC):
             segs = _split_stream(work_path, temp_dir, split_sec)
             if not segs:
                 pool = _get_pool()
-                return pool.apply(_infer_in_subproc, ((work_path, language),))
+                job = pool.apply_async(_infer_in_subproc, ((work_path, language),))
+                return job.get(timeout=600)
 
             pool = _get_pool()
             tasks = [(seg, language) for seg in segs]
-            parts = pool.map(_infer_in_subproc, tasks)
+            job_async = pool.map_async(_infer_in_subproc, tasks)
+            # 每 300s 段模型推理约 60-120s，留足 600s 超时
+            parts = job_async.get(timeout=600)
             return '\n'.join(parts)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

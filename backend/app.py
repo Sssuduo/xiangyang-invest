@@ -23,6 +23,7 @@ def _run_auto_migrations(app):
     # 各表缺失列映射：{表名: [(列名, 列类型), ...]}
     MIGRATIONS = {
         'activity_ledger': [
+            ('audio_files', 'TEXT'),
             ('audio_archive', 'TEXT'),
             ('audio_archive_size', 'INTEGER'),
         ],
@@ -107,6 +108,14 @@ def create_app(config_name=None):
         with app.app_context():
             from seed_data import init_database
             init_database(app)
+
+        # 启动夜间压缩调度器（每天凌晨 2:00-3:00 自动压缩音频文件）
+        try:
+            from services.night_scheduler import start_night_scheduler
+            start_night_scheduler(app)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
 
     return app
 

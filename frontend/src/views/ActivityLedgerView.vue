@@ -64,16 +64,12 @@
               <span v-else class="no-data">-</span>
             </template>
           </el-table-column>
-          <!-- TODO: 录音列暂时禁用，待后续迭代完善后重新启用
-          <el-table-column label="录音" width="60" align="center">
-            <template #default>
-              <span class="no-data">-</span>
-            </template>
-          </el-table-column>
-          -->
-          <el-table-column label="录音" width="60" align="center">
-            <template #default>
-              <span class="no-data">-</span>
+          <el-table-column label="录音" width="100" align="center">
+            <template #default="{ row }">
+              <el-icon v-if="row.audio_status === 'processing'" size="16" style="color: #e6a23c;"><Loading /></el-icon>
+              <el-tag v-else-if="row.audio_status === 'completed'" size="small" type="success" effect="plain">已转写</el-tag>
+              <el-tag v-else-if="row.audio_files && row.audio_files.length > 0" size="small" type="info" effect="plain">{{ row.audio_files.length }}个文件</el-tag>
+              <span v-else class="no-data">-</span>
             </template>
           </el-table-column>
           <el-table-column label="标签" width="180">
@@ -164,16 +160,23 @@
             </template>
             <span v-else class="no-data">未关联</span>
           </el-descriptions-item>
-          <!-- TODO: 录音信息暂时禁用，待后续迭代完善后重新启用
-          <template v-if="viewItem.audio_file">
+          <template v-if="viewItem.audio_files && viewItem.audio_files.length > 0">
             <el-descriptions-item label="会议录音" :span="2">
               <div class="view-audio-card">
-                <div class="view-audio-row">
-                  <audio :src="viewItem.audio_file" controls class="view-audio-player" />
-                  <el-tag size="small" type="info" effect="plain" v-if="viewItem.audio_duration">{{ formatDuration(viewItem.audio_duration) }}</el-tag>
+                <div v-for="(af, idx) in viewItem.audio_files" :key="idx" style="margin-bottom: 6px;">
+                  <div class="view-audio-row">
+                    <span style="font-size: 12px; color: #909399; min-width: 60px;">{{ af.name || '录音'+(idx+1) }}</span>
+                    <audio :src="af.url" controls class="view-audio-player" />
+                    <el-tag v-if="af.duration" size="small" type="info" effect="plain">{{ formatDuration(af.duration) }}</el-tag>
+                  </div>
+                </div>
+                <div style="margin-top: 4px;">
                   <el-tag v-if="viewItem.audio_archive" size="small" type="warning" effect="plain">
                     <a :href="viewItem.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包</a>
                   </el-tag>
+                  <el-tag v-if="viewItem.audio_status === 'processing'" size="small" type="warning" effect="plain">转写中...</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'completed'" size="small" type="success" effect="plain">已完成</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'failed'" size="small" type="danger" effect="plain">转写失败</el-tag>
                 </div>
                 <div v-if="viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
                   <div class="audio-section-header">
@@ -191,7 +194,6 @@
               </div>
             </el-descriptions-item>
           </template>
-          -->
           <el-descriptions-item label="写入时间">{{ fmtDt(viewItem.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="最后更新">{{ fmtDt(viewItem.updated_at) }}</el-descriptions-item>
         </el-descriptions>
@@ -281,7 +283,7 @@
             </div>
           </el-form-item>
 
-          <!-- TODO: 录音上传模块暂时禁用，待后续迭代完善后重新启用
+            <!-- 录音上传模块 -->
           <template v-if="editMode === 'edit' && editingId">
             <div class="section-header">
               <span class="section-icon"><el-icon><Headset /></el-icon></span>
@@ -294,17 +296,140 @@
             </div>
             <el-form-item label="录音文件">
               <div class="audio-section">
+                <!-- 已上传的录音文件列表（多文件）-->
+                <div v-if="audioFile" class="audio-loaded">
+                  <div v-for="(af, idx) in audioFiles" :key="idx" class="audio-player-card">
+                    <div class="audio-info">
+                      <el-icon><Headset /></el-icon>
+                      <span class="audio-name">{{ af.name || '录音' + (idx+1) }}</span>
+                      <span v-if="af.duration" class="audio-size">{{ formatDuration(af.duration) }}</span>
+                      <el-tag v-if="af.status === 'ok'" size="small" type="success" effect="plain">已识别</el-tag>
+                      <el-tag v-else-if="af.status === 'error'" size="small" type="danger" effect="plain">识别失败</el-tag>
+                      <el-tag v-else-if="af.status === 'pending'" size="small" type="info" effect="plain">待识别</el-tag>
+                    </div>
+                    <div class="audio-actions">
+                      <audio :src="af.url" controls class="mini-audio-player" />
+                      <el-popconfirm title="确定删除该录音文件吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteSingleFile(idx)">
+                        <template #reference>
+                          <el-button size="small" type="danger" :icon="Delete" circle />
+                        </template>
+                      </el-popconfirm>
+                    </div>
+                  </div>
+          <div v-if="audioFiles.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+            <el-tag v-if="audioDetail?.audio_archive" size="small" type="warning" effect="plain">
+              <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
+            </el-tag>
+            <template v-if="audioStatus !== 'processing'">
+              <el-upload
+                :show-file-list="false"
+                :auto-upload="false"
+                :on-change="onAudioFileChange"
+                accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+              >
+                <el-button size="small" type="primary" text>
+                  <el-icon><Plus /></el-icon> 追加录音文件
+                </el-button>
+              </el-upload>
+              <el-button v-if="audioStatus === 'failed'" size="small" type="warning" @click="handleRetryAudio">
+                <el-icon><RefreshRight /></el-icon> 重新识别
+              </el-button>
+            </template>
+            <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+              <template #reference>
+                <el-button size="small" type="danger" text>删除全部录音</el-button>
+              </template>
+            </el-popconfirm>
+            <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+              <template #reference>
+                <el-button size="small" type="danger" text>删除录音</el-button>
+              </template>
+            </el-popconfirm>
+          </div>
+                  <!-- 处理中状态 -->
+                  <div v-if="audioProcessing" class="audio-processing-card">
+                    <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+                    <span>正在后台转写中，请稍候...（页面可关闭，后台继续处理）</span>
+                    <el-progress :percentage="100" :indeterminate="true" :show-text="false" style="width: 100%; max-width: 400px;" />
+                  </div>
 
+                  <!-- 失败状态 -->
+                  <div v-if="audioStatus === 'failed'" class="audio-failed-card">
+                    <div class="audio-failed-info">
+                      <el-icon><WarningFilled /></el-icon>
+                      <span>{{ audioDetail?.audio_summary || '处理失败' }}</span>
+                    </div>
+                    <div class="audio-failed-actions">
+                      <el-button size="small" type="primary" @click="handleRetryAudio">重新识别</el-button>
+                    </div>
+                  </div>
 
+                  <!-- 转写和总结结果（已完成状态） -->
+                  <template v-if="audioStatus === 'completed'">
+                    <div class="audio-transcript-section">
+                      <div class="audio-section-header">
+                        <span class="section-label">
+                          <el-icon><Document /></el-icon> 语音转文字
+                          <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
+                        </span>
+                        <div style="display: flex; gap: 6px;">
+                          <el-button size="small" type="warning" text @click="handleRetryAudio">
+                            <el-icon><RefreshRight /></el-icon> 重新识别
+                          </el-button>
+                          <el-button v-if="!transcriptModified" size="small" text type="primary" @click="editTranscript = audioDetail?.audio_transcript || ''; watchTranscriptEdit()">编辑</el-button>
+                        </div>
+                      </div>
+                      <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript || '暂无转写内容' }}</div>
+                      <div v-else class="audio-edit-area">
+                        <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
+                        <div class="audio-edit-actions">
+                          <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
+                          <el-button v-if="transcriptModified" size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
+                        </div>
+                      </div>
+                    </div>
 
-... 录音模块内容省略，参见 git history ...
+                    <div class="audio-summary-section">
+                      <div class="audio-section-header">
+                        <span class="section-label">
+                          <el-icon><Star /></el-icon> AI 总结
+                        </span>
+                        <el-button v-if="!summaryModified" size="small" text type="primary" @click="editSummary = audioDetail?.audio_summary || ''; watchSummaryEdit()">编辑</el-button>
+                      </div>
+                      <div v-if="!summaryModified" class="audio-summary-content">{{ audioDetail?.audio_summary || '暂无总结内容' }}</div>
+                      <div v-else class="audio-edit-area">
+                        <el-input v-model="editSummary" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchSummaryEdit" />
+                        <div class="audio-edit-actions">
+                          <el-button size="small" @click="handleCancelSummaryEdit">取消</el-button>
+                          <el-button v-if="summaryModified" size="small" type="primary" @click="handleSaveSummary">保存总结</el-button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
 
-
-
+                <!-- 未上传录音时显示上传区域 -->
+                <div v-else class="audio-upload-wrapper">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="false"
+                    :on-change="onAudioFileChange"
+                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+                    drag
+                  >
+                    <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                    <div class="el-upload__text">拖动录音文件到此处 或 <em>点击上传</em></div>
+                    <template #tip>
+                      <div class="el-upload__tip">支持 WAV/MP3/M4A/OGG/FLAC/WMA/AAC/AMR/Opus/WebM 格式，不限文件大小</div>
+                    </template>
+                  </el-upload>
+                  <div v-if="audioUploading" class="audio-upload-progress">
+                    <el-progress :percentage="audioUploadProgress" />
+                  </div>
+                </div>
               </div>
             </el-form-item>
           </template>
-          -->
 
           <!-- 标签 -->
           <div class="section-header">
@@ -359,12 +484,10 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit } from '@element-plus/icons-vue'
-// TODO: Headset, Loading, WarningFilled — 录音模块图标，暂时禁用
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject } from '@/api/activityLedger'
-// TODO: uploadAudio, getAudioDetail, deleteAudio, updateAudioTranscript, retryAudioRecognition — 录音 API，暂时禁用
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -415,21 +538,22 @@ const uploadRef = ref(null)
 const saving = ref(false)
 const unlinking = ref(false)
 const fileList = ref([])
-// TODO: 录音模块暂时禁用，待后续迭代完善后重新启用
-// const audioUploading = ref(false)
-// const audioUploadProgress = ref(0)
-// const audioFile = ref(null)
-// const audioDetail = ref(null)
-// const audioLoading = ref(false)
-// const audioProcessing = ref(false)
-// const audioStatus = ref(null)
-// const editTranscript = ref('')
-// const editSummary = ref('')
-// const transcriptModified = ref(false)
-// const summaryModified = ref(false)
-// let _originalTranscript = ''
-// let _originalSummary = ''
-// let _pollTimer = null
+// 录音模块（支持多文件）
+const audioUploading = ref(false)
+const audioUploadProgress = ref(0)
+const audioFiles = ref([])
+const audioFile = ref(null)
+const audioDetail = ref(null)
+const audioLoading = ref(false)
+const audioProcessing = ref(false)
+const audioStatus = ref(null)
+const editTranscript = ref('')
+const editSummary = ref('')
+const transcriptModified = ref(false)
+const summaryModified = ref(false)
+let _originalTranscript = ''
+let _originalSummary = ''
+let _pollTimer = null
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 
@@ -572,9 +696,9 @@ function openCreate() {
   editingItem.value = {}
   resetForm()
   fileList.value = []
-  // TODO: 录音模块暂时禁用
-  // audioFile.value = null
-  // audioDetail.value = null
+  audioFile.value = null
+  audioFiles.value = []
+  audioDetail.value = null
   editDrawerVisible.value = true
 }
 
@@ -582,18 +706,17 @@ function openCreate() {
 async function openEdit(row) {
   editMode.value = 'edit'
   editingId.value = row.id
-  // TODO: 录音模块暂时禁用
-  // audioFile.value = null
-  // audioDetail.value = null
-  // audioProcessing.value = false
-  // audioStatus.value = null
-  // editTranscript.value = ''
-  // editSummary.value = ''
-  // _originalTranscript = ''
-  // _originalSummary = ''
-  // transcriptModified.value = false
-  // summaryModified.value = false
-  // stopPolling()
+  audioFile.value = null
+  audioDetail.value = null
+  audioProcessing.value = false
+  audioStatus.value = null
+  editTranscript.value = ''
+  editSummary.value = ''
+  _originalTranscript = ''
+  _originalSummary = ''
+  transcriptModified.value = false
+  summaryModified.value = false
+  stopPolling()
   try {
     const res = await getLedger(row.id)
     if (res.code === 0) {
@@ -605,16 +728,30 @@ async function openEdit(row) {
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form._linkProject = !!d.linked_project_id
       form._linkProjectId = ''
-      // TODO: 录音加载暂时禁用
-      // if (d.audio_file) {
-      //   audioFile.value = { audio_file: d.audio_file, audio_duration: d.audio_duration }
-      //   audioDetail.value = {
-      //     audio_transcript: d.audio_transcript,
-      //     audio_summary: d.audio_summary,
-      //     audio_duration: d.audio_duration,
-      //     compression_ratio: null
-      //   }
-      // }
+      // 加载录音详情（多文件）
+      if (d.audio_files && d.audio_files.length > 0) {
+        audioFiles.value = d.audio_files || []
+        audioFile.value = { audio_file: d.audio_files[0].url, audio_duration: d.audio_duration }
+        audioDetail.value = {
+          audio_transcript: d.audio_transcript,
+          audio_summary: d.audio_summary,
+          audio_duration: d.audio_duration,
+          audio_archive: d.audio_archive,
+          audio_archive_size: d.audio_archive_size,
+          compression_ratio: null
+        }
+        audioStatus.value = d.audio_status
+        editTranscript.value = d.audio_transcript || ''
+        editSummary.value = d.audio_summary || ''
+        _originalTranscript = d.audio_transcript || ''
+        _originalSummary = d.audio_summary || ''
+        transcriptModified.value = false
+        summaryModified.value = false
+        if (d.audio_status === 'processing') {
+          audioProcessing.value = true
+          startPolling(editingId.value)
+        }
+      }
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
@@ -626,20 +763,20 @@ async function openEdit(row) {
 function resetForm() {
   Object.assign(form, defaultForm())
   fileList.value = []
-  // TODO: 录音模块暂时禁用
-  // audioFile.value = null
-  // audioDetail.value = null
-  // audioUploading.value = false
-  // audioUploadProgress.value = 0
-  // audioProcessing.value = false
-  // audioStatus.value = null
-  // editTranscript.value = ''
-  // editSummary.value = ''
-  // _originalTranscript = ''
-  // _originalSummary = ''
-  // transcriptModified.value = false
-  // summaryModified.value = false
-  // stopPolling()
+  audioFile.value = null
+  audioFiles.value = []
+  audioDetail.value = null
+  audioUploading.value = false
+  audioUploadProgress.value = 0
+  audioProcessing.value = false
+  audioStatus.value = null
+  editTranscript.value = ''
+  editSummary.value = ''
+  _originalTranscript = ''
+  _originalSummary = ''
+  transcriptModified.value = false
+  summaryModified.value = false
+  stopPolling()
   editingItem.value = {}
   formRef.value?.clearValidate()
 }
@@ -730,45 +867,37 @@ function handleThumbRemove(idx) {
   fileList.value.splice(idx, 1)
 }
 
-// TODO: 录音模块全部函数暂时禁用，待后续迭代完善后重新启用
-/*
-// ---- 录音上传（异步） ----
+// ---- 录音上传（异步，支持多文件追加） ----
 async function handleAudioUpload(file) {
   if (!editingId.value) {
     ElMessage.warning('请先保存活动台账，再上传录音文件')
     return
   }
   const ext = file.name.split('.').pop().toLowerCase()
-  const audioExts = ['wav', 'mp3', 'm4a', 'ogg', 'flac', 'wma', 'aac', 'amr', 'opus', 'weba', 'webm']
+  const audioExts = ['wav', 'mp3', 'm4a', 'ogg', 'flac', 'wma', 'aac', 'amr', 'opus', 'webm', 'weba']
   if (!audioExts.includes(ext)) {
-    ElMessage.error(`不支持的音频格式：.${ext}，支持：${audioExts.join(', ')}`)
+    ElMessage.error('不支持的音频格式：.' + ext + '，支持：' + audioExts.join(', '))
     return
   }
 
-  // 清理之前的轮询
   stopPolling()
-
   audioUploading.value = true
   audioUploadProgress.value = 0
-  audioProcessing.value = false
-  audioStatus.value = null
+
   try {
+    // 如果有已有文件则 append，否则覆盖
+    const appendMode = audioFiles.value.length > 0
     const res = await uploadAudio(editingId.value, file, (progressEvent) => {
       audioUploadProgress.value = Math.round((progressEvent.loaded / progressEvent.total) * 100)
-    })
+    }, appendMode)
     if (res.code === 0) {
-      ElMessage.success('录音已上传，正在后台转写...')
-      audioFile.value = { audio_file: res.data.audio_file, audio_duration: res.data.audio_duration }
-      audioDetail.value = {
-        ...res.data,
-        audio_transcript: null,
-        audio_summary: null
-      }
+      ElMessage.success(appendMode ? '录音已追加，正在后台处理...' : '录音已上传，正在后台转写...')
+      audioFiles.value = res.data.audio_files || []
+      audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
+      audioDetail.value = { audio_transcript: null, audio_summary: null }
       audioStatus.value = 'processing'
       audioProcessing.value = true
-      // 开始轮询后台处理状态
       startPolling(editingId.value)
-      // 同步刷新表格
       fetchData()
     } else {
       ElMessage.error(res.message || '录音处理失败')
@@ -781,21 +910,19 @@ async function handleAudioUpload(file) {
 }
 
 // 手动选择音频文件
-/*  TODO: 录音模块函数暂时禁用，待后续迭代完善后重新启用
-// 以下是剩余的录音函数体（handleAudioUpload 的结尾 + 轮询 + 编辑 + 删除 + 重试）
-
-async function onAudioFileChange(file) {
+function onAudioFileChange(file) {
   handleAudioUpload(file.raw || file)
 }
 
-// 加载录音详情
+// 加载录音详情（多文件）
 async function loadAudioDetail(id) {
   audioLoading.value = true
   try {
     const res = await getAudioDetail(id)
-    if (res.code === 0 && res.data?.audio_file) {
+    if (res.code === 0 && res.data?.audio_files?.length > 0) {
       audioDetail.value = res.data
-      audioFile.value = { audio_file: res.data.audio_file, audio_duration: res.data.audio_duration }
+      audioFiles.value = res.data.audio_files || []
+      audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
       audioStatus.value = res.data.audio_status
       editTranscript.value = res.data.audio_transcript || ''
       editSummary.value = res.data.audio_summary || ''
@@ -813,12 +940,14 @@ async function loadAudioDetail(id) {
     } else {
       audioDetail.value = null
       audioFile.value = null
+      audioFiles.value = []
       audioStatus.value = null
       audioProcessing.value = false
     }
   } catch {
     audioDetail.value = null
     audioFile.value = null
+    audioFiles.value = []
     audioStatus.value = null
     audioProcessing.value = false
   } finally {
@@ -848,7 +977,7 @@ function startPolling(id) {
         } else if (res.data.audio_status === 'failed') {
           stopPolling()
           audioProcessing.value = false
-          ElMessage.error('后台处理失败，请删除后重新上传')
+          ElMessage.error('后台转写失败，可删除后重新上传或点击重试')
         }
       }
     } catch { }
@@ -890,6 +1019,36 @@ async function handleSaveSummary() {
 function handleCancelTranscriptEdit() { editTranscript.value = _originalTranscript; transcriptModified.value = false }
 function handleCancelSummaryEdit() { editSummary.value = _originalSummary; summaryModified.value = false }
 
+// 删除单个录音文件
+async function handleDeleteSingleFile(index) {
+  if (!editingId.value) return
+  if (audioFiles.value.length <= 1) {
+    // 只剩一个文件，删除全部
+    await handleDeleteAudio()
+    return
+  }
+  stopPolling()
+  try {
+    // Call backend to delete single file
+    await deleteAudioFile(editingId.value, index)
+    audioFiles.value.splice(index, 1)
+    if (audioFiles.value.length === 0) {
+      audioFile.value = null
+      audioDetail.value = null
+      audioStatus.value = null
+      audioProcessing.value = false
+    } else {
+      audioFile.value = { audio_file: audioFiles.value[0].url, audio_duration: audioDetail.value?.audio_duration }
+      // Refresh audio detail
+      loadAudioDetail(editingId.value)
+    }
+    ElMessage.success('文件已删除')
+    fetchData()
+  } catch (err) {
+    ElMessage.error('删除失败：' + (err.message || '未知错误'))
+  }
+}
+
 async function handleDeleteAudio() {
   if (!editingId.value) return
   try {
@@ -900,7 +1059,11 @@ async function handleDeleteAudio() {
     if (res.code === 0) {
       ElMessage.success('录音已删除')
       audioFile.value = null
+      audioFiles.value = []
       audioDetail.value = null
+      audioStatus.value = null
+      audioProcessing.value = false
+      stopPolling()
       fetchData()
     }
   } catch { }
@@ -917,6 +1080,10 @@ async function handleRetryAudio() {
       audioProcessing.value = true
       editTranscript.value = ''
       editSummary.value = ''
+      _originalTranscript = ''
+      _originalSummary = ''
+      transcriptModified.value = false
+      summaryModified.value = false
       startPolling(editingId.value)
     } else {
       ElMessage.error(res.message || '重新识别失败')
@@ -925,7 +1092,8 @@ async function handleRetryAudio() {
     ElMessage.error('重新识别失败：' + (err.message || '未知错误'))
   }
 }
-*/
+
+
 
 // 格式化文件大小（保留，文件上传功能仍在使用）
 function formatFileSize(bytes) {
@@ -1093,6 +1261,7 @@ async function handleDelete(row) {
 }
 
 .upload-wrapper { width: 100%; }
+.audio-upload-progress { margin-top: 12px; }
 
 /* 文件缩略图网格 */
 .file-thumbnail-grid {
@@ -1339,6 +1508,9 @@ async function handleDelete(row) {
   gap: 8px;
   margin-top: 8px;
   justify-content: flex-end;
+}
+.audio-edit-area {
+  margin-top: 4px;
 }
 
 /* 查看抽屉中的录音卡片 */

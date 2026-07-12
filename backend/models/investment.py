@@ -298,9 +298,15 @@ class ActivityLedger(db.Model):
     audio_archive = db.Column(db.Text, nullable=True)     # 夜间压缩包路径（所有文件合并 .zip，可下载）
     audio_archive_size = db.Column(db.Integer, nullable=True) # 压缩包大小（字节）
     audio_transcript = db.Column(db.Text, nullable=True)  # 语音转文字结果（多文件合并后全文）
-    audio_summary = db.Column(db.Text, nullable=True)     # AI 总结（基于合并后全文）
+    audio_summary = db.Column(db.Text, nullable=True)     # AI 总结（旧字段，现指向摘要版）
     audio_status = db.Column(db.String(20), default=None) # pending/processing/completed/failed
     audio_duration = db.Column(db.Float, nullable=True)   # 录音总时长(秒)（所有文件时长之和）
+    # === V15.0 结构化总结新增字段 ===
+    audio_transcript_segmented = db.Column(db.Text, nullable=True)   # 模型按发言轮次分段后的原文 (覆盖展示)
+    audio_transcript_clean = db.Column(db.Text, nullable=True)       # LLM 清洁版 (书面语+结构化)
+    audio_summary_structured = db.Column(db.Text, nullable=True)     # LLM 摘要版 (4 维度结构化)
+    audio_docx_path = db.Column(db.String(255), nullable=True)       # 生成 docx 相对 /static 路径
+    audio_docx_size = db.Column(db.Integer, nullable=True)            # docx 文件大小 (字节)
     # 向后兼容：保留旧字段样式兼容引用
     @property
     def audio_file(self):
@@ -337,6 +343,12 @@ class ActivityLedger(db.Model):
             result['audio_duration'] = self.audio_duration
             result['audio_archive'] = self.audio_archive
             result['audio_archive_size'] = self.audio_archive_size
+            # V15.0 结构化总结
+            result['audio_transcript_segmented'] = self.audio_transcript_segmented
+            result['audio_transcript_clean'] = self.audio_transcript_clean
+            result['audio_summary_structured'] = self.audio_summary_structured
+            result['audio_docx_path'] = self.audio_docx_path
+            result['audio_docx_size'] = self.audio_docx_size
         return result
 
     def to_detail_dict(self):
@@ -350,4 +362,10 @@ class ActivityLedger(db.Model):
         d['audio_summary'] = self.audio_summary
         d['audio_status'] = self.audio_status
         d['audio_duration'] = self.audio_duration
+        # V15.0 结构化总结
+        d['audio_transcript_segmented'] = self.audio_transcript_segmented
+        d['audio_transcript_clean'] = self.audio_transcript_clean
+        d['audio_summary_structured'] = self.audio_summary_structured
+        d['audio_docx_path'] = self.audio_docx_path
+        d['audio_docx_size'] = self.audio_docx_size
         return d

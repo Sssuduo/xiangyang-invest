@@ -77,6 +77,18 @@ def build_meeting_knowledge(transcript: str = '', max_projects: int = 50) -> str
     except Exception as e:
         logger.warning(f'查询在建项目失败: {e}')
 
+    # V15.1: 注入术语校正表 (让模型使用用户预设的正确词汇)
+    try:
+        from models.term_correction import TermCorrection
+        corrections = TermCorrection.query.filter_by(is_active=True).all()
+        if corrections:
+            lines.append('')
+            lines.append('### 专有名词校正表 (请统一使用右侧写法)')
+            for c in corrections:
+                lines.append(f'- "{c.original}" → "{c.replacement}"')
+    except Exception as e:
+        logger.warning(f'查询术语表失败: {e}')
+
     return '\n'.join(lines)
 
 

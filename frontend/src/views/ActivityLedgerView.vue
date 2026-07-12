@@ -215,6 +215,45 @@
     <!-- 项目详情抽屉 -->
     <ProjectDrawer v-model="projectDrawerVisible" :project="projectDrawerProject" />
 
+    <!-- V15.1 术语校正抽屉 -->
+    <el-drawer v-model="termDrawerVisible" direction="rtl" size="520px" title="术语校正">
+      <div class="term-correction-drawer">
+        <div class="term-form">
+          <el-input v-model="termForm.original" placeholder="原文词汇（如：田勇书记）" style="margin-bottom: 8px;" />
+          <el-input v-model="termForm.replacement" placeholder="替换词汇（如：天勇书记）" style="margin-bottom: 8px;" />
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+            <el-select v-model="termForm.scope" placeholder="适用范围" style="width: 160px;">
+              <el-option label="全部" value="all" />
+              <el-option label="摘要版" value="summary" />
+              <el-option label="清洁版" value="clean" />
+              <el-option label="分段原文" value="segmented" />
+            </el-select>
+            <el-button type="primary" @click="handleSaveTerm">新增映射</el-button>
+          </div>
+        </div>
+
+        <el-table :data="termCorrections" size="small" style="margin-top: 12px;">
+          <el-table-column prop="original" label="原文" width="120" />
+          <el-table-column prop="replacement" label="替换为" width="120" />
+          <el-table-column prop="apply_scope" label="范围" width="80">
+            <template #default="{ row }">
+              <el-tag size="small">{{ scopeLabel(row.apply_scope) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button size="small" text type="danger" @click="handleDeleteTerm(row.id)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="term-drawer-footer">
+          <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并重新总结</el-button>
+          <el-button @click="termDrawerVisible = false">关闭</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
     <!-- 编辑抽屉（新建/编辑共用） -->
     <el-drawer v-model="editDrawerVisible" direction="rtl" size="680px" @closed="resetForm">
       <template #header>
@@ -383,10 +422,17 @@
                         <span class="section-label">
                           <el-icon><Document /></el-icon> 录音识别内容
                           <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
+                          <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
                         </span>
                         <div style="display: flex; gap: 6px;">
                           <el-button size="small" type="warning" text @click="handleRetryAudio">
                             <el-icon><RefreshRight /></el-icon> 重新识别
+                          </el-button>
+                          <el-button v-if="audioDetail?.audio_transcript" size="small" type="primary" text @click="handleRetrySummary">
+                            <el-icon><Star /></el-icon> 重新总结
+                          </el-button>
+                          <el-button size="small" text @click="openTermDrawer">
+                            <el-icon><Edit /></el-icon> 术语校正
                           </el-button>
                           <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank">
                             <el-button size="small" text type="success">
@@ -563,6 +609,106 @@ const transcriptModified = ref(false)
 const summaryModified = ref(false)
 // V15.0 结构化总结
 const audioActiveTab = ref('segmented')
+// V15.1 术语校正抽屉
+const termDrawerVisible = ref(false)
+const termCorrections = ref([])
+const termForm = ref({ original: '', replacement: '', scope: 'all' })
+const termLoading = ref(false)
+
+// 预估耗时显示
+function formatEstimate(seconds) {
+  if (!seconds) return ''
+  if (seconds < 60) return `约 ${seconds} 秒`
+  const mins = Math.ceil(seconds / 60)
+  return `约 ${mins} 分钟`
+}
+
+function scopeLabel(scope) {
+  return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
+}
+
+// 重新总结（不重跑 ASR）
+async function handleRetrySummary() {
+  if (!editingId.value) return
+  stopPolling()
+  try {
+    const res = await retryAudioSummary(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success('正在重新生成总结')
+      audioStatus.value = 'processing'
+      audioProcessing.value = true
+      startPolling(editingId.value)
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
+  } catch (err) {
+    ElMessage.error('请求失败：' + (err.message || ''))
+  }
+}
+
+// 加载术语校正列表
+async function loadTermCorrections() {
+  try {
+    const res = await getTermCorrections()
+    if (res.code === 0) termCorrections.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+// 新增/更新术语校正
+async function handleSaveTerm() {
+  const { original, replacement, scope } = termForm.value
+  if (!original || !replacement) {
+    ElMessage.warning('原文和替换词不能为空')
+    return
+  }
+  try {
+    const res = await createTermCorrection({ original, replacement, scope })
+    if (res.code === 0) {
+      ElMessage.success('已保存')
+      termForm.value = { original: '', replacement: '', scope: 'all' }
+      loadTermCorrections()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (err) {
+    ElMessage.error('保存失败：' + (err.message || ''))
+  }
+}
+
+// 删除术语校正
+async function handleDeleteTerm(id) {
+  try {
+    await deleteTermCorrection(id)
+    ElMessage.success('已删除')
+    loadTermCorrections()
+  } catch { /* ignore */ }
+}
+
+// 应用到当前台账
+async function handleApplyTerms() {
+  if (!editingId.value) return
+  try {
+    termLoading.value = true
+    const res = await applyTermCorrections(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success(res.message || '已应用')
+      // 刷新数据
+      await loadAudioDetail(editingId.value)
+    } else {
+      ElMessage.error(res.message || '应用失败')
+    }
+  } catch (err) {
+    ElMessage.error('应用失败：' + (err.message || ''))
+  } finally {
+    termLoading.value = false
+  }
+}
+
+// 打开术语校正抽屉
+function openTermDrawer() {
+  termDrawerVisible.value = true
+  loadTermCorrections()
+}
 
 // Markdown 渲染器 (lazy init)
 let _md = null
@@ -1503,6 +1649,10 @@ async function handleDelete(row) {
 .audio-markdown-content th { background: #f0f3f8; }
 .docx-download-link { margin-left: 8px; color: #409eff; text-decoration: none; font-size: 12px; }
 .docx-download-link:hover { text-decoration: underline; }
+.term-correction-drawer { padding: 16px; }
+.term-drawer-footer { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
+.term-form { padding: 12px; background: #fafafa; border-radius: 6px; border: 1px solid #eee; }
+.audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
 .audio-transcript-section,
 .audio-summary-section {
   margin-top: 12px;

@@ -14,11 +14,10 @@
 import os
 import json
 import threading
-from flask import request, jsonify, current_app
+from flask import request, jsonify, send_from_directory, current_app
 from models import ActivityLedger
 from extensions import db
-from routes import admin_activity_ledger_bp, admin_activity_ledger_audio_bp
-from extensions import db
+from routes import admin_activity_ledger_audio_bp
 from routes.business_auth import dual_login_required, visitor_block
 from utils.image_upload import AUDIO_EXTENSIONS
 from config import Config
@@ -132,51 +131,9 @@ def _run_async_processing(app, item_id):
             item.audio_transcript = full_text
             db.session.commit()
 
-            # === V15.0: 结构化总结 (三版: 发言分段 + 清洁版 + 摘要版) ===
+            # V15.0: 结构化总结 (委托给 _run_summary_only)
             if full_text.strip():
-                from services.text_summarizer import summarize_meeting
-                from services.meeting_document import generate_meeting_docx
-                import os
-                logger.info(f'后台结构化总结开始：item_id={item_id}，{len(full_text)} 字')
-                try:
-                    summary_result = summarize_meeting(full_text)
-                    item.audio_transcript_segmented = summary_result.get('segmented', '')
-                    item.audio_transcript_clean = summary_result.get('clean', '')
-                    item.audio_summary_structured = summary_result.get('summary', '')
-                    # 生成 docx
-                    try:
-                        docx_url, docx_name = generate_meeting_docx(
-                            activity=item,
-                            segmented_text=summary_result.get('segmented', ''),
-                            clean_text=summary_result.get('clean', ''),
-                            summary_text=summary_result.get('summary', '')
-                        )
-                        item.audio_docx_path = docx_url
-                        # 计算文件大小
-                        docx_abs = os.path.join(
-                            os.path.dirname(current_app.instance_path), '..',
-                            'static', docx_url.replace('/static/', '')
-                        )
-                        if os.path.exists(docx_abs):
-                            item.audio_docx_size = os.path.getsize(docx_abs)
-                    except Exception as docx_err:
-                        logger.error(f'meeting docx generation failed: {docx_err}', exc_info=True)
-                    # backward compat: audio_summary 指向摘要版
-                    item.audio_summary = summary_result.get('summary', '')
-                    db.session.commit()
-                    logger.info(f'后台结构化总结完成：segmented={len(summary_result.get("segmented",""))} clean={len(summary_result.get("clean",""))} summary={len(summary_result.get("summary",""))} docx={item.audio_docx_path or "none"}')
-                except Exception as e:
-                    logger.error(f'meeting summary generation failed: {e}', exc_info=True)
-                    item.audio_transcript_segmented = ''
-                    item.audio_transcript_clean = ''
-                    item.audio_summary_structured = ''
-                    item.audio_summary = f'（结构化总结生成失败：{str(e)[:200]}）'
-                    # 保留旧版 V14 单版作为兜底
-                    try:
-                        from services.text_summarizer import summarize_with_llm
-                        item.audio_summary = summarize_with_llm(full_text)
-                    except Exception:
-                        pass
+                _apply_summary_to_item(item, full_text)
             else:
                 item.audio_transcript_segmented = ''
                 item.audio_transcript_clean = ''
@@ -199,6 +156,103 @@ def _run_async_processing(app, item_id):
                     db.session.commit()
             except Exception:
                 pass
+
+
+def _apply_summary_to_item(item, full_text):
+    """对台账 item 生成结构化总结 (segmented + clean + summary + docx)。可独立调用用于 resume。"""
+    import logging, os
+    logger = logging.getLogger(__name__)
+    from services.text_summarizer import summarize_meeting, summarize_with_llm
+    from services.meeting_document import generate_meeting_docx
+
+    logger.info(f'后台结构化总结开始：item_id={item.id}，{len(full_text)} 字')
+    try:
+        summary_result = summarize_meeting(full_text)
+        item.audio_transcript_segmented = summary_result.get('segmented', '')
+        item.audio_transcript_clean = summary_result.get('clean', '')
+        item.audio_summary_structured = summary_result.get('summary', '')
+        # 生成 docx
+        try:
+            docx_url, docx_name = generate_meeting_docx(
+                activity=item,
+                segmented_text=summary_result.get('segmented', ''),
+                clean_text=summary_result.get('clean', ''),
+                summary_text=summary_result.get('summary', '')
+            )
+            item.audio_docx_path = docx_url
+            # 计算文件大小
+            docx_abs = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                'static', docx_url.replace('/static/', '')
+            )
+            if os.path.exists(docx_abs):
+                item.audio_docx_size = os.path.getsize(docx_abs)
+        except Exception as docx_err:
+            logger.error(f'meeting docx generation failed: {docx_err}', exc_info=True)
+        # backward compat: audio_summary 指向摘要版
+        item.audio_summary = summary_result.get('summary', '')
+        db.session.commit()
+        logger.info(f'后台结构化总结完成：segmented={len(summary_result.get("segmented",""))} clean={len(summary_result.get("clean",""))} summary={len(summary_result.get("summary",""))} docx={item.audio_docx_path or "none"}')
+    except Exception as e:
+        logger.error(f'meeting summary generation failed: {e}', exc_info=True)
+        item.audio_transcript_segmented = ''
+        item.audio_transcript_clean = ''
+        item.audio_summary_structured = ''
+        item.audio_summary = f'（结构化总结生成失败：{str(e)[:200]}）'
+        # 保留旧版 V14 单版作为兜底
+        try:
+            item.audio_summary = summarize_with_llm(full_text)
+        except Exception:
+            pass
+
+
+def _apply_terminology_and_regenerate(item, user=None):
+    """应用术语校正到该台账的总结字段，并重新结构化。
+
+    流程:
+      1) 用 TermCorrection 表替换 segmented/clean/summary 里的词汇
+      2) 对替换后的 summary 再做一次结构化调用 (或直接保留原结构化结果)
+      3) 更新 DB
+    """
+    from services.term_correction import apply_corrections
+    if not item.audio_transcript:
+        return
+    # 应用术语校正到清洁版/摘要版
+    seg_text, _ = apply_corrections(item.audio_transcript_segmented or '', 'segmented')
+    clean_text, _ = apply_corrections(item.audio_transcript_clean or '', 'clean')
+    summary_text, _ = apply_corrections(item.audio_summary_structured or '', 'summary')
+    item.audio_transcript_segmented = seg_text
+    item.audio_transcript_clean = clean_text
+    item.audio_summary_structured = summary_text
+    item.audio_summary = summary_text or item.audio_summary
+    db.session.commit()
+
+
+def _apply_corrections_text(text, scope='all'):
+    """应用术语校正表到任意文本，返回替换后的文本。"""
+    if not text:
+        return text, 0
+    try:
+        from services.term_correction import apply_corrections
+        return apply_corrections(text, scope)
+    except Exception:
+        return text, 0
+
+
+def _estimate_time(duration_s, transcript_chars):
+    """预估完成时间（秒）。
+
+    实测经验:
+      - ASR 约 8x 实时 (CPU SenseVoice 推理)
+      - LLM 总结约 0.003 秒/字
+      - docx 生成 + 网络抖动 ≈ 30s
+    """
+    if not duration_s and not transcript_chars:
+        return 60
+    asr = (duration_s or 0) * 8
+    llm = (transcript_chars or 0) * 0.003
+    overhead = 30
+    return int(asr + llm + overhead)
 
 
 # ======================== 上传 ========================
@@ -429,6 +483,8 @@ def get_audio_detail(item_id):
         'audio_summary': item.audio_summary,
         'audio_status': item.audio_status,
         'audio_duration': item.audio_duration,
+        # V15.1: 结构化总结预估耗时 (秒)
+        'estimated_summary_seconds': _estimate_time(item.audio_duration, len(item.audio_transcript or '')),
     }
 
     # 补充文件大小信息（实时查询）
@@ -446,6 +502,36 @@ def get_audio_detail(item_id):
 
 
 # ======================== 重新识别 ========================
+
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/retry-summary', methods=['POST'])
+@dual_login_required
+@visitor_block
+def retry_audio_summary(item_id):
+    """单独重新生成结构化总结（基于现有 audio_transcript，不重跑 ASR）"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    if not item.audio_transcript:
+        return jsonify({'code': 1, 'message': '没有转写内容，请先完成识别后重试'}), 400
+
+    # 应用术语校正后的转写文本作为 summary 输入
+    clean_transcript, _ = _apply_corrections_text(item.audio_transcript, 'clean')
+
+    item.audio_status = 'processing'
+    db.session.commit()
+
+    def _summary_only():
+        with current_app._get_current_object().app_context():
+            try:
+                _apply_summary_to_item(item, clean_transcript)
+            except Exception as e:
+                item.audio_summary = f'总结失败: {str(e)[:200]}'
+                db.session.commit()
+            finally:
+                item.audio_status = 'completed'
+                db.session.commit()
+
+    threading.Thread(target=_summary_only, daemon=True).start()
+    return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'processing'}})
 
 
 @admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/retry', methods=['POST'])

@@ -217,8 +217,14 @@ def _run_async_processing(app, item_id):
                 pass
 
 
-def _run_summary_only(app, item_id):
-    """仅重新生成结构化总结（基于现有 audio_transcript）。"""
+def _run_summary_only(app, item_id, model_id=None):
+    """仅重新生成结构化总结（基于现有 audio_transcript）。
+
+    Args:
+        app: Flask app 实例
+        item_id: ActivityLedger ID
+        model_id: 用户选择的 LLM 模型 ID (可选, None 使用默认激活模型)
+    """
     with app.app_context():
         from models import ActivityLedger
         item = ActivityLedger.query.get(item_id)
@@ -235,7 +241,7 @@ def _run_summary_only(app, item_id):
         db.session.commit()
         try:
             clean_transcript, _ = _apply_corrections_text(item.audio_transcript or '', 'clean')
-            _apply_summary_to_item(item, clean_transcript)
+            _apply_summary_to_item(item, clean_transcript, model_id=model_id)
             item.audio_status = 'completed'
             db.session.commit()
         except Exception as e:
@@ -244,16 +250,22 @@ def _run_summary_only(app, item_id):
             db.session.commit()
 
 
-def _apply_summary_to_item(item, full_text):
-    """对台账 item 生成结构化总结 (segmented + clean + summary + docx)"""
+def _apply_summary_to_item(item, full_text, model_id=None):
+    """对台账 item 生成结构化总结 (segmented + clean + summary + docx)
+
+    Args:
+        item: ActivityLedger 实例
+        full_text: 输入文本
+        model_id: 用户选择的 LLM 模型 ID (可选, None 使用默认激活模型)
+    """
     import logging, os
     logger = logging.getLogger(__name__)
     from services.text_summarizer import summarize_meeting, summarize_with_llm
     from services.meeting_document import generate_meeting_docx
 
-    logger.info(f'后台结构化总结开始：item_id={item.id}，{len(full_text)} 字')
+    logger.info(f'后台结构化总结开始：item_id={item.id}，{len(full_text)} 字，model_id={model_id}')
     try:
-        summary_result = summarize_meeting(full_text)
+        summary_result = summarize_meeting(full_text, model_id=model_id)
         item.audio_transcript_segmented = summary_result.get('segmented', '')
         item.audio_transcript_clean = summary_result.get('clean', '')
         item.audio_summary_structured = summary_result.get('summary', '')
@@ -547,6 +559,20 @@ def retry_audio_recognition(item_id):
     })
 
 
+@admin_activity_ledger_audio_bp.route('/admin/llm-models', methods=['GET'])
+@dual_login_required
+def get_llm_models():
+    """获取可用的 LLM 模型列表 (供前端选择)"""
+    from models.investment import LLMModel
+    models = LLMModel.query.filter_by(is_active=True).order_by(LLMModel.sort_order).all()
+    return jsonify({'code': 0, 'data': [{
+        'id': m.id,
+        'name': m.model_name,
+        'display_name': m.display_name or m.model_name,
+        'provider': m.provider,
+    } for m in models]})
+
+
 @admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/retry-summary', methods=['POST'])
 @dual_login_required
 @visitor_block
@@ -559,12 +585,27 @@ def retry_audio_summary(item_id):
     if item.audio_status in ('asr_processing', 'summarizing'):
         return jsonify({'code': 1, 'message': '正在处理中，请等待完成后重试'}), 409
 
+    # 获取用户选择的模型 ID (可选)
+    data = request.get_json(silent=True) or {}
+    model_id = data.get('model_id')
+    if model_id:
+        from models.investment import LLMModel
+        model = LLMModel.query.get(model_id)
+        if not model or not model.is_active:
+            return jsonify({'code': 1, 'message': '选择的模型不可用'}), 400
+        # 转换为 int (前端可能传字符串)
+        try:
+            model_id = int(model_id)
+        except (TypeError, ValueError):
+            return jsonify({'code': 1, 'message': '模型 ID 格式无效'}), 400
+
     item.audio_status = 'summarizing'
     item.progress_message = '正在总结...'
     db.session.commit()
 
     app_obj = current_app._get_current_object()
-    threading.Thread(target=_run_summary_only, args=(app_obj, item.id), daemon=True).start()
+    # 通过线程参数传递 model_id，避免 ORM 临时属性跨线程丢失
+    threading.Thread(target=_run_summary_only, args=(app_obj, item.id, model_id), daemon=True).start()
     return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'summarizing'}})
 
 

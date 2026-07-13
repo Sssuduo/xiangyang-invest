@@ -367,122 +367,105 @@
                       </el-popconfirm>
                     </div>
                   </div>
-          <div v-if="audioFiles.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center;">
-            <el-tag v-if="audioDetail?.audio_archive" size="small" type="warning" effect="plain">
-              <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
-            </el-tag>
-            <template v-if="audioStatus !== 'processing'">
-              <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
-                <template #reference>
-                  <el-button size="small" type="danger" text>删除全部录音</el-button>
+                </div>
+                <div v-if="audioDetail?.audio_archive" style="margin-top: 6px;">
+                  <el-tag size="small" type="warning" effect="plain">
+                    <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
+                  </el-tag>
+                </div>
+                <!-- 转写和总结结果 (包含所有非-processing 状态的内容展示) -->
+                <template v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'">
+                  <div class="audio-transcript-section">
+                    <div class="audio-section-header">
+                      <span class="section-label">
+                        <el-icon><Document /></el-icon> 录音识别内容
+                        <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
+                        <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
+                      </span>
+                    </div>
+                    <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
+                      <el-tab-pane label="分段原文" name="segmented">
+                        <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript_segmented || audioDetail?.audio_transcript || '暂无转写内容' }}</div>
+                        <div v-else class="audio-edit-area">
+                          <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
+                          <div class="audio-edit-actions">
+                            <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
+                            <el-button v-if="transcriptModified" size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
+                          </div>
+                        </div>
+                      </el-tab-pane>
+                      <el-tab-pane label="清洁版" name="clean">
+                        <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_transcript_clean)"></div>
+                      </el-tab-pane>
+                      <el-tab-pane label="摘要版" name="summary">
+                        <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_summary_structured)"></div>
+                      </el-tab-pane>
+                    </el-tabs>
+                  </div>
                 </template>
-              </el-popconfirm>
-              <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
-                <template #reference>
-                  <el-button size="small" type="danger" text>删除录音</el-button>
-                </template>
-              </el-popconfirm>
-              <el-button size="small" type="warning" @click="handleRetryAudio">
-                <el-icon><RefreshRight /></el-icon> 重新识别
-              </el-button>
+
+                <!-- 失败/取消状态 -->
+                <div v-if="audioStatus === 'failed' || audioStatus === 'cancelled'" class="audio-failed-card">
+                  <div class="audio-failed-info">
+                    <el-icon><WarningFilled /></el-icon>
+                    <span>{{ audioDetail?.audio_summary || '处理失败' }}</span>
+                  </div>
+                </div>
+              </div>
+            </el-form-item>
+
+            <!-- 文件操作按钮行 (独立区域: 追加/重新识别/删除) -->
+            <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
               <el-upload
                 :show-file-list="false"
                 :auto-upload="false"
                 :on-change="onAudioFileChange"
                 accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
               >
-                <el-button size="small" type="primary" text>
+                <el-button size="small" type="primary" plain>
                   <el-icon><Plus /></el-icon> 追加录音文件
                 </el-button>
               </el-upload>
-            </template>
-          </div>
-                  <!-- 处理中状态 -->
-                  <div v-if="audioProcessing" class="audio-processing-card">
-                    <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-                    <span>正在后台转写中，请稍候...（页面可关闭，后台继续处理）</span>
-                    <el-progress :percentage="100" :indeterminate="true" :show-text="false" style="width: 100%; max-width: 400px;" />
-                    <el-button size="small" type="danger" text style="margin-top: 8px;" @click="handleCancelAudio">取消转写</el-button>
-                  </div>
+              <el-button size="small" type="warning" plain @click="handleRetryAudio">
+                <el-icon><RefreshRight /></el-icon> 重新识别
+              </el-button>
+              <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                <template #reference>
+                  <el-button size="small" type="danger" plain>删除全部录音</el-button>
+                </template>
+              </el-popconfirm>
+              <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                <template #reference>
+                  <el-button size="small" type="danger" plain>删除录音</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
 
-                  <!-- 失败状态 -->
-                  <div v-if="audioStatus === 'failed'" class="audio-failed-card">
-                    <div class="audio-failed-info">
-                      <el-icon><WarningFilled /></el-icon>
-                      <span>{{ audioDetail?.audio_summary || '处理失败' }}</span>
-                    </div>
-                  </div>
-
-                  <!-- 转写和总结结果（已完成状态） -->
-                  <template v-if="audioStatus === 'completed'">
-                    <div class="audio-transcript-section">
-                      <div class="audio-section-header">
-                        <span class="section-label">
-                          <el-icon><Document /></el-icon> 录音识别内容
-                          <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
-                          <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
-                        </span>
-                      </div>
-                      <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
-                        <el-tab-pane label="分段原文" name="segmented">
-                          <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript_segmented || audioDetail?.audio_transcript || '暂无转写内容' }}</div>
-                          <div v-else class="audio-edit-area">
-                            <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
-                            <div class="audio-edit-actions">
-                              <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
-                              <el-button v-if="transcriptModified" size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
-                            </div>
-                          </div>
-                        </el-tab-pane>
-                        <el-tab-pane label="清洁版" name="clean">
-                          <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_transcript_clean)"></div>
-                        </el-tab-pane>
-                        <el-tab-pane label="摘要版" name="summary">
-                          <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_summary_structured)"></div>
-                        </el-tab-pane>
-                      </el-tabs>
-                      <!-- 内容卡片下方按钮组 (与上方文件行对齐) -->
-                      <div class="audio-content-actions">
-                        <el-button size="small" type="warning" text @click="handleRetryAudio">
-                          <el-icon><RefreshRight /></el-icon> 重新识别
-                        </el-button>
-                        <el-button size="small" type="primary" text @click="handleRetrySummary">
-                          <el-icon><Star /></el-icon> 重新总结
-                        </el-button>
-                        <el-button size="small" text @click="openTermDrawer">
-                          <el-icon><Edit /></el-icon> 术语校正
-                        </el-button>
-                        <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank" style="text-decoration: none;">
-                          <el-button size="small" text type="success">
-                            <el-icon><Download /></el-icon> 下载 Word
-                          </el-button>
-                        </a>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- 未上传录音时显示上传区域 -->
-                <div v-else class="audio-upload-wrapper">
-                  <el-upload
-                    :show-file-list="false"
-                    :auto-upload="false"
-                    :on-change="onAudioFileChange"
-                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-                    drag
-                  >
-                    <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                    <div class="el-upload__text">拖动录音文件到此处 或 <em>点击上传</em></div>
-                    <template #tip>
-                      <div class="el-upload__tip">支持 WAV/MP3/M4A/OGG/FLAC/WMA/AAC/AMR/Opus/WebM 格式，不限文件大小</div>
-                    </template>
-                  </el-upload>
-                  <div v-if="audioUploading" class="audio-upload-progress">
-                    <el-progress :percentage="audioUploadProgress" />
-                  </div>
-                </div>
+            <!-- 进度条: 独立的水平细长条, 取消按钮在最右侧 -->
+            <div v-if="audioStatus === 'asr_processing' || audioStatus === 'summarizing'" class="audio-progress-wrapper">
+              <div class="audio-progress-text">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span v-if="audioStatus === 'asr_processing'">{{ audioDetail?.progress_message || '正在识别...' }}</span>
+                <span v-else>{{ audioDetail?.progress_message || '正在调用大模型进行分析总结，请稍等' }}</span>
               </div>
-            </el-form-item>
+              <el-progress :percentage="audioDetail?.progress_pct || 0" :stroke-width="3" :show-text="false" style="flex:1;" />
+              <el-button size="small" type="danger" text @click="handleCancelAudio">取消</el-button>
+            </div>
+
+            <!-- 总结/术语操作行 (已完成状态下, 重新识别/总结等按钮) -->
+            <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'" class="audio-content-actions">
+              <el-button size="small" type="primary" plain @click="handleRetrySummary">
+                <el-icon><Star /></el-icon> 重新总结
+              </el-button>
+              <el-button size="small" plain @click="openTermDrawer">
+                <el-icon><Edit /></el-icon> 术语校正
+              </el-button>
+              <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank">
+                <el-button size="small" type="success" plain>
+                  <el-icon><Download /></el-icon> 下载 Word
+                </el-button>
+              </a>
+            </div>
           </template>
 
           <!-- 标签 -->
@@ -1669,6 +1652,23 @@ async function handleDelete(row) {
 .term-drawer-footer { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
 .term-form { padding: 12px; background: #fafafa; border-radius: 6px; border: 1px solid #eee; }
 .audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
+.audio-file-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.audio-file-actions .el-button { margin: 0; }
+.audio-progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  margin: 4px 0;
+}
+.audio-progress-wrapper .audio-progress-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
+}
 .audio-content-actions {
   display: flex;
   gap: 8px;

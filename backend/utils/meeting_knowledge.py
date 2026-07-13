@@ -31,7 +31,7 @@ def build_meeting_knowledge(transcript: str = '', max_projects: int = 50) -> str
     # 招商对接项目
     try:
         projects = InvestmentProject.query.filter_by(is_deleted=False)\
-            .order_by(InvestmentProject.updated_at.desc().nulls_last())\
+            .order_by(InvestmentProject.updated_at.desc())\
             .limit(max_projects).all()
         if projects:
             lines.append('### 招商对接项目')
@@ -57,7 +57,7 @@ def build_meeting_knowledge(transcript: str = '', max_projects: int = 50) -> str
     # 在建项目
     try:
         constructions = ConstructionProject.query\
-            .order_by(ConstructionProject.updated_at.desc().nulls_last())\
+            .order_by(ConstructionProject.updated_at.desc())\
             .limit(max_projects).all()
         if constructions:
             lines.append('')

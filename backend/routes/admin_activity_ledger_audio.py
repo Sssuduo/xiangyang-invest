@@ -606,15 +606,14 @@ def cancel_audio_processing(item_id):
             ev = _threading.Event()
             _TASK_CANCEL_EVENTS[item_id] = ev
         ev.set()
-    # 同时标记 DB (跨 worker 生效, 作為 fallback)
+    # 同时标记 DB (跨 worker 生效)
     if item.audio_status == 'processing':
         item.audio_status = 'cancelled'
         item.audio_summary = '处理已取消'
         db.session.commit()
     return jsonify({'code': 0, 'message': '已取消处理', 'data': {'audio_status': 'cancelled'}})
-    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
-    if not item.audio_transcript:
-        return jsonify({'code': 1, 'message': '没有转写内容，请先完成识别后重试'}), 400
+
+# ======================== 核心处理逻辑 ========================
 
     # 应用术语校正后的转写文本作为 summary 输入
     clean_transcript, _ = _apply_corrections_text(item.audio_transcript, 'clean')

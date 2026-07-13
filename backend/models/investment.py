@@ -307,6 +307,9 @@ class ActivityLedger(db.Model):
     audio_summary_structured = db.Column(db.Text, nullable=True)     # LLM 摘要版 (4 维度结构化)
     audio_docx_path = db.Column(db.String(255), nullable=True)       # 生成 docx 相对 /static 路径
     audio_docx_size = db.Column(db.Integer, nullable=True)            # docx 文件大小 (字节)
+    # V15.1 进度通知
+    progress_message = db.Column(db.String(255), nullable=True)      # 当前处理进度信息
+    progress_pct = db.Column(db.Integer, nullable=True, default=0)    # 进度百分比 (0-100)
     # 向后兼容：保留旧字段样式兼容引用
     @property
     def audio_file(self):

@@ -32,6 +32,9 @@ def _run_auto_migrations(app):
             ('audio_summary_structured', 'TEXT'),
             ('audio_docx_path', 'VARCHAR(255)'),
             ('audio_docx_size', 'INTEGER'),
+            # V15.1 进度
+            ('progress_message', 'VARCHAR(255)'),
+            ('progress_pct', 'INTEGER'),
         ],
         'work_progress': [
             ('import_user_id', 'INTEGER'),

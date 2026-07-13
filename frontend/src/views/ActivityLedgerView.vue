@@ -454,6 +454,9 @@
 
             <!-- 总结/术语操作行 (已完成状态下, 重新识别/总结等按钮) -->
             <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'" class="audio-content-actions">
+              <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
+                <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
+              </el-select>
               <el-button size="small" type="primary" plain @click="handleRetrySummary">
                 <el-icon><Star /></el-icon> 重新总结
               </el-button>
@@ -524,7 +527,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -596,6 +599,9 @@ const termDrawerVisible = ref(false)
 const termCorrections = ref([])
 const termForm = ref({ original: '', replacement: '', scope: 'all' })
 const termLoading = ref(false)
+// V15.1 LLM 模型选择
+const llmModels = ref([])
+const selectedLlmModel = ref(null)
 
 // 预估耗时显示
 function formatEstimate(seconds) {
@@ -631,7 +637,8 @@ async function handleRetrySummary() {
   if (!editingId.value) return
   stopPolling()
   try {
-    const res = await retryAudioSummary(editingId.value)
+    const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
+    const res = await retryAudioSummary(editingId.value, payload)
     if (res.code === 0) {
       ElMessage.success('正在重新生成总结')
       audioStatus.value = 'processing'
@@ -643,6 +650,14 @@ async function handleRetrySummary() {
   } catch (err) {
     ElMessage.error('请求失败：' + (err.message || ''))
   }
+}
+
+// 加载 LLM 模型列表
+async function loadLLMModels() {
+  try {
+    const res = await getLLMModels()
+    if (res.code === 0) llmModels.value = res.data || []
+  } catch { /* ignore */ }
 }
 
 // 加载术语校正列表
@@ -743,7 +758,7 @@ const rules = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadDicts()])
+  await Promise.all([loadProjects(), loadDicts(), loadLLMModels()])
   fetchData()
 })
 
@@ -1094,6 +1109,11 @@ async function loadAudioDetail(id) {
       audioFiles.value = res.data.audio_files || []
       audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
       audioStatus.value = res.data.audio_status
+      // V15.1: 回填上次总结使用的模型选择
+      if (!selectedLlmModel.value && res.data.summary_model_id) {
+        const match = llmModels.value.find(m => m.id === res.data.summary_model_id)
+        if (match) selectedLlmModel.value = match.id
+      }
       editTranscript.value = res.data.audio_transcript || ''
       editSummary.value = res.data.audio_summary || ''
       _originalTranscript = res.data.audio_transcript || ''

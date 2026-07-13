@@ -73,8 +73,14 @@ export function getAudioDocxUrl(id) {
 }
 
 // 单独重新总结（不重跑 ASR）
-export function retryAudioSummary(id) {
-  return api.post(`/admin/activity-ledger/${id}/audio/retry-summary`)
+// data: { model_id?: number } — 可选，用户选择的 LLM 模型 ID
+export function retryAudioSummary(id, data = null) {
+  return api.post(`/admin/activity-ledger/${id}/audio/retry-summary`, data)
+}
+
+// 获取可用 LLM 模型列表（供前端选择）
+export function getLLMModels() {
+  return api.get('/llm-models')
 }
 
 // ---- 术语校正 ----

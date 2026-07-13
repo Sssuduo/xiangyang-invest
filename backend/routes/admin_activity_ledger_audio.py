@@ -292,10 +292,12 @@ def _apply_summary_to_item(item, full_text, model_id=None):
         logger.info(f'后台结构化总结完成 summary={len(summary_result.get("summary",""))}')
     except Exception as e:
         logger.warning(f'meeting summary failed: {e}')
+        # 降级尝试简单总结；若仍失败则向上传播，让调用方把状态置为 failed
         try:
             item.audio_summary = summarize_with_llm(full_text)
+            db.session.commit()
         except Exception:
-            pass
+            raise
 
 
 def _run_terminology_only(app, item_id):
@@ -504,6 +506,8 @@ def get_audio_detail(item_id):
         'audio_summary_structured': item.audio_summary_structured,
         'audio_docx_path': item.audio_docx_path,
         'audio_docx_size': item.audio_docx_size,
+        # V15.1: 总结使用的模型 ID，供前端回填选择
+        'summary_model_id': item.summary_model_id,
         # V15.1: 进度估算和实时 progress
         'estimated_summary_seconds': _estimate_time(item.audio_duration, len(item.audio_transcript or '')),
         'progress_message': item.progress_message,
@@ -559,7 +563,7 @@ def retry_audio_recognition(item_id):
     })
 
 
-@admin_activity_ledger_audio_bp.route('/admin/llm-models', methods=['GET'])
+@admin_activity_ledger_audio_bp.route('/llm-models', methods=['GET'])
 @dual_login_required
 def get_llm_models():
     """获取可用的 LLM 模型列表 (供前端选择)"""
@@ -567,8 +571,7 @@ def get_llm_models():
     models = LLMModel.query.filter_by(is_active=True).order_by(LLMModel.sort_order).all()
     return jsonify({'code': 0, 'data': [{
         'id': m.id,
-        'name': m.model_name,
-        'display_name': m.display_name or m.model_name,
+        'name': m.name,
         'provider': m.provider,
     } for m in models]})
 
@@ -589,7 +592,7 @@ def retry_audio_summary(item_id):
     data = request.get_json(silent=True) or {}
     model_id = data.get('model_id')
     if model_id:
-        from models.investment import LLMModel
+        from models.ai import LLMModel
         model = LLMModel.query.get(model_id)
         if not model or not model.is_active:
             return jsonify({'code': 1, 'message': '选择的模型不可用'}), 400
@@ -601,6 +604,8 @@ def retry_audio_summary(item_id):
 
     item.audio_status = 'summarizing'
     item.progress_message = '正在总结...'
+    # V15.1: 记录用户选择的模型 ID，刷新后前端可回填
+    item.summary_model_id = model_id if model_id else None
     db.session.commit()
 
     app_obj = current_app._get_current_object()

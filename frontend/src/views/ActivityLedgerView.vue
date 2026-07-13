@@ -367,11 +367,24 @@
                       </el-popconfirm>
                     </div>
                   </div>
-          <div v-if="audioFiles.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <div v-if="audioFiles.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center;">
             <el-tag v-if="audioDetail?.audio_archive" size="small" type="warning" effect="plain">
               <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
             </el-tag>
             <template v-if="audioStatus !== 'processing'">
+              <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                <template #reference>
+                  <el-button size="small" type="danger" text>删除全部录音</el-button>
+                </template>
+              </el-popconfirm>
+              <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                <template #reference>
+                  <el-button size="small" type="danger" text>删除录音</el-button>
+                </template>
+              </el-popconfirm>
+              <el-button size="small" type="warning" @click="handleRetryAudio">
+                <el-icon><RefreshRight /></el-icon> 重新识别
+              </el-button>
               <el-upload
                 :show-file-list="false"
                 :auto-upload="false"
@@ -382,26 +395,14 @@
                   <el-icon><Plus /></el-icon> 追加录音文件
                 </el-button>
               </el-upload>
-              <el-button v-if="audioStatus === 'failed'" size="small" type="warning" @click="handleRetryAudio">
-                <el-icon><RefreshRight /></el-icon> 重新识别
-              </el-button>
             </template>
-            <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
-              <template #reference>
-                <el-button size="small" type="danger" text>删除全部录音</el-button>
-              </template>
-            </el-popconfirm>
-            <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
-              <template #reference>
-                <el-button size="small" type="danger" text>删除录音</el-button>
-              </template>
-            </el-popconfirm>
           </div>
                   <!-- 处理中状态 -->
                   <div v-if="audioProcessing" class="audio-processing-card">
                     <el-icon class="is-loading" :size="24"><Loading /></el-icon>
                     <span>正在后台转写中，请稍候...（页面可关闭，后台继续处理）</span>
                     <el-progress :percentage="100" :indeterminate="true" :show-text="false" style="width: 100%; max-width: 400px;" />
+                    <el-button size="small" type="danger" text style="margin-top: 8px;" @click="handleCancelAudio">取消转写</el-button>
                   </div>
 
                   <!-- 失败状态 -->
@@ -409,9 +410,6 @@
                     <div class="audio-failed-info">
                       <el-icon><WarningFilled /></el-icon>
                       <span>{{ audioDetail?.audio_summary || '处理失败' }}</span>
-                    </div>
-                    <div class="audio-failed-actions">
-                      <el-button size="small" type="primary" @click="handleRetryAudio">重新识别</el-button>
                     </div>
                   </div>
 
@@ -424,22 +422,6 @@
                           <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
                           <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
                         </span>
-                        <div style="display: flex; gap: 6px;">
-                          <el-button size="small" type="warning" text @click="handleRetryAudio">
-                            <el-icon><RefreshRight /></el-icon> 重新识别
-                          </el-button>
-                          <el-button v-if="audioDetail?.audio_transcript" size="small" type="primary" text @click="handleRetrySummary">
-                            <el-icon><Star /></el-icon> 重新总结
-                          </el-button>
-                          <el-button size="small" text @click="openTermDrawer">
-                            <el-icon><Edit /></el-icon> 术语校正
-                          </el-button>
-                          <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank">
-                            <el-button size="small" text type="success">
-                              <el-icon><Download /></el-icon> 下载 Word
-                            </el-button>
-                          </a>
-                        </div>
                       </div>
                       <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
                         <el-tab-pane label="分段原文" name="segmented">
@@ -459,6 +441,23 @@
                           <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_summary_structured)"></div>
                         </el-tab-pane>
                       </el-tabs>
+                      <!-- 内容卡片下方按钮组 (与上方文件行对齐) -->
+                      <div class="audio-content-actions">
+                        <el-button size="small" type="warning" text @click="handleRetryAudio">
+                          <el-icon><RefreshRight /></el-icon> 重新识别
+                        </el-button>
+                        <el-button size="small" type="primary" text @click="handleRetrySummary">
+                          <el-icon><Star /></el-icon> 重新总结
+                        </el-button>
+                        <el-button size="small" text @click="openTermDrawer">
+                          <el-icon><Edit /></el-icon> 术语校正
+                        </el-button>
+                        <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank" style="text-decoration: none;">
+                          <el-button size="small" text type="success">
+                            <el-icon><Download /></el-icon> 下载 Word
+                          </el-button>
+                        </a>
+                      </div>
                     </div>
                   </template>
                 </div>
@@ -542,7 +541,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -625,6 +624,23 @@ function formatEstimate(seconds) {
 
 function scopeLabel(scope) {
   return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
+}
+
+// 取消正在进行的识别/总结
+async function handleCancelAudio() {
+  if (!editingId.value) return
+  try {
+    const res = await cancelAudioProcessing(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success('已取消处理')
+      audioStatus.value = 'cancelled'
+      audioProcessing.value = false
+    } else {
+      ElMessage.error(res.message || '取消失败')
+    }
+  } catch (err) {
+    ElMessage.error('取消失败：' + (err.message || ''))
+  }
 }
 
 // 重新总结（不重跑 ASR）
@@ -1653,6 +1669,14 @@ async function handleDelete(row) {
 .term-drawer-footer { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
 .term-form { padding: 12px; background: #fafafa; border-radius: 6px; border: 1px solid #eee; }
 .audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
+.audio-content-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 0 0;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 10px;
+}
 .audio-transcript-section,
 .audio-summary-section {
   margin-top: 12px;

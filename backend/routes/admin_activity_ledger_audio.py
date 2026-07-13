@@ -22,6 +22,36 @@ from routes.business_auth import dual_login_required, visitor_block
 from utils.image_upload import AUDIO_EXTENSIONS
 from config import Config
 
+# 后台任务取消注册表 {item_id: threading.Event}
+# 调用 cancel 接口会设置 event, 线程定期检查并提前退出
+import threading as _threading
+_TASK_CANCEL_EVENTS: dict[int, _threading.Event] = {}
+_TASK_CANCEL_LOCK = _threading.Lock()
+
+
+def _is_task_cancelled(item_id: int) -> bool:
+    """检查任务是否被取消。优先查内存注册表，回退查 DB 状态 (多 worker 安全)"""
+    with _TASK_CANCEL_LOCK:
+        ev = _TASK_CANCEL_EVENTS.get(item_id)
+        if ev is not None:
+            return ev.is_set()
+    # 回退: 查 DB (跨 worker)
+    try:
+        item = ActivityLedger.query.get(item_id)
+        return item is not None and item.audio_status == 'cancelled'
+    except Exception:
+        return False
+
+
+def _wait_or_cancel(item_id: int, timeout: float = 1.0) -> bool:
+    """等待 timeout 秒或直到取消。返回 True 表示被取消。"""
+    with _TASK_CANCEL_LOCK:
+        ev = _TASK_CANCEL_EVENTS.get(item_id)
+        if ev is None:
+            ev = _threading.Event()
+            _TASK_CANCEL_EVENTS[item_id] = ev
+    return ev.wait(timeout=timeout)
+
 
 def _allowed_audio(filename):
     """检查是否为允许的音频格式"""
@@ -86,6 +116,15 @@ def _run_async_processing(app, item_id):
             _transcript_cache = {}
 
             for i, af in enumerate(files):
+                # 检查是否被取消 (在每段处理前)
+                if _is_task_cancelled(item_id):
+                    logger.info(f'后台 ASR 已取消：item_id={item_id}，段 [{i+1}/{len(files)}] 前停止')
+                    # 回退已成功转写的文件状态标记
+                    item.audio_status = 'cancelled'
+                    item.audio_summary = '处理已取消'
+                    db.session.commit()
+                    return
+
                 if af.get('status') == 'ok' and i in _transcript_cache:
                     all_texts.append(_transcript_cache[i])
                     continue  # 已成功识别过的跳过（重试场景复用旧转写）
@@ -156,6 +195,35 @@ def _run_async_processing(app, item_id):
                     db.session.commit()
             except Exception:
                 pass
+
+
+def _run_summary_only(app, item_id):
+    """后台线程入口: 仅跑 summary pass (基于现有 audio_transcript)。"""
+    with app.app_context():
+        from models import ActivityLedger
+        from services.term_correction import apply_corrections
+        item = ActivityLedger.query.get(item_id)
+        if not item:
+            return
+        # 检查是否已被取消
+        if _is_task_cancelled(item_id):
+            logger.info(f'总结任务已取消: item_id={item_id}')
+            item.audio_status = 'cancelled'
+            item.audio_summary = '处理已取消'
+            from extensions import db
+            db.session.commit()
+            return
+        clean_transcript, _ = apply_corrections(item.audio_transcript or '', 'clean')
+        try:
+            _apply_summary_to_item(item, clean_transcript)
+        except Exception as e:
+            item.audio_summary = f'总结失败: {str(e)[:200]}'
+            from extensions import db
+            db.session.commit()
+        finally:
+            from extensions import db
+            item.audio_status = 'completed'
+            db.session.commit()
 
 
 def _apply_summary_to_item(item, full_text):
@@ -519,18 +587,44 @@ def retry_audio_summary(item_id):
     item.audio_status = 'processing'
     db.session.commit()
 
-    def _summary_only():
-        with current_app._get_current_object().app_context():
-            try:
-                _apply_summary_to_item(item, clean_transcript)
-            except Exception as e:
-                item.audio_summary = f'总结失败: {str(e)[:200]}'
-                db.session.commit()
-            finally:
-                item.audio_status = 'completed'
-                db.session.commit()
+    # 拉起后台线程跑 summary pass
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=_run_summary_only, args=(app_obj, item.id), daemon=True).start()
+    return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'processing'}})
 
-    threading.Thread(target=_summary_only, daemon=True).start()
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/cancel', methods=['POST'])
+@dual_login_required
+@visitor_block
+def cancel_audio_processing(item_id):
+    """取消正在进行的识别/总结任务"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    # 设置内存取消事件 (同 worker 立即生效)
+    with _TASK_CANCEL_LOCK:
+        ev = _TASK_CANCEL_EVENTS.get(item_id)
+        if ev is None:
+            ev = _threading.Event()
+            _TASK_CANCEL_EVENTS[item_id] = ev
+        ev.set()
+    # 同时标记 DB (跨 worker 生效, 作為 fallback)
+    if item.audio_status == 'processing':
+        item.audio_status = 'cancelled'
+        item.audio_summary = '处理已取消'
+        db.session.commit()
+    return jsonify({'code': 0, 'message': '已取消处理', 'data': {'audio_status': 'cancelled'}})
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    if not item.audio_transcript:
+        return jsonify({'code': 1, 'message': '没有转写内容，请先完成识别后重试'}), 400
+
+    # 应用术语校正后的转写文本作为 summary 输入
+    clean_transcript, _ = _apply_corrections_text(item.audio_transcript, 'clean')
+
+    item.audio_status = 'processing'
+    db.session.commit()
+
+    # 拉起后台线程跑 summary pass
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=_run_summary_only, args=(app_obj, item.id), daemon=True).start()
     return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'processing'}})
 
 

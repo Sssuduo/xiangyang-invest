@@ -85,19 +85,19 @@ export function getLLMModels() {
 
 // ---- 术语校正 ----
 export function getTermCorrections() {
-  return api.get('/api/admin/term-corrections')
+  return api.get('/api/admin/activity-ledger/term-corrections')
 }
 export function createTermCorrection(data) {
-  return api.post('/api/admin/term-corrections', data)
+  return api.post('/api/admin/activity-ledger/term-corrections', data)
 }
 export function updateTermCorrection(id, data) {
-  return api.put(`/api/admin/term-corrections/${id}`, data)
+  return api.put(`/api/admin/activity-ledger/term-corrections/${id}`, data)
 }
 export function deleteTermCorrection(id) {
-  return api.delete(`/api/admin/term-corrections/${id}`)
+  return api.delete(`/api/admin/activity-ledger/term-corrections/${id}`)
 }
 export function applyTermCorrections(itemId) {
-  return api.post('/api/admin/term-corrections/apply', { item_id: itemId })
+  return api.post('/api/admin/activity-ledger/term-corrections/apply', { item_id: itemId })
 }
 
 // 取消正在进行的识别/总结

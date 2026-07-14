@@ -451,7 +451,7 @@
                 </div>
 
                 <!-- 总结/术语操作行 (已完成状态下，与分段原文垂直对齐) -->
-                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'" class="audio-content-actions">
+                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'failed'" class="audio-content-actions">
                   <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
                     <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
                   </el-select>

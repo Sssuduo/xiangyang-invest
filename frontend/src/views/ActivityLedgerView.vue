@@ -440,15 +440,14 @@
                   </div>
                 </div>
 
-                <!-- 进度条: 独立的水平细长条, 取消按钮在最右侧 -->
-                <div v-if="audioStatus === 'asr_processing' || audioStatus === 'summarizing'" class="audio-progress-wrapper">
-                  <div class="audio-progress-text">
+                <!-- 进度条: 固定在底部的细条，不遮挡分段原文 -->
+                <div v-if="audioStatus === 'asr_processing' || audioStatus === 'summarizing'" class="audio-progress-bar">
+                  <span class="audio-progress-msg">
                     <el-icon class="is-loading"><Loading /></el-icon>
-                    <span v-if="audioStatus === 'asr_processing'">{{ audioDetail?.progress_message || '正在识别...' }}</span>
-                    <span v-else>{{ audioDetail?.progress_message || '正在调用大模型进行分析总结，请稍等' }}</span>
-                  </div>
-                  <el-progress :percentage="audioDetail?.progress_pct || 0" :stroke-width="3" :show-text="false" style="flex:1;" />
-                  <el-button size="small" type="danger" text @click="handleCancelAudio">取消</el-button>
+                    {{ audioDetail?.progress_message || (audioStatus === 'asr_processing' ? '正在识别...' : '正在调用大模型进行分析总结，请稍等') }}
+                  </span>
+                  <el-progress :percentage="audioDetail?.progress_pct || 0" :stroke-width="4" :show-text="false" style="flex:1; min-width: 80px;" />
+                  <el-button size="mini" type="danger" text @click="handleCancelAudio">取消</el-button>
                 </div>
 
                 <!-- 总结/术语操作行 (已完成状态下，与分段原文垂直对齐) -->
@@ -1701,20 +1700,24 @@ async function handleDelete(row) {
 .audio-file-actions .el-button { margin: 0; flex-shrink: 0; }
 .audio-file-actions .el-upload { flex-shrink: 0; display: flex; align-items: center; }
 .audio-file-actions .el-upload .el-button { vertical-align: middle; }
-.audio-progress-wrapper {
+.audio-progress-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  margin: 4px 0;
+  gap: 8px;
+  margin-top: 6px;
+  background: #f5f7fa;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
 }
-.audio-progress-wrapper .audio-progress-text {
+.audio-progress-msg {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 12px;
   color: #606266;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .audio-content-actions {
   display: flex;

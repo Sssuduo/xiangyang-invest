@@ -7,12 +7,22 @@ REMOTE_PORT=15002
 SERVER=root@123.56.9.243
 API_DIR="h:/项目1/backend"
 LOG="h:/项目1/scripts/asr_tunnel.log"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 
 echo "=== 启动 ASR 反代: 笔记本 $ASR_PORT ← 服务器 $REMOTE_PORT ===" | tee -a $LOG
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 使用密钥: $SSH_KEY" | tee -a $LOG
+
+# 检查密钥是否存在
+if [ ! -f "$SSH_KEY" ]; then
+  echo "[ERROR] SSH 密钥不存在: $SSH_KEY" | tee -a $LOG
+  echo "请指定密钥路径: SSH_KEY=/path/to/key bash scripts/asr_tunnel_robust.sh" | tee -a $LOG
+  exit 1
+fi
 
 # 0. 清理服务器上残留的端口占用（上次退出导致的僵尸 sshd 进程）
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 清理服务器残留端口 $REMOTE_PORT ..." | tee -a $LOG
-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $SERVER \
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 $SERVER \
+  "fuser -k $REMOTE_PORT/tcp 2>/dev/null; sleep 2; (ss -tlnp 2>/dev/null | grep $REMOTE_PORT || echo 'port cleared')" 2>&1 | tee -a $LOG
   "fuser -k $REMOTE_PORT/tcp 2>/dev/null; sleep 2; (ss -tlnp 2>/dev/null | grep $REMOTE_PORT || echo 'port cleared')" 2>&1 | tee -a $LOG
 
 # 1. 确保本机的 asr_api.py 还在跑；如果没起来就启动
@@ -36,7 +46,8 @@ fi
 # 2. 循环建立反向隧道，断线自动重试
 while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] 建立 SSH 反代 $REMOTE_PORT:$ASR_PORT ..." | tee -a $LOG
-  ssh -o StrictHostKeyChecking=no \
+  ssh -i "$SSH_KEY" \
+      -o StrictHostKeyChecking=no \
       -o ServerAliveInterval=60 \
       -o ServerAliveCountMax=3 \
       -o ExitOnForwardFailure=yes \
@@ -45,7 +56,7 @@ while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] 反代断开 (exit=$EXIT_CODE)，5 秒后重连..." | tee -a $LOG
 
   # 清理服务器残留，避免端口被僵尸 sshd 占住造成下次 ExitOnForwardFailure
-  ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 $SERVER \
+  ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 $SERVER \
     "fuser -k $REMOTE_PORT/tcp 2>/dev/null; true" 2>/dev/null || true
   sleep 5
 done

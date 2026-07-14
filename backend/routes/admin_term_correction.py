@@ -1,30 +1,21 @@
-"""术语校正 API
+"""
+术语校正 API
 
 提供术语映射表的 CRUD 和应用到台账的接口。
+所有路由注册在 admin_term_correction_bp (前缀 /api/admin/term-corrections)。
 """
 import logging
-from flask import request, jsonify, current_app
+
+from flask import request, jsonify
 from models import TermCorrection
 from extensions import db
-from routes import admin_term_correction_bp as _bp_alias  # 确保 routes/__init__.py 先完成 Blueprint 创建
-
-import logging
-from flask import request, jsonify, current_app
-from models import TermCorrection
-from extensions import db
-from routes.business_auth import dual_login_required, visitor_block
-
-logger = logging.getLogger(__name__)
-
-# alias 兼容 routes 注册
-admin_activity_ledger_bp = _bp_alias
-admin_term_correction_bp = _bp_alias
+from routes import admin_term_correction_bp
 from routes.business_auth import dual_login_required, visitor_block
 
 logger = logging.getLogger(__name__)
 
 
-@admin_activity_ledger_bp.route('/term-corrections', methods=['GET'])
+@admin_term_correction_bp.route('', methods=['GET'])
 @dual_login_required
 def list_term_corrections():
     """列出全部术语校正。"""
@@ -32,7 +23,7 @@ def list_term_corrections():
     return jsonify({'code': 0, 'data': [c.to_dict() for c in items]})
 
 
-@admin_activity_ledger_bp.route('/term-corrections', methods=['POST'])
+@admin_term_correction_bp.route('', methods=['POST'])
 @dual_login_required
 @visitor_block
 def create_term_correction():
@@ -63,7 +54,7 @@ def create_term_correction():
         return jsonify({'code': 1, 'message': f'保存失败: {str(e)[:200]}'}), 500
 
 
-@admin_activity_ledger_bp.route('/term-corrections/<int:tc_id>', methods=['PUT'])
+@admin_term_correction_bp.route('/<int:tc_id>', methods=['PUT'])
 @dual_login_required
 @visitor_block
 def update_term_correction(tc_id):
@@ -87,7 +78,7 @@ def update_term_correction(tc_id):
     return jsonify({'code': 0, 'message': '已更新', 'data': item.to_dict()})
 
 
-@admin_activity_ledger_bp.route('/term-corrections/<int:tc_id>', methods=['DELETE'])
+@admin_term_correction_bp.route('/<int:tc_id>', methods=['DELETE'])
 @dual_login_required
 @visitor_block
 def delete_term_correction(tc_id):
@@ -100,7 +91,7 @@ def delete_term_correction(tc_id):
     return jsonify({'code': 0, 'message': '已删除'})
 
 
-@admin_activity_ledger_bp.route('/term-corrections/apply', methods=['POST'])
+@admin_term_correction_bp.route('/apply', methods=['POST'])
 @dual_login_required
 @visitor_block
 def apply_term_corrections():

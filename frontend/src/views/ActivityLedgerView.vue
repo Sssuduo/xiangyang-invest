@@ -379,7 +379,7 @@
                     <div class="audio-section-header">
                       <span class="section-label">
                         <el-icon><Document /></el-icon> 录音识别内容
-                        <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ audioDetail.audio_transcript.length }} 字</el-tag>
+                        <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ (audioDetail.audio_transcript || '').length }} 字</el-tag>
                         <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
                       </span>
                     </div>
@@ -463,11 +463,9 @@
               <el-button size="small" plain @click="openTermDrawer">
                 <el-icon><Edit /></el-icon> 术语校正
               </el-button>
-              <a v-if="audioDetail?.audio_docx_path" :href="audioDetail.audio_docx_path" target="_blank">
-                <el-button size="small" type="success" plain>
-                  <el-icon><Download /></el-icon> 下载 Word
-                </el-button>
-              </a>
+              <el-button v-if="audioDetail?.audio_docx_path" size="small" type="success" plain @click="downloadAudioDocx">
+                <el-icon><Download /></el-icon> 下载 Word
+              </el-button>
             </div>
           </template>
 
@@ -1153,6 +1151,8 @@ async function loadAudioDetail(id) {
 }
 
 function startPolling(id) {
+  // 守卫：避免重复创建并行 interval（旧句柄丢失会导致永远关不掉）
+  if (_pollTimer) return
   stopPolling()
   _pollTimer = setInterval(async () => {
     try {
@@ -1305,6 +1305,29 @@ function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + 'B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
   return (bytes / 1024 / 1024).toFixed(1) + 'MB'
+}
+
+// 下载 Word 文档（用 fetch + blob 避免 <a> 包裹 <el-button> 的点击穿透问题）
+async function downloadAudioDocx() {
+  if (!editingId.value) return
+  try {
+    const res = await fetch(`/api/admin/activity-ledger/${editingId.value}/audio/docx`)
+    if (!res.ok) {
+      ElMessage.error('文件下载失败，请重新生成总结')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `活动台账_会议总结_${editingId.value}.docx`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    ElMessage.error('下载失败：' + (err.message || ''))
+  }
 }
 
 // 格式化时长

@@ -44,7 +44,8 @@ echo "[3/6] 拉取最新代码..."
 cd "$APP_DIR"
 git fetch origin --tags
 git checkout "$BRANCH"
-git pull origin "$BRANCH"
+# 直接对齐远端，避免工作区脏/本地提交导致 pull 冲突使自动部署卡住
+git reset --hard "origin/$BRANCH"
 CURRENT_TAG=$(git describe --tags 2>/dev/null || echo "无Tag")
 CURRENT_COMMIT=$(git rev-parse --short HEAD)
 echo "  ✓ 当前版本: $CURRENT_TAG ($CURRENT_COMMIT)"

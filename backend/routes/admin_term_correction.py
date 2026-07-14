@@ -2,17 +2,20 @@
 术语校正 API
 
 提供术语映射表的 CRUD 和应用到台账的接口。
-所有路由注册在 admin_term_correction_bp (前缀 /api/admin/term-corrections)。
+所有路由注册在 admin_term_correction_bp (前缀 /api/admin)。
 """
 import logging
 
 from flask import request, jsonify
 from models import TermCorrection
 from extensions import db
-from routes import admin_term_correction_bp
 from routes.business_auth import dual_login_required, visitor_block
 
 logger = logging.getLogger(__name__)
+
+# 导入 Blueprint (在 routes/__init__.py 中创建)
+# 必须在 routes/__init__.py 之后导入，确保 Blueprint 已创建
+from routes import admin_term_correction_bp
 
 
 @admin_term_correction_bp.route('', methods=['GET'])

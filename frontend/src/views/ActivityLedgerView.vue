@@ -458,8 +458,11 @@
                   <el-button size="small" type="primary" plain @click="handleRetrySummary">
                     <el-icon><Star /></el-icon> 重新总结
                   </el-button>
+                  <el-button size="small" plain @click="openTextCorrection">
+                    <el-icon><Document /></el-icon> 文本校正
+                  </el-button>
                   <el-button size="small" plain @click="openTermDrawer">
-                    <el-icon><Edit /></el-icon> 术语校正
+                    <el-icon><Edit /></el-icon> 术语管理
                   </el-button>
                   <el-button v-if="audioDetail?.audio_docx_path" size="small" type="success" plain @click="downloadAudioDocx">
                     <el-icon><Download /></el-icon> 下载 Word
@@ -732,6 +735,12 @@ async function handleApplyTerms() {
 function openTermDrawer() {
   termDrawerVisible.value = true
   loadTermCorrections()
+}
+
+// 打开 Web 文本校正页 (新标签页)
+function openTextCorrection() {
+  const url = `#/admin/text-correction/${editingId.value}`
+  window.open(url, '_blank')
 }
 
 // Markdown 渲染器 (lazy init)

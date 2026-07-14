@@ -214,6 +214,13 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/text-correction/:id',
+    name: 'TextCorrection',
+    component: () => import('@/views/admin/TextCorrectionView.vue'),
+    meta: { requiresAuth: true },
+    props: true
+  },
+  {
     path: '/admin/demand',
     name: 'AdminDemand',
     component: () => import('@/views/admin/DemandList.vue'),

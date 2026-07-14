@@ -569,13 +569,26 @@ def retry_audio_recognition(item_id):
 @dual_login_required
 @visitor_block
 def retry_audio_summary(item_id):
-    """单独重新生成结构化总结（基于现有 audio_transcript）"""
-    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
-    if not item.audio_transcript and not item.audio_transcript_segmented:
-        return jsonify({'code': 1, 'message': '没有转写内容，请先完成识别后重试'}), 400
+    """单独重新生成结构化总结（基于现有 audio_transcript）
 
-    if item.audio_status in ('asr_processing', 'summarizing'):
-        return jsonify({'code': 1, 'message': '正在处理中，请等待完成后重试'}), 409
+    与 ASR 解耦：只要有转写内容即可总结，无需 ASR 服务在线。
+    """
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    # 检查是否有转写内容（核心：不依赖 ASR 服务状态）
+    has_transcript = bool(
+        (item.audio_transcript and item.audio_transcript.strip()) or
+        (item.audio_transcript_segmented and item.audio_transcript_segmented.strip())
+    )
+    if not has_transcript:
+        return jsonify({
+            'code': 1,
+            'message': '没有转写内容，请先完成识别或手动输入转写文本后重试'
+        }), 400
+
+    # 仅在 summarizing 时拒绝，asr_processing 不阻塞（允许先总结已有内容）
+    if item.audio_status == 'summarizing':
+        return jsonify({'code': 1, 'message': '正在总结中，请等待完成后重试'}), 409
 
     # 获取用户选择的模型 ID (可选)
     data = request.get_json(silent=True) or {}
@@ -591,6 +604,7 @@ def retry_audio_summary(item_id):
         except (TypeError, ValueError):
             return jsonify({'code': 1, 'message': '模型 ID 格式无效'}), 400
 
+    # 总结期间允许 asr_processing 并行（不阻塞新识别）
     item.audio_status = 'summarizing'
     item.progress_message = '正在总结...'
     # V15.1: 记录用户选择的模型 ID，刷新后前端可回填
@@ -600,7 +614,7 @@ def retry_audio_summary(item_id):
     app_obj = current_app._get_current_object()
     # 通过线程参数传递 model_id，避免 ORM 临时属性跨线程丢失
     threading.Thread(target=_run_summary_only, args=(app_obj, item.id, model_id), daemon=True).start()
-    return jsonify({'code': 0, 'message': '正在重新生成总结...', 'data': {'audio_status': 'summarizing'}})
+    return jsonify({'code': 0, 'message': '正在重新生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
 
 
 @admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/cancel', methods=['POST'])

@@ -17,3 +17,4 @@ from models.export_print import (ExportTemplate, ExportFieldConfig, ImportFieldC
     PrintTemplate, PrintFieldConfig, TemplateFieldMapping)
 from models.audit import ChangeHistory
 from models.term_correction import TermCorrection
+from models.voice_knowledge import VoiceKnowledgeEntry, TextCorrectionRecord

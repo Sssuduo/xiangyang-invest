@@ -1697,9 +1697,10 @@ async function handleDelete(row) {
 .term-drawer-footer { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
 .term-form { padding: 12px; background: #fafafa; border-radius: 6px; border: 1px solid #eee; }
 .audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
-.audio-file-actions { display: flex; gap: 8px; flex-wrap: nowrap; padding: 6px 0; overflow-x: auto; }
+.audio-file-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 6px 0; overflow-x: auto; }
 .audio-file-actions .el-button { margin: 0; flex-shrink: 0; }
-.audio-file-actions .el-upload { flex-shrink: 0; }
+.audio-file-actions .el-upload { flex-shrink: 0; display: flex; align-items: center; }
+.audio-file-actions .el-upload .el-button { vertical-align: middle; }
 .audio-progress-wrapper {
   display: flex;
   align-items: center;
@@ -1717,6 +1718,7 @@ async function handleDelete(row) {
 }
 .audio-content-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
   padding: 6px 0;

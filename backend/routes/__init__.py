@@ -120,8 +120,13 @@ def register_routes(app):
     app.register_blueprint(admin_term_correction.admin_term_correction_bp)
 
     # LLM 模型列表（顶层路由 /api/llm-models，供前端选择模型）
-    from routes.admin_activity_ledger_audio import get_llm_models
-    app.add_url_rule('/llm-models', view_func=get_llm_models, methods=['GET'])
+    from flask import jsonify
+    from routes.business_auth import dual_login_required
+    def _get_llm_models():
+        from models.ai import LLMModel
+        ms = LLMModel.query.filter_by(is_active=True).order_by(LLMModel.sort_order).all()
+        return jsonify({"code": 0, "data": [{"id": m.id, "name": m.name, "provider": m.provider} for m in ms]})
+    app.add_url_rule("/api/llm-models", view_func=dual_login_required(_get_llm_models), methods=["GET"])
 
     app.register_blueprint(admin_demand.admin_demand_bp)
     app.register_blueprint(admin_construction.admin_construction_bp)

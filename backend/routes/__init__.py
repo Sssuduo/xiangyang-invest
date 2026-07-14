@@ -120,7 +120,8 @@ def register_routes(app):
     app.register_blueprint(admin_activity_import.admin_activity_import_bp)
     app.register_blueprint(admin_activity_ledger.admin_activity_ledger_bp)
     app.register_blueprint(admin_activity_ledger_audio.admin_activity_ledger_audio_bp)
-    app.register_blueprint(admin_term_correction.admin_term_correction_bp)
+    from routes import admin_term_correction as _atc
+    from routes import admin_voice_knowledge as _avk
     app.register_blueprint(admin_voice_knowledge.admin_voice_knowledge_bp)
 
     # LLM 模型列表（顶层路由 /api/llm-models，供前端选择模型）

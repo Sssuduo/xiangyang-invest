@@ -260,7 +260,7 @@ def _apply_summary_to_item(item, full_text, model_id=None):
     """
     import logging, os
     logger = logging.getLogger(__name__)
-    from services.text_summarizer import summarize_meeting, summarize_with_llm
+    from services.text_summarizer import summarize_meeting
     from services.meeting_document import generate_meeting_docx
 
     logger.info(f'后台结构化总结开始：item_id={item.id}，{len(full_text)} 字，model_id={model_id}')
@@ -289,15 +289,13 @@ def _apply_summary_to_item(item, full_text, model_id=None):
         # backward compat: audio_summary 指向摘要版
         item.audio_summary = summary_result.get('summary', '')
         db.session.commit()
-        logger.info(f'后台结构化总结完成 summary={len(summary_result.get("summary",""))}')
+        summary_len = len(summary_result.get('summary', ''))
+        logger.info(f'后台结构化总结完成 (3阶段串行LLM) segmented={len(summary_result.get("segmented",""))} clean={len(summary_result.get("clean",""))} summary={summary_len}')
     except Exception as e:
-        logger.warning(f'meeting summary failed: {e}')
-        # 降级尝试简单总结；若仍失败则向上传播，让调用方把状态置为 failed
-        try:
-            item.audio_summary = summarize_with_llm(full_text)
-            db.session.commit()
-        except Exception:
-            raise
+        logger.error(f'meeting summary failed: {e}', exc_info=True)
+        item.audio_summary = f'总结失败: {str(e)[:200]}'
+        item.audio_status = 'failed'
+        db.session.commit()
 
 
 def _run_terminology_only(app, item_id):

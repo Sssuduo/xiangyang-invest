@@ -1697,8 +1697,9 @@ async function handleDelete(row) {
 .term-drawer-footer { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
 .term-form { padding: 12px; background: #fafafa; border-radius: 6px; border: 1px solid #eee; }
 .audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
-.audio-file-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
-.audio-file-actions .el-button { margin: 0; }
+.audio-file-actions { display: flex; gap: 8px; flex-wrap: nowrap; padding: 6px 0; overflow-x: auto; }
+.audio-file-actions .el-button { margin: 0; flex-shrink: 0; }
+.audio-file-actions .el-upload { flex-shrink: 0; }
 .audio-progress-wrapper {
   display: flex;
   align-items: center;
@@ -1717,9 +1718,12 @@ async function handleDelete(row) {
 .audio-content-actions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 6px 0;
+  overflow-x: auto;
 }
+.audio-content-actions .el-button { margin: 0; flex-shrink: 0; }
+.audio-content-actions .el-select { flex-shrink: 0; }
 .audio-transcript-section,
 .audio-summary-section {
   margin-top: 12px;

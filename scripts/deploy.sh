@@ -69,6 +69,24 @@ npm run build 2>&1 | tail -3
 cd "$APP_DIR"
 echo "  ✓ 前端构建完成"
 
+# ── 5.1 同步 dist 到 static（保留 uploads 目录）──
+echo "  → 同步 dist 到 static ..."
+if [ -d "$APP_DIR/static/uploads" ]; then
+    mv "$APP_DIR/static/uploads" "/tmp/uploads_deploy_backup"
+fi
+# 优先用 rsync，否则退回 cp
+if command -v rsync &>/dev/null; then
+    rsync -a --delete --exclude='uploads' "$APP_DIR/frontend/dist/" "$APP_DIR/static/"
+else
+    # 清空 static 后整体复制（保留目录本身）
+    find "$APP_DIR/static" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' -exec rm -rf {} + 2>/dev/null || true
+    cp -r "$APP_DIR/frontend/dist/"* "$APP_DIR/static/" 2>/dev/null || true
+fi
+if [ -d "/tmp/uploads_deploy_backup" ]; then
+    mv "/tmp/uploads_deploy_backup" "$APP_DIR/static/uploads"
+fi
+echo "  ✓ dist 已同步到 static"
+
 # ── 6. 重启服务 ──
 echo "[6/6] 重启服务..."
 systemctl restart invest-app

@@ -563,17 +563,6 @@ def retry_audio_recognition(item_id):
     })
 
 
-@admin_activity_ledger_audio_bp.route('/llm-models', methods=['GET'])
-@dual_login_required
-def get_llm_models():
-    """获取可用的 LLM 模型列表 (供前端选择)"""
-    from models.investment import LLMModel
-    models = LLMModel.query.filter_by(is_active=True).order_by(LLMModel.sort_order).all()
-    return jsonify({'code': 0, 'data': [{
-        'id': m.id,
-        'name': m.name,
-        'provider': m.provider,
-    } for m in models]})
 
 
 @admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/retry-summary', methods=['POST'])

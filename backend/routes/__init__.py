@@ -118,6 +118,11 @@ def register_routes(app):
     app.register_blueprint(admin_activity_ledger.admin_activity_ledger_bp)
     app.register_blueprint(admin_activity_ledger_audio.admin_activity_ledger_audio_bp)
     app.register_blueprint(admin_term_correction.admin_term_correction_bp)
+
+    # LLM 模型列表（顶层路由 /api/llm-models，供前端选择模型）
+    from routes.admin_activity_ledger_audio import get_llm_models
+    app.add_url_rule('/llm-models', view_func=get_llm_models, methods=['GET'])
+
     app.register_blueprint(admin_demand.admin_demand_bp)
     app.register_blueprint(admin_construction.admin_construction_bp)
     app.register_blueprint(admin_construction_import.admin_construction_import_bp)

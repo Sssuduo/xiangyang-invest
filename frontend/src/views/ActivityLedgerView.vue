@@ -635,10 +635,12 @@ async function handleCancelAudio() {
 async function handleRetrySummary() {
   if (!editingId.value) return
 
-  // 检查是否有转写内容（不依赖 ASR 服务状态）
-  const hasTranscript = (audioDetail?.audio_transcript && audioDetail.audio_transcript.trim()) ||
-                        (audioDetail?.audio_transcript_segmented && audioDetail.audio_transcript_segmented.trim())
-  if (!hasTranscript) {
+  // 双重检查：转写内容字段 或 状态为已完成（兜底）
+  const hasTranscript = (audioDetail.value?.audio_transcript && audioDetail.value.audio_transcript.trim()) ||
+                        (audioDetail.value?.audio_transcript_segmented && audioDetail.value.audio_transcript_segmented.trim())
+  const isCompleted = audioStatus.value === 'completed' || audioStatus.value === 'asr_completed'
+
+  if (!hasTranscript && !isCompleted) {
     ElMessage.warning('没有转写内容，请先完成识别或手动输入转写文本')
     return
   }

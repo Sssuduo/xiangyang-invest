@@ -29,7 +29,7 @@ admin_activity_import_bp = Blueprint('admin_activity_import', __name__, url_pref
 # 活动台账 - 主资源 CRUD (含术语校正)
 admin_activity_ledger_bp = Blueprint('admin_activity_ledger', __name__, url_prefix='/api/admin')
 # 术语校正 (活动台账 / 研判 / 清洁摘要)
-admin_term_correction_bp = Blueprint('admin_term_correction', __name__, url_prefix='/api/admin')
+admin_term_correction_bp = Blueprint('admin_term_correction', __name__, url_prefix='/api/admin/term-corrections')
 # 活动台账 - 录音文件与结构化总结 (独立 blueprint 避免命名冲突)
 admin_activity_ledger_audio_bp = Blueprint('admin_activity_ledger_audio', __name__, url_prefix='/api/admin')
 

@@ -13,9 +13,10 @@ from routes.business_auth import dual_login_required, visitor_block
 
 logger = logging.getLogger(__name__)
 
-# 导入 Blueprint (在 routes/__init__.py 中创建)
-# 必须在 routes/__init__.py 之后导入，确保 Blueprint 已创建
+# 导入 Blueprint 并设为模块级变量 (供 routes/__init__.py 注册时使用)
 from routes import admin_term_correction_bp
+
+# 此处 module 被 routes/__init__.py 导入时 blueprint 路由完成注册
 
 
 @admin_term_correction_bp.route('', methods=['GET'])

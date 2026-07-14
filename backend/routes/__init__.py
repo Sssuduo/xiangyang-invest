@@ -135,9 +135,9 @@ def register_routes(app):
     app.register_blueprint(admin_lead.admin_lead_bp)
     app.register_blueprint(admin_knowledge.admin_knowledge_bp)
 
-    # 注册 C 端 App 只读蓝图
-    from routes import client as _client
-    app.register_blueprint(client.client_bp)
+    # 注册 C 端 App 只读蓝图（当前禁用：移动端功能暂不上线）
+    # from routes import client as _client
+    # app.register_blueprint(client.client_bp)
 
     # 注册 debug 路由和错误处理器
     _admin_debug.register_debug_routes(app)

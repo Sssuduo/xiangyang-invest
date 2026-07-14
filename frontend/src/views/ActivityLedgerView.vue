@@ -631,16 +631,25 @@ async function handleCancelAudio() {
   }
 }
 
-// 重新总结（不重跑 ASR）
+// 重新总结（与 ASR 解耦）
 async function handleRetrySummary() {
   if (!editingId.value) return
+
+  // 检查是否有转写内容（不依赖 ASR 服务状态）
+  const hasTranscript = (audioDetail?.audio_transcript && audioDetail.audio_transcript.trim()) ||
+                        (audioDetail?.audio_transcript_segmented && audioDetail.audio_transcript_segmented.trim())
+  if (!hasTranscript) {
+    ElMessage.warning('没有转写内容，请先完成识别或手动输入转写文本')
+    return
+  }
+
   stopPolling()
   try {
     const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
     const res = await retryAudioSummary(editingId.value, payload)
     if (res.code === 0) {
-      ElMessage.success('正在重新生成总结')
-      audioStatus.value = 'processing'
+      ElMessage.success('正在重新生成总结（与 ASR 服务独立）')
+      audioStatus.value = 'summarizing'
       audioProcessing.value = true
       startPolling(editingId.value)
     } else {

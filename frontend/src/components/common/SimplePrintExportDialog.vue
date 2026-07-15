@@ -17,42 +17,39 @@
       <!-- 招商项目选项 -->
       <template v-if="entityType === 'investment'">
         <el-form-item label="动态范围">
-          <el-radio-group v-model="subOptions.activityMode">
+          <el-radio-group v-model="subOptions.activityRangeType">
             <el-radio label="count">按条数导出</el-radio>
-            <el-radio label="time">按时间导出</el-radio>
+            <el-radio label="month">按最近月份</el-radio>
+            <el-radio label="daterange">按时间段</el-radio>
           </el-radio-group>
         </el-form-item>
 
         <!-- 按条数导出 -->
-        <el-form-item v-if="subOptions.activityMode === 'count'" label=" ">
+        <el-form-item v-if="subOptions.activityRangeType === 'count'" label=" ">
+          <span class="range-hint">取最近</span>
           <el-input-number v-model="subOptions.activityCount" :min="1" :max="999" controls-position="right" />
           <span class="range-hint">条</span>
           <span class="range-hint--weak">不足则导出全部</span>
         </el-form-item>
 
-        <!-- 按时间导出 -->
-        <template v-if="subOptions.activityMode === 'time'">
-          <el-form-item label="时间模式">
-            <el-radio-group v-model="subOptions.activityTimeMode">
-              <el-radio label="month">按最近月份</el-radio>
-              <el-radio label="daterange">按时间段</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item v-if="subOptions.activityTimeMode === 'month'" label=" ">
-            <el-input-number v-model="subOptions.activityMonths" :min="1" :max="60" controls-position="right" />
-            <span class="range-hint">个月</span>
-          </el-form-item>
-          <el-form-item v-if="subOptions.activityTimeMode === 'daterange'" label=" ">
-            <el-date-picker
-              v-model="subOptions.activityDateRange"
-              type="daterange"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              value-format="YYYY-MM-DD"
-              style="width:100%"
-            />
-          </el-form-item>
-        </template>
+        <!-- 按最近月份 -->
+        <el-form-item v-if="subOptions.activityRangeType === 'month'" label=" ">
+          <span class="range-hint">最近</span>
+          <el-input-number v-model="subOptions.activityMonths" :min="1" :max="60" controls-position="right" />
+          <span class="range-hint">个月</span>
+        </el-form-item>
+
+        <!-- 按时间段 -->
+        <el-form-item v-if="subOptions.activityRangeType === 'daterange'" label=" ">
+          <el-date-picker
+            v-model="subOptions.activityDateRange"
+            type="daterange"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width:100%"
+          />
+        </el-form-item>
 
         <el-form-item label="诉求模式">
           <el-select v-model="subOptions.demandMode" style="width:100%">
@@ -141,10 +138,9 @@ const selectedTemplateId = ref(0)
 const processing = ref(false)
 
 const subOptions = ref({
-  // ---- 招商项目：动态范围（V15.3 重构：按条数/按时间） ----
-  activityMode: 'count',          // 'count' | 'time'
-  activityCount: 5,               // 按条数时的条数（默认 5，等价旧 last5）
-  activityTimeMode: 'month',      // 'month' | 'daterange'
+  // ---- 招商项目：动态范围（V15.3: 三选一） ----
+  activityRangeType: 'count',     // 'count' | 'month' | 'daterange'
+  activityCount: 5,               // 按条数时的条数（默认 5）
   activityMonths: 1,              // 按最近月份时的月数（默认 1）
   activityDateRange: null,        // 按时间段时的 [start, end] daterange
   // ---- 招商项目：诉求 ----
@@ -185,17 +181,19 @@ function buildDownloadUrl() {
   params.set('template_id', selectedTemplateId.value)
 
   if (props.entityType === 'investment') {
-    // V15.3: 招商项目导出 — 新参数按条数/按时间（与 activity_range 旧参数兼容）
+    // V15.3: 招商项目导出 — 三选一（按条数/按最近月份/按时间段）
     const ao = subOptions.value
-    if (ao.activityMode === 'count') {
+    if (ao.activityRangeType === 'count') {
       params.set('activity_mode', 'count')
       if (ao.activityCount > 0) params.set('activity_count', String(ao.activityCount))
-    } else if (ao.activityMode === 'time') {
+    } else if (ao.activityRangeType === 'month') {
       params.set('activity_mode', 'time')
-      params.set('activity_time_mode', ao.activityTimeMode || '')
-      if (ao.activityTimeMode === 'month' && ao.activityMonths > 0) {
-        params.set('activity_months', String(ao.activityMonths))
-      } else if (ao.activityTimeMode === 'daterange' && Array.isArray(ao.activityDateRange) && ao.activityDateRange.length === 2) {
+      params.set('activity_time_mode', 'month')
+      if (ao.activityMonths > 0) params.set('activity_months', String(ao.activityMonths))
+    } else if (ao.activityRangeType === 'daterange') {
+      params.set('activity_mode', 'time')
+      params.set('activity_time_mode', 'daterange')
+      if (Array.isArray(ao.activityDateRange) && ao.activityDateRange.length === 2) {
         params.set('activity_start', ao.activityDateRange[0])
         params.set('activity_end', ao.activityDateRange[1])
       }

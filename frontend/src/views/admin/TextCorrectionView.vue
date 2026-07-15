@@ -241,6 +241,38 @@ function confirmReplace() {
     return
   }
   showReplaceDialog.value = false
+
+  // 记录校正（这才是"应用到台账"需要保存的数据）
+  corrections.value.unshift({
+    id: Date.now(),
+    original: selectedText.value,
+    replacement: replacementText.value.trim(),
+    method: 'manual',
+  })
+
+  // 同步替换编辑器 DOM 中的文本，让用户立即看到效果
+  if (currentReplaceContext) {
+    const editorRef = getCurrentEditorRef()
+    if (editorRef) {
+      const sel = window.getSelection()
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0)
+        if (range.toString().trim() === selectedText.value) {
+          range.deleteContents()
+          range.insertNode(document.createTextNode(replacementText.value.trim()))
+        }
+      }
+    }
+  }
+}
+
+// 根据当前 tab 返回对应的编辑器 ref
+function getCurrentEditorRef() {
+  switch (activeTab.value) {
+    case 'clean': return cleanEditorRef.value
+    case 'summary': return summaryEditorRef.value
+    default: return segmentedEditorRef.value
+  }
 }
 
 async function handleApplyToLedger() {

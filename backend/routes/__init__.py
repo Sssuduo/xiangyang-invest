@@ -8,6 +8,9 @@ business_auth_bp = Blueprint('business_auth', __name__, url_prefix='/api/auth')
 
 # 后台管理 blueprints
 admin_auth_bp = Blueprint('admin_auth', __name__, url_prefix='/api/admin')
+admin_voice_knowledge_bp = Blueprint(
+    'admin_voice_knowledge', __name__, url_prefix='/api/admin/voice-knowledge'
+)
 admin_pages_bp = Blueprint('admin_pages', __name__, url_prefix='/api/admin')
 admin_provinces_bp = Blueprint('admin_provinces', __name__, url_prefix='/api/admin')
 admin_models_bp = Blueprint('admin_models', __name__, url_prefix='/api/admin')
@@ -29,7 +32,7 @@ admin_activity_import_bp = Blueprint('admin_activity_import', __name__, url_pref
 # 活动台账 - 主资源 CRUD (含术语校正)
 admin_activity_ledger_bp = Blueprint('admin_activity_ledger', __name__, url_prefix='/api/admin')
 # 术语校正 (活动台账 / 研判 / 清洁摘要)
-admin_term_correction_bp = Blueprint('admin_term_correction', __name__, url_prefix='/api/admin')
+admin_term_correction_bp = Blueprint('admin_term_correction', __name__, url_prefix='/api/admin/term-corrections')
 # 活动台账 - 录音文件与结构化总结 (独立 blueprint 避免命名冲突)
 admin_activity_ledger_audio_bp = Blueprint('admin_activity_ledger_audio', __name__, url_prefix='/api/admin')
 
@@ -117,7 +120,9 @@ def register_routes(app):
     app.register_blueprint(admin_activity_import.admin_activity_import_bp)
     app.register_blueprint(admin_activity_ledger.admin_activity_ledger_bp)
     app.register_blueprint(admin_activity_ledger_audio.admin_activity_ledger_audio_bp)
-    app.register_blueprint(admin_term_correction.admin_term_correction_bp)
+    from routes import admin_term_correction as _atc
+    from routes import admin_voice_knowledge as _avk
+    app.register_blueprint(admin_voice_knowledge.admin_voice_knowledge_bp)
 
     # LLM 模型列表（顶层路由 /api/llm-models，供前端选择模型）
     from flask import jsonify

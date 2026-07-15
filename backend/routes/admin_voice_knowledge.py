@@ -179,6 +179,104 @@ def get_summary_page_data(item_id):
     })
 
 
+# ======================== Phase 3: 智能替换 + 应用到台账 ========================
+
+@admin_voice_knowledge_bp.route(
+    '/activity-ledger/<int:item_id>/auto-correct',
+    methods=['POST']
+)
+@dual_login_required
+@visitor_block
+def auto_correct_ledger(item_id):
+    """
+    对台账自动检测同音词并替换高置信度项。
+
+    Request: { min_confidence?: float (默认 0.90) }
+    Response: { code, data: { applied: [...], candidates: [...] } }
+    """
+    item = _get_item_or_404(item_id)
+    data = request.get_json(silent=True) or {}
+    min_conf = data.get('min_confidence', VoiceKnowledgeService.CONFIDENCE_HIGH)
+
+    # 分段原文作为校正基准
+    original_text = item.audio_transcript_segmented or item.audio_transcript or ''
+    if not original_text.strip():
+        return jsonify({'code': 1, 'message': '没有可校正的文本'}), 400
+
+    # 应用校正
+    corrected_text, corrections = VoiceKnowledgeService.apply_corrections(
+        original_text,
+        min_confidence=min_conf,
+    )
+
+    # 保存到台账
+    item.audio_transcript_segmented = corrected_text
+    db.session.commit()
+
+    return jsonify({
+        'code': 0,
+        'message': f'自动校正完成，替换 {len(corrections)} 处',
+        'data': {
+            'applied': corrections,
+            'corrected_text': corrected_text,
+        },
+    })
+
+
+@admin_voice_knowledge_bp.route(
+    '/activity-ledger/<int:item_id>/save-corrected-text',
+    methods=['PUT']
+)
+@dual_login_required
+@visitor_block
+def save_corrected_text(item_id):
+    """
+    保存 Web 页编辑后的文本到台账。
+
+    Request: {
+        transcript_segmented?: str,
+        transcript_clean?: str,
+        summary_structured?: str,
+        corrections: [{ original, replacement, method, confidence? }]
+        persist_to_knowledge?: bool
+    }
+    """
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    data = request.get_json(silent=True) or {}
+
+    # 更新文本字段
+    if 'transcript_segmented' in data:
+        item.audio_transcript_segmented = data['transcript_segmented']
+    if 'transcript_clean' in data:
+        item.audio_transcript_clean = data['transcript_clean']
+    if 'summary_structured' in data:
+        item.audio_summary_structured = data['summary_structured']
+
+    # 记录校正
+    corrections = data.get('corrections', [])
+    for c in corrections:
+        record = VoiceKnowledgeService.record_correction(
+            ledger_id=item_id,
+            original=c.get('original', ''),
+            replacement=c.get('replacement', ''),
+            context_before=c.get('context_before'),
+            context_after=c.get('context_after'),
+            method=c.get('method', 'manual'),
+            confidence=c.get('confidence'),
+        )
+        # 沉淀到知识库
+        if data.get('persist_to_knowledge', False):
+            VoiceKnowledgeService.persist_to_knowledge(record.id)
+
+    db.session.commit()
+
+    return jsonify({
+        'code': 0,
+        'message': f'已保存文本和 {len(corrections)} 条校正',
+        'data': {'corrections_count': len(corrections)},
+    })
+
+
 # ======================== 供 LLM 提示词注入调用 ========================
 
 def build_knowledge_prompt_fragment(transcript: str = '',

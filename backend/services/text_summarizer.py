@@ -8,10 +8,17 @@ V15.2 变更:
 - summarize_meeting() 拆分为 3 次独立 LLM 调用，避免输出截断
   1. segment_meeting()  → 发言分段
   2. clean_meeting()    → 清洁版（基于分段）
-  3. summarize_meeting_inner() → 摘要版（基于分段，避免内容丢失）
+  3. summarize_meeting_inner() → 摘要版（基于分段+清洁版）
 - 每一阶段可独立重试
-- max_tokens 提升至 5000，提供冗余
+
+V15.3 变更:
+- 知识库提示词注入: 每阶段 prompt 追加本地词汇知识
+- 同音词精准替换指导
 """
+import logging
+import re
+
+logger = logging.getLogger(__name__)
 import logging
 import re
 
@@ -100,7 +107,13 @@ def segment_meeting(transcript: str, knowledge_block: str = '') -> str:
     max_input_chars = 30000
     truncated = transcript[:max_input_chars]
 
+    # === Phase 4: 注入语音知识库提示 ===
     system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+    knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
+    if knowledge_fragment:
+        system += '\n\n' + knowledge_fragment
+    # === 注入结束 ===
+
     user = SEGMENT_USER_PROMPT.replace('{transcript}', truncated)
 
     try:
@@ -108,7 +121,7 @@ def segment_meeting(transcript: str, knowledge_block: str = '') -> str:
             config,
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             temperature=0.2,
-            max_tokens=4000
+            max_tokens=5000
         )
         return result.strip()
     except Exception as e:
@@ -130,7 +143,13 @@ def clean_meeting(transcript: str, knowledge_block: str = '') -> str:
     max_input_chars = 30000
     truncated = transcript[:max_input_chars]
 
+    # === Phase 4: 注入语音知识库提示 ===
     system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+    knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
+    if knowledge_fragment:
+        system += '\n\n' + knowledge_fragment
+    # === 注入结束 ===
+
     user = CLEAN_USER_PROMPT.replace('{transcript}', truncated)
 
     try:
@@ -138,7 +157,7 @@ def clean_meeting(transcript: str, knowledge_block: str = '') -> str:
             config,
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             temperature=0.3,
-            max_tokens=4000
+            max_tokens=5000
         )
         return result.strip()
     except Exception as e:
@@ -161,7 +180,12 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
     truncated_clean = transcript[:max_input_chars]
     truncated_seg = segmented_text[:max_input_chars]
 
+    # === Phase 4: 注入语音知识库提示 ===
     system = SUMMARY_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+    knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
+    if knowledge_fragment:
+        system += '\n\n' + knowledge_fragment
+    # === 注入结束 ===
     user = SUMMARY_USER_PROMPT.replace('{transcript}', truncated_clean).replace('{segmented}', truncated_seg)
 
     try:
@@ -255,3 +279,39 @@ def get_meeting_prompt_templates() -> dict:
         'clean': {'system': CLEAN_SYSTEM_PROMPT, 'user': CLEAN_USER_PROMPT},
         'summary': {'system': SUMMARY_SYSTEM_PROMPT, 'user': SUMMARY_USER_PROMPT},
     }
+
+
+# ===================== Phase 4: 语音知识库提示注入 =====================
+
+def _build_knowledge_fragment(transcript_sample: str) str:
+    """
+    根据当前知识库生成提示词片段, 注入到 LLM system prompt 中。
+
+    让 LLM 了解当地方言/谐音词汇的正确含义，提升总结准确性。
+    """
+    if not transcript_sample:
+        return ''
+
+    try:
+        from models import VoiceKnowledgeEntry
+        from services.voice_knowledge import VoiceKnowledgeService
+
+        # 检测文本中出现的同音词
+        candidates = VoiceKnowledgeService.detect_homophones(transcript_sample, min_confidence=0.70)
+        if not candidates:
+            return ''
+
+        # 只取高置信、去重
+        seen_sources = set()
+        lines = ['【语音识别本地知识提示】以下词汇在当地会议中常见, 请注意正确识别:']
+        for c in candidates:
+            if c['source'] not in seen_sources:
+                seen_sources.add(c['source'])
+                ctx = f' (上下文: {c["context"]})' if c.get('context') else ''
+                lines.append(f'  - "{c["source"]}" → "{c["target"]}"{ctx}')
+
+        return '\n'.join(lines) if len(lines) > 1 else ''
+
+    except Exception as e:
+        logger.warning(f'构建知识提示失败: {e}')
+        return ''

@@ -294,6 +294,9 @@ def _resolve_project_row(p, activity_range='', demand_status=''):
         'person_in_charge_phone': person_in_charge_phone,
         # V3 组合字段
         '_combined_contact': '\n'.join([responsible_unit, person_in_charge, person_in_charge_phone]),
+        # V15.3: 农高区谋划（在谈）项目库 专用组合字段
+        '_contact_person_phone': '\n'.join([person_in_charge, person_in_charge_phone]) if (person_in_charge or person_in_charge_phone) else '',
+        '_settle_location': '',  # 数据库目前无此字段，预留列（导出时空字符串）
         'project_doc': p.project_doc or '',
         'investment_plan': p.investment_plan or '',
         'conclusion': p.conclusion or '',

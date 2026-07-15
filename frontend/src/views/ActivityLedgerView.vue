@@ -368,6 +368,20 @@
                     </div>
                   </div>
                 </div>
+                <!-- 空状态：尚无录音文件时，提供首个录音上传入口 -->
+                <div v-else class="audio-empty-upload">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="false"
+                    :on-change="onAudioFileChange"
+                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+                  >
+                    <el-button size="small" type="primary" plain>
+                      <el-icon><Plus /></el-icon> 上传录音文件
+                    </el-button>
+                  </el-upload>
+                  <span class="audio-empty-hint">支持 wav/mp3/m4a/ogg/flac/amr/opus/webm 等格式</span>
+                </div>
                 <div v-if="audioDetail?.audio_archive" style="margin-top: 6px;">
                   <el-tag size="small" type="warning" effect="plain">
                     <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
@@ -451,15 +465,18 @@
                 </div>
 
                 <!-- 总结/术语操作行 (已完成状态下，与分段原文垂直对齐) -->
-                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'" class="audio-content-actions">
+                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'failed'" class="audio-content-actions">
                   <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
                     <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
                   </el-select>
                   <el-button size="small" type="primary" plain @click="handleRetrySummary">
                     <el-icon><Star /></el-icon> 重新总结
                   </el-button>
+                  <el-button size="small" plain @click="openTextCorrection">
+                    <el-icon><Document /></el-icon> 文本校正
+                  </el-button>
                   <el-button size="small" plain @click="openTermDrawer">
-                    <el-icon><Edit /></el-icon> 术语校正
+                    <el-icon><Edit /></el-icon> 术语管理
                   </el-button>
                   <el-button v-if="audioDetail?.audio_docx_path" size="small" type="success" plain @click="downloadAudioDocx">
                     <el-icon><Download /></el-icon> 下载 Word
@@ -732,6 +749,17 @@ async function handleApplyTerms() {
 function openTermDrawer() {
   termDrawerVisible.value = true
   loadTermCorrections()
+}
+
+// 打开 Web 文本校正页 (新标签页)
+function openTextCorrection() {
+  if (!editingId.value) {
+    ElMessage.warning('请先保存活动台账')
+    return
+  }
+  // 路由为 history 模式，需生成真实路径（非 #hash）才能被浏览器正确导航
+  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value } })
+  window.open(href, '_blank', 'noopener')
 }
 
 // Markdown 渲染器 (lazy init)
@@ -1461,7 +1489,7 @@ async function handleDelete(row) {
   align-items: center;
   gap: 8px;
 }
-.detail-desc :deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
+.detail-desc ::v-deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
 .text-block { white-space: pre-wrap; line-height: 1.7; font-size: 13px; color: #303133; max-height: 300px; overflow-y: auto; }
 .doc-link { color: #409eff; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .doc-link:hover { text-decoration: underline; }
@@ -1603,6 +1631,16 @@ async function handleDelete(row) {
 }
 .audio-loaded {
   width: 100%;
+}
+.audio-empty-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.audio-empty-hint {
+  font-size: 12px;
+  color: #909399;
 }
 .audio-player-card {
   display: flex;
@@ -1798,7 +1836,7 @@ async function handleDelete(row) {
 .audio-edit-textarea {
   margin-top: 4px;
 }
-.audio-edit-textarea :deep(textarea) {
+.audio-edit-textarea ::v-deep(textarea) {
   line-height: 1.8;
   font-size: 13px;
 }

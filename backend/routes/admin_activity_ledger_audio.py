@@ -803,8 +803,8 @@ def download_audio_docx(item_id):
     if not item.audio_docx_path:
         return jsonify({'code': 1, 'message': '尚未生成 Word 文档，请等待处理完成或重新识别'}), 404
     docx_abs = os.path.join(
-        os.path.dirname(current_app.instance_path), '..',
-        'static', item.audio_docx_path.replace('/static/', '')
+        current_app.static_folder,
+        item.audio_docx_path.replace('/static/', '')
     )
     if not os.path.exists(docx_abs):
         return jsonify({'code': 1, 'message': 'Word 文件不存在，请重新生成'}), 404

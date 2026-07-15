@@ -8,6 +8,7 @@ import os
 import re
 import logging
 from datetime import datetime
+from flask import current_app
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -18,8 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_dir():
-    """确保输出目录存在，返回 static/meetings 目录绝对路径"""
-    base = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'meetings')
+    """确保输出目录存在，返回 static/meetings 目录绝对路径。
+
+    对齐 Flask 的 static_folder（app.py 中 static_folder='../static'），
+    使 docx 保存到 Flask 实际提供 /static/... 的目录，
+    与 download_audio_docx / 查看抽屉 <a href="/static/meetings/..."> 一致。
+    """
+    base = os.path.join(current_app.static_folder, 'meetings')
     os.makedirs(base, exist_ok=True)
     return base
 

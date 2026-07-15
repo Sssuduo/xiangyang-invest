@@ -28,6 +28,9 @@ fi
 # ── 2. 代码备份 ──
 echo "[2/6] 备份当前代码..."
 mkdir -p "$BACKUP_DIR"
+# 代码备份只含代码，排除用户数据目录（static/uploads、static/meetings、
+# backend/static）——用户上传/生成文件不进代码快照，避免备份膨胀（曾因此撑爆
+# 磁盘导致 git fetch 失败），且与 static/ 同步逻辑互不干扰。
 tar -czf "$BACKUP_DIR/code_deploy_${TIMESTAMP}.tar.gz" \
     --exclude='frontend/node_modules' \
     --exclude='frontend/dist' \
@@ -36,6 +39,9 @@ tar -czf "$BACKUP_DIR/code_deploy_${TIMESTAMP}.tar.gz" \
     --exclude='.git' \
     --exclude='instance' \
     --exclude='*.bak' \
+    --exclude='static/uploads' \
+    --exclude='static/meetings' \
+    --exclude='backend/static' \
     -C "$APP_DIR" . 2>/dev/null || true
 echo "  ✓ 已备份到: $BACKUP_DIR/code_deploy_${TIMESTAMP}.tar.gz"
 

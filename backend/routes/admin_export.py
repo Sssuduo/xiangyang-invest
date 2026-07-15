@@ -176,25 +176,94 @@ def update_export_fields():
 
 
 # ============================================================
+# V15.3: 动态范围 统一过滤选项解析（兼容旧 activity_range / progress_range）
+# ============================================================
+
+def _parse_activity_filter(
+    mode=None, count=None, time_mode=None, months=None, start=None, end=None,
+    # 兼容旧参数
+    activity_range=None, progress_range=None
+):
+    """统一新旧参数，返回标准过滤选项 dict。
+
+    新参数（前端 V15.3+）:
+        mode: 'count' | 'time' | ''
+        count: int    （mode=count 时）
+        time_mode: 'month' | 'daterange'  （mode=time 时）
+        months: int   （time_mode=month 时，1个月=30天）
+        start, end: 'YYYY-MM-DD'  （time_mode=daterange 时，含当天结束）
+
+    旧参数（兼容）:
+        activity_range: '' | 'last5' | 'last1m' | 'last3m'
+        progress_range: '' | 'last2' | 'last5' | 'last1m' | 'last3m'
+
+    返回:
+        {'mode': '', 'count': 0, 'time_mode': '', 'months': 0, 'start_date': '', 'end_date': ''}
+    """
+    # 1) 旧参数 → 新参数
+    if activity_range == 'last5':
+        mode, count = 'count', 5
+    elif activity_range == 'last1m':
+        mode, time_mode, months = 'time', 'month', 1
+    elif activity_range == 'last3m':
+        mode, time_mode, months = 'time', 'month', 3
+
+    if progress_range == 'last2':
+        mode, count = 'count', 2
+    elif progress_range == 'last5':
+        mode, count = 'count', 5
+    elif progress_range == 'last1m':
+        mode, time_mode, months = 'time', 'month', 1
+    elif progress_range == 'last3m':
+        mode, time_mode, months = 'time', 'month', 3
+
+    # 2) 构造默认 dict
+    return {
+        'mode': mode or '',
+        'count': int(count) if count else 0,
+        'time_mode': time_mode or '',
+        'months': int(months) if months else 0,
+        'start_date': start or '',
+        'end_date': end or '',
+    }
+
+
+# ============================================================
 # 导出预览
 # ============================================================
 
-def _aggregate_activities(project, activity_range=''):
-    """聚合项目招商动态：按日期倒序抓取最新数据，输出时反转从远到近排列"""
+def _aggregate_activities(project, activity_range='', filter_opts=None):
+    """聚合项目招商动态：按日期倒序抓取最新数据，输出时反转从远到近排列
+
+    兼容模式：
+      - 旧调用方: _aggregate_activities(project, 'last5')
+      - 新调用方: _aggregate_activities(project, '', filter_opts=_parse_activity_filter(...))
+    """
+    # 兼容：仅传旧 activity_range 时，内部转换成 filter_opts
+    if not filter_opts:
+        filter_opts = _parse_activity_filter(activity_range=activity_range)
+
     q = InvestmentActivity.query.filter_by(project_id=project.id)
-    if activity_range == 'last1m':
-        since = datetime.utcnow() - timedelta(days=30)
-        q = q.filter(InvestmentActivity.date >= since)
-    elif activity_range == 'last3m':
-        since = datetime.utcnow() - timedelta(days=90)
-        q = q.filter(InvestmentActivity.date >= since)
+    mode = filter_opts.get('mode', '')
 
-    q = q.order_by(InvestmentActivity.date.desc())
-    if activity_range == 'last5':
-        activities = q.limit(5).all()
-    else:
-        activities = q.all()
+    if mode == 'count':
+        q = q.order_by(InvestmentActivity.date.desc())
+        if filter_opts.get('count', 0) > 0:
+            q = q.limit(filter_opts['count'])
+    elif mode == 'time':
+        if filter_opts.get('time_mode') == 'month' and filter_opts.get('months', 0) > 0:
+            since = datetime.utcnow() - timedelta(days=30 * filter_opts['months'])
+            q = q.filter(InvestmentActivity.date >= since)
+        elif filter_opts.get('time_mode') == 'daterange':
+            if filter_opts.get('start_date'):
+                q = q.filter(InvestmentActivity.date >= filter_opts['start_date'])
+            if filter_opts.get('end_date'):
+                # 含当天：结束日期视作当天 23:59:59
+                end_dt = datetime.strptime(filter_opts['end_date'], '%Y-%m-%d') + timedelta(days=1, seconds=-1)
+                q = q.filter(InvestmentActivity.date <= end_dt)
+    # mode 为空 → 全量
 
+    activities = q.order_by(InvestmentActivity.date.desc()).all()
     if not activities:
         return ''
 
@@ -265,9 +334,10 @@ def _resolve_team_leader_names(p):
     return '、'.join(_team_names)
 
 
-def _resolve_project_row(p, activity_range='', demand_status=''):
+def _resolve_project_row(p, activity_range='', demand_status='', filter_opts=None):
     """将项目对象解析为展示用 dict（含字典名称 + 聚合字段）
-    demand_status: 逗号分隔的状态码过滤诉求，默认不过滤"""
+    demand_status: 逗号分隔的状态码过滤诉求，默认不过滤
+    filter_opts: V15.3 可选，标准过滤选项 dict（与 activity_range 兼容）"""
     follow_map = {d.code: d.name for d in FollowStatusDict.query.all()}
     meeting_map = {d.code: d.name for d in MeetingStatusDict.query.all()}
     org_map = {d.code: d.name for d in OrganizationDict.query.all()}
@@ -302,7 +372,7 @@ def _resolve_project_row(p, activity_range='', demand_status=''):
         'conclusion': p.conclusion or '',
         'first_contact_date': p.first_contact_date.isoformat() if p.first_contact_date else '',
         # 聚合字段
-        'activities': _aggregate_activities(p, activity_range),
+        'activities': _aggregate_activities(p, activity_range, filter_opts=filter_opts),
         'demands': _aggregate_demands(p, demand_status),
         'resolution': _aggregate_resolution(p, demand_status),
         # A3 模板字段——专班跟进人

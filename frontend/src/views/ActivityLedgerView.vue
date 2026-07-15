@@ -368,38 +368,27 @@
                     </div>
                   </div>
                 </div>
-                <!-- 空状态：尚无录音文件时，提供首个录音上传入口 -->
-                <div v-else class="audio-empty-upload">
-                  <el-upload
-                    :show-file-list="false"
-                    :auto-upload="false"
-                    :on-change="onAudioFileChange"
-                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-                  >
-                    <el-button size="small" type="primary" plain>
-                      <el-icon><Plus /></el-icon> 上传录音文件
-                    </el-button>
-                  </el-upload>
-                  <span class="audio-empty-hint">支持 wav/mp3/m4a/ogg/flac/amr/opus/webm 等格式</span>
-                </div>
                 <div v-if="audioDetail?.audio_archive" style="margin-top: 6px;">
                   <el-tag size="small" type="warning" effect="plain">
                     <a :href="audioDetail.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包 ({{ formatFileSize(audioDetail.audio_archive_size) }})</a>
                   </el-tag>
                 </div>
 
+                <!-- 上传入口：独立于文件有无，非处理中时始终可用（单个组件同时支持首文件/追加） -->
+                <el-upload
+                  v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'"
+                  :show-file-list="false"
+                  :auto-upload="false"
+                  :on-change="onAudioFileChange"
+                  accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+                >
+                  <el-button size="small" type="primary" plain>
+                    <el-icon><Plus /></el-icon> {{ audioFile ? '追加录音文件' : '上传录音文件' }}
+                  </el-button>
+                </el-upload>
+
                 <!-- 文件操作按钮行 (位于录音卡片下方、转写内容上方，与分段原文垂直对齐) -->
-                <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
-                  <el-upload
-                    :show-file-list="false"
-                    :auto-upload="false"
-                    :on-change="onAudioFileChange"
-                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-                  >
-                    <el-button size="small" type="primary" plain>
-                      <el-icon><Plus /></el-icon> 追加录音文件
-                    </el-button>
-                  </el-upload>
+                <div v-if="audioFile && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
                   <el-button size="small" type="warning" plain @click="handleRetryAudio">
                     <el-icon><RefreshRight /></el-icon> 重新识别
                   </el-button>
@@ -539,6 +528,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
@@ -551,6 +541,7 @@ import { maskName, maskContent } from '@/utils/mask'
 import MarkdownIt from 'markdown-it'
 
 const businessAuth = useBusinessAuthStore()
+const router = useRouter()
 
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
@@ -757,7 +748,7 @@ function openTextCorrection() {
     ElMessage.warning('请先保存活动台账')
     return
   }
-  // 路由为 history 模式，需生成真实路径（非 #hash）才能被浏览器正确导航
+  // 业务前台→管理后台，命名路由跳转（解耦路径字符串，适配 history 模式），新标签页独立加载
   const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value } })
   window.open(href, '_blank', 'noopener')
 }
@@ -1631,16 +1622,6 @@ async function handleDelete(row) {
 }
 .audio-loaded {
   width: 100%;
-}
-.audio-empty-upload {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-}
-.audio-empty-hint {
-  font-size: 12px;
-  color: #909399;
 }
 .audio-player-card {
   display: flex;

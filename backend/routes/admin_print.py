@@ -410,8 +410,12 @@ def _group_rows_by_status(rows):
 
 
 def _resolve_project_row(p, activity_range='', demand_status=''):
-    """将项目对象解析为展示用 dict（复用导出模块的解析逻辑）"""
-    return _export_resolve_row(p, activity_range, demand_status)
+    """将项目对象解析为展示用 dict（复用导出模块的解析逻辑，补充打印专用组合字段）"""
+    row = _export_resolve_row(p, activity_range, demand_status)
+    # 打印专用：总投资（亿元）——万元换算，保留 4 位小数，不加后缀（模板表头已标注"亿元"）
+    invest_amount = float(p.invest_amount) if p.invest_amount else 0
+    row['_invest_amount_yi'] = round(invest_amount / 10000, 4) if invest_amount else 0
+    return row
 
 
 @admin_print_bp.route('/print/data', methods=['GET'])

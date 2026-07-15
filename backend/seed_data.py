@@ -490,6 +490,7 @@ def init_database(app):
     # ---- 打印模板（统一模板）字段配置 ----
     _seed_print_fields()
     _seed_construction_print_fields()
+    _seed_investment_nonggao_print_fields()
 
     # ---- V2: 招商线索研判 + 本地招商知识库 ----
     _seed_lead_assessment_prompt()
@@ -1049,6 +1050,120 @@ def _seed_print_fields():
 
     db.session.commit()
     print('[种子数据] 招商项目打印模板字段已初始化（默认模板 + A3 招商项目清单含文件映射）')
+
+
+def _seed_investment_nonggao_print_fields():
+    """初始化【农高区谋划（在谈）项目库（市专班统计）】内置打印模板
+
+    - 纸张：A4 横向
+    - 字段集（10 列）：序号、项目类型、项目名称、项目投资单位、总投资（亿元）、企业简介、项目简介、落户地、联系人、备注
+    - 列映射：模板文件列字母 → field_key，沿用 TemplateFieldMapping 双路径机制
+    - 组合字段：_invest_amount_yi（万元/10000）、_contact_person_phone（姓名\n电话）、_settle_location（空，预留）
+    - 聚合字段：activities（备注列对应招商项目表的动态聚合，换行替换为空格以适配单行单元格）
+    - 数据与行：title_row=1, header_row=2, data_start_row=3（与上传模板 工作簿1.xlsx 一致）
+    """
+    from models import PrintTemplate, PrintFieldConfig, TemplateFieldMapping
+
+    BUILTIN_NAME = '农高区谋划（在谈）项目库（市专班统计）'
+    template = PrintTemplate.query.filter_by(entity_type='investment', name=BUILTIN_NAME).first()
+    if not template:
+        template = PrintTemplate(
+            name=BUILTIN_NAME,
+            entity_type='investment',
+            paper_size='A4',
+            orientation='landscape',
+            font_family='宋体',
+            font_size=10,
+            title_font_family='宋体',
+            title_font_size=16,
+            table_header_font_family='宋体',
+            table_header_font_size=10,
+            cell_font_family='宋体',
+            cell_font_size=10,
+            header_font_size=10,
+            sub_title_font_size=12,
+            title_bold=True,
+            subtitle_bold=True,
+            border_style='all',
+            # 合理默认边距（英寸）：上 0.3 / 下 0.3 / 左 0.5 / 右 0.5（A4 横向放下 10 列）
+            margin_top=0.3,
+            margin_bottom=0.3,
+            margin_left=0.5,
+            margin_right=0.5,
+        )
+        db.session.add(template)
+        db.session.flush()
+
+    # 模板文件映射（标题在 A1 被 template_name 覆写；数据从第 3 行起；freeze=A3）
+    template.template_file = '/static/uploads/templates/A4_农高区谋划在谈项目库.xlsx'
+    template.data_start_row = 3
+    template.header_row = 2
+    template.title_row = 1
+    template.has_group_title = False  # 该模板无分组标题
+
+    # ---- 字段配置（PrintFieldConfig）—— 10 条 ----
+    fields = [
+        # (field_key, field_label, column_width, sort_order)
+        ('order_no',              '序号',               50,   1),
+        ('project_type_code',     '项目类型',           110,  2),
+        ('project_name',          '项目名称',           160,  3),
+        ('invest_enterprise',     '项目投资单位',       160,  4),
+        ('_invest_amount_yi',     '总投资（亿元）',     100,  5),
+        ('enterprise_info',       '企业简介',           300,  6),
+        ('project_content',       '项目简介',           300,  7),
+        ('_settle_location',      '落户地',             100,  8),
+        ('_contact_person_phone', '联系人',             120,  9),
+        ('activities',            '备注',               500, 10),
+    ]
+    for field_key, field_label, column_width, sort_order in fields:
+        existing = PrintFieldConfig.query.filter_by(template_id=template.id, field_key=field_key).first()
+        if existing:
+            existing.field_label = field_label
+            existing.column_width = column_width
+            existing.sort_order = sort_order
+            if not existing.is_visible:
+                existing.is_visible = True
+        else:
+            db.session.add(PrintFieldConfig(
+                template_id=template.id,
+                field_key=field_key,
+                field_label=field_label,
+                is_visible=True,
+                column_width=column_width,
+                sort_order=sort_order,
+            ))
+
+    # ---- 列映射（TemplateFieldMapping）—— A-J ----
+    a4_column_mappings = [
+        ('A', '序号',               'order_no'),
+        ('B', '项目类型',           'project_type_code'),
+        ('C', '项目名称',           'project_name'),
+        ('D', '项目投资单位',       'invest_enterprise'),
+        ('E', '总投资\n（亿元）',   '_invest_amount_yi'),
+        ('F', '企业简介',           'enterprise_info'),
+        ('G', '项目简介',           'project_content'),
+        ('H', '落户地',             '_settle_location'),
+        ('I', '联系人',             '_contact_person_phone'),
+        ('J', '备注',               'activities'),
+    ]
+    for idx, (col_letter, col_header, field_key) in enumerate(a4_column_mappings):
+        existing_m = TemplateFieldMapping.query.filter_by(
+            template_id=template.id, column_letter=col_letter).first()
+        if existing_m:
+            existing_m.column_header = col_header
+            existing_m.field_key = field_key
+            existing_m.sort_order = idx
+        else:
+            db.session.add(TemplateFieldMapping(
+                template_id=template.id,
+                column_letter=col_letter,
+                column_header=col_header,
+                field_key=field_key,
+                sort_order=idx,
+            ))
+
+    db.session.commit()
+    print(f'[种子数据] 招商项目内置打印模板已初始化（{BUILTIN_NAME}，A4 横向，10 列含列映射）')
 
 
 def _seed_construction_print_fields():

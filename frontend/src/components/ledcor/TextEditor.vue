@@ -151,7 +151,6 @@ defineExpose({ getText })
 
 .text-editor {
   min-height: 400px;
-  max-height: calc(100vh - 280px);
   padding: 16px;
   background: #fff;
   border: 1px solid #e4e7ed;

@@ -254,7 +254,7 @@ async function handleSaveAndPersist() {
 async function doSaveCorrections(persist) {
   saving.value = true
   try {
-    const res = await saveCorrectionsApi(ledgerId.value, corrections.value, persist)
+    const res = await saveCorrections(ledgerId.value, corrections.value, persist)
     if (res.code === 0) {
       ElMessage.success(persist ? '已保存并沉淀到知识库' : '已保存到台账')
     } else {
@@ -263,19 +263,6 @@ async function doSaveCorrections(persist) {
   } finally {
     saving.value = false
   }
-}
-
-async function saveCorrectionsApi(ledgerId, cors, persist) {
-  const { default: axios } = await import('axios')
-  return axios.post(`/api/admin/voice-knowledge/activity-ledger/${ledgerId}/save-corrections`, {
-    corrections: cors.map(c => ({
-      original: c.original,
-      replacement: c.replacement,
-      method: c.method || 'manual',
-      confidence: c.confidence,
-    })),
-    persist_to_knowledge: persist,
-  })
 }
 
 function getConfidenceClass(conf) {

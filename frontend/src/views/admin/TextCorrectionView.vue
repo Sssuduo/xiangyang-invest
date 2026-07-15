@@ -192,7 +192,7 @@ function goBack() {
 
 // 编辑器选中词汇
 function onSelectionChange({ text, range }) {
-  if (text && text.trim().length >= 3 && text.trim().length <= 30) {
+  if (text && text.trim().length >= 2 && text.trim().length <= 30) {
     selectedText.value = text.trim()
     replacementText.value = ''
     currentReplaceContext = { tab: activeTab.value, range }

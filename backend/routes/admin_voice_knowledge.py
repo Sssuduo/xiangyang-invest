@@ -133,10 +133,24 @@ def save_text_corrections(item_id):
         )
         records.append(record)
 
+    # 把校正应用到台账文本字段（分段原文 / 清洁版 / 摘要版 / 原文）
+    if corrections:
+        for field in ('audio_transcript_segmented', 'audio_transcript_clean',
+                      'audio_summary_structured', 'audio_transcript'):
+            text = getattr(item, field, None) or ''
+            for c in corrections:
+                original = c.get('original', '')
+                replacement = c.get('replacement', '')
+                if original and replacement and original != replacement:
+                    text = text.replace(original, replacement)
+            setattr(item, field, text)
+
     # 沉淀到知识库
     if persist:
         for record in records:
             VoiceKnowledgeService.persist_to_knowledge(record.id)
+
+    db.session.commit()
 
     return jsonify({
         'code': 0,

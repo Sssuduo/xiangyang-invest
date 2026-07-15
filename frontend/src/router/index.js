@@ -217,7 +217,7 @@ const routes = [
     path: '/admin/text-correction/:id',
     name: 'TextCorrection',
     component: () => import('@/views/admin/TextCorrectionView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresDualAuth: true },
     props: true
   },
   {
@@ -377,6 +377,13 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth) {
     const ok = await _checkAdminAuth()
     if (ok) { next() } else { next('/admin/login') }
+    return
+  }
+
+  // 双重认证路由：admin 或 business 用户均可访问（与后端 dual_login_required 对齐）
+  if (to.meta.requiresDualAuth) {
+    const [adminOk, bizOk] = await Promise.all([_checkAdminAuth(), _checkBusinessAuth()])
+    if (adminOk || bizOk) { next() } else { next('/admin/login') }
     return
   }
 

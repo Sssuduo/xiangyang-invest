@@ -244,14 +244,14 @@ function confirmReplace() {
 }
 
 async function handleApplyToLedger() {
-  await saveCorrections(false)
+  await doSaveCorrections(false)
 }
 
 async function handleSaveAndPersist() {
-  await saveCorrections(true)
+  await doSaveCorrections(true)
 }
 
-async function saveCorrections(persist) {
+async function doSaveCorrections(persist) {
   saving.value = true
   try {
     const res = await saveCorrectionsApi(ledgerId.value, corrections.value, persist)

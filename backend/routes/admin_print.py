@@ -409,9 +409,14 @@ def _group_rows_by_status(rows):
     return groups
 
 
-def _resolve_project_row(p, activity_range='', demand_status=''):
-    """将项目对象解析为展示用 dict（复用导出模块的解析逻辑，补充打印专用组合字段）"""
-    row = _export_resolve_row(p, activity_range, demand_status)
+def _resolve_project_row(p, activity_range='', demand_status='', filter_opts=None):
+    """将项目对象解析为展示用 dict（复用导出模块的解析逻辑，补充打印专用组合字段）
+
+    兼容新旧参数：
+      - 旧调用方: _resolve_project_row(p, 'last5', ...)
+      - 新调用方: _resolve_project_row(p, '', ..., filter_opts=_parse_activity_filter(activity_mode='count', ...))
+    """
+    row = _export_resolve_row(p, activity_range, demand_status, filter_opts=filter_opts)
     # 打印专用：总投资（亿元）——万元换算，保留 4 位小数，不加后缀（模板表头已标注"亿元"）
     invest_amount = float(p.invest_amount) if p.invest_amount else 0
     row['_invest_amount_yi'] = round(invest_amount / 10000, 4) if invest_amount else 0
@@ -426,7 +431,25 @@ def get_print_data():
     project_ids = [int(x) for x in ids_str.split(',') if x.strip().isdigit()] if ids_str else []
 
     template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
+    # V15.3: 招商项目导出 — 新参数按条数/按时间（与 activity_range 旧参数兼容）
     activity_range = request.args.get('activity_range', '').strip()
+    activity_mode = request.args.get('activity_mode', '').strip()
+    activity_count = request.args.get('activity_count', '0').strip()
+    activity_time_mode = request.args.get('activity_time_mode', '').strip()
+    activity_months = request.args.get('activity_months', '0').strip()
+    activity_start = request.args.get('activity_start', '').strip()
+    activity_end = request.args.get('activity_end', '').strip()
+    # 构造标准 filter_opts（新参数优先，旧参数 activity_range 兼容）
+    from routes.admin_export import _parse_activity_filter
+    filter_opts = _parse_activity_filter(
+        mode=activity_mode or None,
+        count=int(activity_count) if activity_count.isdigit() else None,
+        time_mode=activity_time_mode or None,
+        months=int(activity_months) if activity_months.isdigit() else None,
+        start=activity_start or None,
+        end=activity_end or None,
+        activity_range=activity_range or None,
+    )
     demand_mode = request.args.get('demand_mode', 'aggregate').strip()
     demand_status = request.args.get('demand_status', 'pending,processing').strip()
 
@@ -454,7 +477,7 @@ def get_print_data():
 
         rows = []
         for p in projects:
-            base = _resolve_project_row(p, activity_range, demand_status)
+            base = _resolve_project_row(p, activity_range, demand_status, filter_opts=filter_opts)
             q_demands = EnterpriseDemand.query.filter_by(project_id=p.id)
             if demand_status:
                 status_list = [s.strip() for s in demand_status.split(',') if s.strip()]
@@ -480,7 +503,7 @@ def get_print_data():
                 rows.append(base)
     else:
         # 聚合模式
-        rows = [_resolve_project_row(p, activity_range, demand_status) for p in projects]
+        rows = [_resolve_project_row(p, activity_range, demand_status, filter_opts=filter_opts) for p in projects]
 
     # V3: 按跟进状态分组
     groups = _group_rows_by_status(rows)
@@ -666,7 +689,24 @@ def print_download():
     project_ids = [int(x) for x in ids_str.split(',') if x.strip().isdigit()] if ids_str else []
 
     template_id = request.args.get('template_id', 0, type=int) or _get_default_template_id()
+    # V15.3: 招商项目导出 — 新参数按条数/按时间（与 activity_range 旧参数兼容）
     activity_range = request.args.get('activity_range', '').strip()
+    activity_mode = request.args.get('activity_mode', '').strip()
+    activity_count = request.args.get('activity_count', '0').strip()
+    activity_time_mode = request.args.get('activity_time_mode', '').strip()
+    activity_months = request.args.get('activity_months', '0').strip()
+    activity_start = request.args.get('activity_start', '').strip()
+    activity_end = request.args.get('activity_end', '').strip()
+    from routes.admin_export import _parse_activity_filter
+    filter_opts = _parse_activity_filter(
+        mode=activity_mode or None,
+        count=int(activity_count) if activity_count.isdigit() else None,
+        time_mode=activity_time_mode or None,
+        months=int(activity_months) if activity_months.isdigit() else None,
+        start=activity_start or None,
+        end=activity_end or None,
+        activity_range=activity_range or None,
+    )
     demand_mode = request.args.get('demand_mode', 'aggregate').strip()
     # 诉求状态过滤：默认仅待回应+协调中（不含已回应），传空字符串表示全部
     demand_status = request.args.get('demand_status', 'pending,processing').strip()
@@ -722,7 +762,7 @@ def print_download():
     use_template_file = template and template.template_file and len(template_mappings) > 0
 
     if use_template_file:
-        all_rows = [_resolve_project_row(p, activity_range, demand_status) for p in projects]
+        all_rows = [_resolve_project_row(p, activity_range, demand_status, filter_opts=filter_opts) for p in projects]
         groups = _group_rows_by_status(all_rows)
         output = _fill_template_file(template, template_mappings, groups, template_name)
         return send_file(
@@ -771,7 +811,7 @@ def print_download():
 
         current_row = 3
         for p in projects:
-            project_row = _resolve_project_row(p, activity_range, demand_status)
+            project_row = _resolve_project_row(p, activity_range, demand_status, filter_opts=filter_opts)
             q_demands = EnterpriseDemand.query.filter_by(project_id=p.id)
             if demand_status:
                 status_list = [s.strip() for s in demand_status.split(',') if s.strip()]
@@ -835,7 +875,7 @@ def print_download():
             ws.column_dimensions[get_column_letter(col_idx)].width = field.column_width / 7
 
         # 解析所有行并分组
-        all_rows = [_resolve_project_row(p, activity_range, demand_status) for p in projects]
+        all_rows = [_resolve_project_row(p, activity_range, demand_status, filter_opts=filter_opts) for p in projects]
         groups = _group_rows_by_status(all_rows)
 
         # V3 子标题样式

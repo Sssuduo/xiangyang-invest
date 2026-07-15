@@ -83,7 +83,7 @@ function handleMouseUp() {
   }
 
   const text = sel.toString().trim()
-  if (text.length < 3 || text.length > 30) {
+  if (text.length < 2 || text.length > 30) {
     showPopover.value = false
     return
   }

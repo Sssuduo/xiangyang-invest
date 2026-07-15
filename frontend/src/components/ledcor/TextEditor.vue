@@ -63,6 +63,10 @@ const popoverX = ref(0)
 const popoverY = ref(0)
 const kbSuggestions = ref([])
 
+// 保存选区的 range 引用，避免 doReplace 时 focus 移到 input 后 selection 丢失
+let savedRange = null
+let savedSelectedText = ''
+
 watch(() => props.content, (val) => {
   if (editorRef.value && editorRef.value.textContent !== val) {
     editorRef.value.textContent = val
@@ -105,6 +109,9 @@ function handleMouseUp() {
 
   showPopover.value = true
 
+  savedRange = range
+  savedSelectedText = text
+
   emit('selection-change', { text, range })
 }
 
@@ -115,20 +122,26 @@ function handleInput() {
 function doReplace() {
   if (!replacement.value.trim()) return
 
+  const range = savedRange
+  const sourceText = savedSelectedText
+  if (range && sourceText) {
+    // 重选举区并替换文本
   const sel = window.getSelection()
-  if (sel && sel.rangeCount > 0) {
-    const range = sel.getRangeAt(0)
+  sel.removeAllRanges()
+  sel.addRange(range)
     range.deleteContents()
     range.insertNode(document.createTextNode(replacement.value))
 
     emit('replace', {
       range,
       replacement: replacement.value,
-      source: selectedText.value,
+      source: sourceText,
     })
   }
 
   showPopover.value = false
+  savedRange = null
+  savedSelectedText = ''
 }
 
 function cancelReplace() {

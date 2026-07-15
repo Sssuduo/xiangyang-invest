@@ -1470,7 +1470,7 @@ async function handleDelete(row) {
   align-items: center;
   gap: 8px;
 }
-.detail-desc :deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
+.detail-desc ::v-deep(.el-descriptions__label) { width: 100px; font-weight: 500; color: #606266; }
 .text-block { white-space: pre-wrap; line-height: 1.7; font-size: 13px; color: #303133; max-height: 300px; overflow-y: auto; }
 .doc-link { color: #409eff; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .doc-link:hover { text-decoration: underline; }
@@ -1807,7 +1807,7 @@ async function handleDelete(row) {
 .audio-edit-textarea {
   margin-top: 4px;
 }
-.audio-edit-textarea :deep(textarea) {
+.audio-edit-textarea ::v-deep(textarea) {
   line-height: 1.8;
   font-size: 13px;
 }

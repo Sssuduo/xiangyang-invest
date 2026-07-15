@@ -325,6 +325,26 @@ function getConfidenceClass(conf) {
   flex: 1;
   padding: 16px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tc-main > .el-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tc-main > .el-tabs > .el-tabs__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tc-main .el-tab-pane {
+  height: 100%;
 }
 
 .tc-sidebar {

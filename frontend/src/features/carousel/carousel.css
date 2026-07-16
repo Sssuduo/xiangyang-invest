@@ -1,0 +1,283 @@
+/* ============================================================
+   苹果风格「先看重点」横向卡片轮播 —— 纯原生 CSS
+   本轮布局：
+    • 主舞台：圆角组件高度占满页面，聚焦卡片居中，前后卡片虚化
+    • 右侧：纵向胶卷缩略图
+    • 淡蓝背景
+   ============================================================ */
+
+/* ---- 页面外壳 ---- */
+.intro-page {
+  height: 100vh;
+  background: #eaf1f8;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 轮播主容器：撑满 100vh，横向布局（舞台 + 右侧胶卷）---- */
+.apple-carousel {
+  --ac-accent: #1d1d1f;
+  width: 100%;
+  height: 100vh;                  /* 精确撑满视口高度 */
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  color: var(--ac-accent);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ---- 主舞台：高度 100% = 100vh，上 80px 避导航栏 / 下 20px，垂直居中 ---- */
+.ac-stage {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 80px 20px 20px 28px;   /* 上 80 避导航栏，下 20 小留白 */
+  box-sizing: border-box;
+  overflow: hidden;               /* 两侧盖子裁剪到舞台边缘（胶卷容器边界） */
+}
+
+.ac-viewport {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  border-radius: 0;
+}
+.ac-viewport.dragging { cursor: grabbing; }
+
+/* 两侧遮罩：盖住相邻卡片露出的边缘，背景与页面一致 */
+.ac-cover-left,
+.ac-cover-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: #eaf1f8;   /* 与 .intro-page 背景同色 */
+}
+.ac-cover-left { left: 0; }
+.ac-cover-right { right: 0; }
+
+/* ---- 轨道：横向 flex 连续卡片，JS 设 translateX 居中聚焦卡片 ---- */
+.ac-track {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 48px;
+  height: 100%;
+  align-items: center;
+  box-sizing: border-box;
+  will-change: transform;
+  transition: transform 0.55s cubic-bezier(0.28, 0.11, 0.32, 1);
+}
+.ac-track.no-transition { transition: none !important; }
+
+/* ---- 单张卡片：JS 设高宽，独立圆角组件 ---- */
+.ac-card {
+  flex: 0 0 auto;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #f5f5f7;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+  /* filter/opacity/transform 由 JS 控制景深 */
+  transition: transform 0.55s cubic-bezier(0.28, 0.11, 0.32, 1),
+              filter 0.55s ease,
+              opacity 0.55s ease;
+  cursor: pointer;
+}
+.ac-card:hover {
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.20);
+}
+
+.ac-card-media {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #dfe7ef;
+}
+.ac-card-media.is-map {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d4e0ec;
+  color: #6e6e73;
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+
+/* ---- 左右圆形半透明悬浮箭头 ---- */
+.ac-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) scale(1);
+  z-index: 10;
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #1d1d1f;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.18s ease, background 0.2s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.ac-viewport:hover ~ .ac-arrow,
+.ac-arrow.visible {
+  opacity: 0.95;
+  pointer-events: auto;
+}
+.ac-arrow:hover { background: rgba(255, 255, 255, 0.98); }
+.ac-arrow:active { transform: translateY(-50%) scale(0.92); }
+.ac-arrow:disabled { opacity: 0; pointer-events: none; cursor: default; }
+
+.ac-arrow.prev { left: 16px; }
+.ac-arrow.next { right: 16px; }
+
+/* ---- 播放/暂停按钮：与箭头同风格，位于右箭头左侧 ---- */
+.ac-playpause {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 84px;                    /* 右箭头左侧 */
+  z-index: 200;
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #1d1d1f;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transition: transform 0.18s ease, background 0.2s ease;
+}
+.ac-playpause:hover { background: rgba(255, 255, 255, 0.98); }
+.ac-playpause:active { transform: translateY(-50%) scale(0.92); }
+
+/* 图标：纯 CSS 绘制 */
+.ac-pp-icon { display: block; }
+.ac-pp-pause {
+  width: 14px;
+  height: 16px;
+  position: relative;
+}
+.ac-pp-pause::before,
+.ac-pp-pause::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  border-radius: 1px;
+  background: #1d1d1f;
+}
+.ac-pp-pause::before { left: 0; }
+.ac-pp-pause::after  { right: 0; }
+.ac-pp-play {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 9px 0 9px 14px;
+  border-color: transparent transparent transparent #1d1d1f;
+  margin-left: 3px;
+}
+
+/* ============================================================
+   右侧纵向胶卷缩略图
+   ============================================================ */
+.ac-filmstrip {
+  width: 120px;
+  flex-shrink: 0;
+  height: 100%;                   /* 撑满 100vh */
+  padding: 24px 18px 24px 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.ac-filmstrip-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e6e73;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.ac-filmstrip-track {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 4px;
+}
+.ac-filmstrip-track::-webkit-scrollbar { display: none; }
+
+.ac-thumb {
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1.5px solid rgba(0, 0, 0, 0.25);  /* 默认外框线，更明显 */
+  opacity: 0.55;
+  transition: opacity 0.3s, border-color 0.3s, transform 0.3s;
+  background-size: cover;
+  background-position: center;
+  background-color: #dfe7ef;
+}
+.ac-thumb:hover {
+  opacity: 0.9;
+  border-color: rgba(0, 0, 0, 0.6);
+  transform: scale(1.04);
+}
+.ac-thumb.active {
+  opacity: 1;
+  border: 2px solid #1d1d1f;      /* 当前项：更粗的黑边 */
+  transform: scale(1.06);
+}
+.ac-thumb.is-map {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6e6e73;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+/* ---- 响应式 ---- */
+@media (max-width: 768px) {
+  .ac-filmstrip { width: 76px; padding: 16px 10px 16px 0; }
+  .ac-track { gap: 24px; }
+  .ac-arrow { width: 42px; height: 42px; font-size: 20px; }
+  .ac-arrow.prev { left: 8px; }
+  .ac-arrow.next { right: 8px; }
+  .ac-stage { padding: 12px; }
+}

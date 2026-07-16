@@ -1658,10 +1658,6 @@ async function handleDelete(row) {
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
 .demand-card-actions { display: flex; gap: 4px; }
-.demand-card-actions .el-button.is-link { font-weight: 500; }
-.demand-card-actions .el-button--primary.is-link { color: #409eff; }
-.demand-card-actions .el-button--danger.is-link { color: #f56c6c; }
-.demand-card-actions .el-button.is-link .el-icon { color: inherit; }
 
 /* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/
 .demand-tags-row {
@@ -1735,6 +1731,12 @@ async function handleDelete(row) {
   white-space: pre-wrap !important;
   word-break: break-word !important;
 }
+
+/* 诉求卡片编辑/删除按钮颜色（非 scoped 才能穿透 Element Plus 子组件） */
+.demand-card-actions .el-button.is-link { font-weight: 500; }
+.demand-card-actions .el-button--primary.is-link { color: #409eff; }
+.demand-card-actions .el-button--danger.is-link { color: #f56c6c; }
+.demand-card-actions .el-button.is-link .el-icon { color: inherit; }
 
 /* 展开单元格冻结 + 宽度约束 */
 .el-table__expanded-cell {

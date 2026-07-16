@@ -246,8 +246,11 @@ def _aggregate_activities(project, activity_range='', filter_opts=None):
     q = InvestmentActivity.query.filter_by(project_id=project.id)
     mode = filter_opts.get('mode', '')
 
+    # 统一先 order_by()（必须在 limit() 之前，否则 SQLAlchemy 报错：
+    # "Query.order_by() being called on a Query which already has LIMIT or OFFSET applied"）
+    q = q.order_by(InvestmentActivity.date.desc())
+
     if mode == 'count':
-        q = q.order_by(InvestmentActivity.date.desc())
         if filter_opts.get('count', 0) > 0:
             q = q.limit(filter_opts['count'])
     elif mode == 'time':
@@ -259,11 +262,11 @@ def _aggregate_activities(project, activity_range='', filter_opts=None):
                 q = q.filter(InvestmentActivity.date >= filter_opts['start_date'])
             if filter_opts.get('end_date'):
                 # 含当天：结束日期视作当天 23:59:59
-                end_dt = datetime.strptime(filter_opts['end_date'], '%Y-%m-%d') + timedelta(days=1, seconds=-1)
+                end_dt = datetime.strptime(filter_opts.get('end_date'), '%Y-%m-%d') + timedelta(days=1, seconds=-1)
                 q = q.filter(InvestmentActivity.date <= end_dt)
-    # mode 为空 → 全量
+    # mode 为空 → 全量（已 order_by，无需重复）
 
-    activities = q.order_by(InvestmentActivity.date.desc()).all()
+    activities = q.all()
     if not activities:
         return ''
 
@@ -274,8 +277,7 @@ def _aggregate_activities(project, activity_range='', filter_opts=None):
     for i, a in enumerate(activities, 1):
         content = a.content or ''
         lines.append(f'{i}、{content}')
-    return '\n'.join(lines)
-
+    return'\n'.join(lines)
 
 def _aggregate_demands(project, demand_status=''):
     """聚合企业诉求，按 sort_order，序号分段。

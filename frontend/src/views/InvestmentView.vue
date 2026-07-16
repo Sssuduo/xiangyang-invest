@@ -533,7 +533,7 @@
                       </el-tag>
                       <el-tag
                         size="small"
-                        :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'
+                        :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'"
                       >{{ demandStatusLabel(d.status) }}</el-tag>
                     </div>
                     <div class="demand-view-item" v-if="d.demand_content">

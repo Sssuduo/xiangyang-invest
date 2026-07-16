@@ -6,6 +6,7 @@
       </router-link>
       <nav class="nav-menu">
         <router-link to="/national" class="nav-item" active-class="active-item">国家农高区</router-link>
+        <router-link to="/intro" class="nav-item" active-class="active-item">招商宣传图册</router-link>
         <router-link to="/promo-video" class="nav-item" active-class="active-item">招商宣传视频</router-link>
         <!-- <router-link to="/intro" class="nav-item" active-class="active-item">襄阳农高区介绍</router-link> -->
         <!-- 招商项目库 下拉菜单 — 仅登录后可见 -->

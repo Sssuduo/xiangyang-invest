@@ -1480,6 +1480,13 @@ async function handleDelete(row) {
 
 /* 操作列 */
 .action-cell { display: flex; align-items: center; gap: 2px; }
+/* link 按钮在全局被 --el-color-primary (#1a3a5c) 覆盖后颜色过深，显式恢复高亮色 */
+.action-cell .el-button.is-link { font-weight: 500; }
+.action-cell .el-button--primary.is-link { color: #409eff; }
+.action-cell .el-button--success.is-link { color: #67c23a; }
+.action-cell .el-button--warning.is-link { color: #e6a23c; }
+.action-cell .el-button--danger.is-link { color: #f56c6c; }
+.action-cell .el-button.is-link .el-icon { color: inherit; }
 .action-more { font-size: 18px; padding: 4px; }
 
 /* 展开卡片 - 诉求 */
@@ -1651,6 +1658,10 @@ async function handleDelete(row) {
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
 .demand-card-actions { display: flex; gap: 4px; }
+.demand-card-actions .el-button.is-link { font-weight: 500; }
+.demand-card-actions .el-button--primary.is-link { color: #409eff; }
+.demand-card-actions .el-button--danger.is-link { color: #f56c6c; }
+.demand-card-actions .el-button.is-link .el-icon { color: inherit; }
 
 /* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/
 .demand-tags-row {

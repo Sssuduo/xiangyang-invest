@@ -30,7 +30,9 @@ class Config:
     }
 
     # 文件上传配置
-    UPLOAD_FOLDER = os.path.join(project_root, 'static', 'uploads')
+    # 上传目录默认指向项目 static/uploads,生产强烈推荐用环境变量覆盖为独立于代码的持久化绝对路径,
+    # 这样部署时 git pull 不会清除已上传文件(详见 DEPLOY.md「上传文件持久化」)。
+    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or os.path.join(project_root, 'static', 'uploads')
     AUDIO_FOLDER = os.path.join(UPLOAD_FOLDER, 'audio')  # 录音文件专用目录
     BACKGROUNDS_FOLDER = os.path.join(UPLOAD_FOLDER, 'backgrounds')
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB 上传限制（含大视频）

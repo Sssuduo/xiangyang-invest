@@ -504,19 +504,17 @@
             <!-- ================================================================ -->
             <el-tab-pane label="企业诉求" name="demands">
               <div class="demands-section">
+                <!-- 统一的编辑入口：首个卡片右上角 -->
+                <div v-if="form.demands.length > 0 && !isEditingAllDemands" class="demands-toolbar">
+                  <el-button size="small" type="primary" @click="isEditingAllDemands = true">
+                    <el-icon><Edit /></el-icon> 编辑诉求
+                  </el-button>
+                </div>
                 <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
                   <!-- 查看模式 -->
-                  <template v-if="editingDemandIndex !== i">
+                  <template v-if="!isEditingAllDemands">
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                      <div class="demand-card-actions">
-                        <el-button size="small" type="primary" link @click="editingDemandIndex = i">
-                          <el-icon><Edit /></el-icon>
-                        </el-button>
-                        <el-button size="small" type="danger" link @click="removeDemand(i)">
-                          <el-icon><Delete /></el-icon>
-                        </el-button>
-                      </div>
                     </div>
                     <!-- 类型 / 对接单位：卡片式标签展示 -->
                     <div class="demand-tags-row">
@@ -535,7 +533,7 @@
                       </el-tag>
                       <el-tag
                         size="small"
-                        :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'"
+                        :type="d.status === 'resolved' ? 'success' : d.status === 'processing' ? 'primary' : 'warning'
                       >{{ demandStatusLabel(d.status) }}</el-tag>
                     </div>
                     <div class="demand-view-item" v-if="d.demand_content">
@@ -551,7 +549,9 @@
                   <template v-else>
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                      <el-button size="small" @click="editingDemandIndex = -1">完成</el-button>
+                      <el-button size="small" type="danger" @click="removeDemand(i)">
+                        <el-icon><Delete /></el-icon> 删除
+                      </el-button>
                     </div>
                     <el-row :gutter="12" style="margin-bottom: 8px;">
                       <el-col :span="16">
@@ -585,9 +585,14 @@
                 <div v-if="form.demands.length === 0" style="text-align: center; color: #909399; padding: 40px 0; font-size: 14px;">
                   暂无企业诉求
                 </div>
-                <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
-                  <el-icon><Plus /></el-icon> 添加诉求
-                </el-button>
+                <div class="demands-footer">
+                  <el-button v-if="businessAuth.hasPermission('investment', 'edit') && !isEditingAllDemands" size="small" @click="addDemand">
+                    <el-icon><Plus /></el-icon> 添加诉求
+                  </el-button>
+                  <el-button v-if="isEditingAllDemands" size="small" type="success" @click="isEditingAllDemands = false">
+                    <el-icon><Check /></el-icon> 完成
+                  </el-button>
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -852,7 +857,7 @@ const editDrawerVisible = ref(false)
 const editMode = ref('create')
 const editingId = ref(null)
 const editActiveTab = ref('project')
-const editingDemandIndex = ref(-1)
+const isEditingAllDemands = ref(false)
 const formRef = ref(null)
 const uploadRef = ref(null)
 const saving = ref(false)
@@ -1160,14 +1165,18 @@ async function openEdit(row) {
 
 function resetForm() {
   editActiveTab.value = 'project'
-  editingDemandIndex.value = -1
+  isEditingAllDemands.value = false
   Object.assign(form, defaultForm())
   fileList.value = []
   planFileList.value = []
   formRef.value?.clearValidate()
 }
 
-function addDemand() { form.demands.push({ _cascader: [], demand_type_code: '', demand_content: '', resolution: '', unit_code: '', status: 'pending' }) }
+function addDemand() {
+  form.demands.push({ _cascader: [], demand_type_code: '', demand_content: '', resolution: '', unit_code: '', status: 'pending' })
+  // 新增诉求时自动进入编辑模式
+  isEditingAllDemands.value = true
+}
 function removeDemand(i) { form.demands.splice(i, 1) }
 
 // 诉求卡片辅助：code → 名称
@@ -1487,6 +1496,7 @@ async function handleDelete(row) {
 .action-cell .el-button--warning.is-link { color: #e6a23c; }
 .action-cell .el-button--danger.is-link { color: #f56c6c; }
 .action-cell .el-button.is-link .el-icon { color: inherit; }
+
 .action-more { font-size: 18px; padding: 4px; }
 
 /* 展开卡片 - 诉求 */
@@ -1654,10 +1664,11 @@ async function handleDelete(row) {
 
 /* 诉求卡片 */
 .demands-section { margin-bottom: 16px; }
+.demands-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .demand-card { background: #fafbfc; border: 1px solid #e4e7ed; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
-.demand-card-actions { display: flex; gap: 4px; }
+.demands-footer { display: flex; gap: 8px; margin-top: 8px; }
 
 /* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/
 .demand-tags-row {
@@ -1732,11 +1743,7 @@ async function handleDelete(row) {
   word-break: break-word !important;
 }
 
-/* 诉求卡片编辑/删除按钮颜色（非 scoped 才能穿透 Element Plus 子组件） */
-.demand-card-actions .el-button.is-link { font-weight: 500; }
-.demand-card-actions .el-button--primary.is-link { color: #409eff; }
-.demand-card-actions .el-button--danger.is-link { color: #f56c6c; }
-.demand-card-actions .el-button.is-link .el-icon { color: inherit; }
+
 
 /* 展开单元格冻结 + 宽度约束 */
 .el-table__expanded-cell {

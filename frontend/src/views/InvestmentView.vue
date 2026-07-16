@@ -510,11 +510,11 @@
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
                       <div class="demand-card-actions">
-                        <el-button size="small" type="primary" link @click="editingDemandIndex = i">
-                          <el-icon><Edit /></el-icon>
+                        <el-button size="small" type="primary" plain @click="editingDemandIndex = i">
+                          <el-icon><Edit /></el-icon> 编辑
                         </el-button>
-                        <el-button size="small" type="danger" link @click="removeDemand(i)">
-                          <el-icon><Delete /></el-icon>
+                        <el-button size="small" type="danger" plain @click="removeDemand(i)">
+                          <el-icon><Delete /></el-icon> 删除
                         </el-button>
                       </div>
                     </div>
@@ -552,11 +552,13 @@
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
                       <div class="demand-card-actions">
-                        <el-button size="small" type="success" link @click="editingDemandIndex = -1">
-                          <el-icon><Check /></el-icon>
+                        <el-button size="small" type="success" plain @click="editingDemandIndex = -1">
+                          <el-icon><Check /></el-icon> 完成
                         </el-button>
-                        <el-button size="small" type="danger" link @click="removeDemand(i)">
-                          <el-icon><Delete /></el-icon>
+                        <el-button size="small" type="danger" plain @click="removeDemand(i)">
+                          <el-icon><Delete /></el-icon> 删除
+                        </el-button>
+                      </div>
                         </el-button>
                       </div>
                     </div>

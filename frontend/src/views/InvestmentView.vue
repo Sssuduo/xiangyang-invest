@@ -504,17 +504,19 @@
             <!-- ================================================================ -->
             <el-tab-pane label="企业诉求" name="demands">
               <div class="demands-section">
-                <!-- 统一的编辑入口：首个卡片右上角 -->
-                <div v-if="form.demands.length > 0 && !isEditingAllDemands" class="demands-toolbar">
-                  <el-button size="small" type="primary" @click="isEditingAllDemands = true">
-                    <el-icon><Edit /></el-icon> 编辑诉求
-                  </el-button>
-                </div>
                 <div v-for="(d, i) in form.demands" :key="i" class="demand-card">
                   <!-- 查看模式 -->
-                  <template v-if="!isEditingAllDemands">
+                  <template v-if="editingDemandIndex !== i">
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
+                      <div class="demand-card-actions">
+                        <el-button size="small" type="primary" link @click="editingDemandIndex = i">
+                          <el-icon><Edit /></el-icon>
+                        </el-button>
+                        <el-button size="small" type="danger" link @click="removeDemand(i)">
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </div>
                     </div>
                     <!-- 类型 / 对接单位：卡片式标签展示 -->
                     <div class="demand-tags-row">
@@ -549,9 +551,14 @@
                   <template v-else>
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
-                      <el-button size="small" type="danger" @click="removeDemand(i)">
-                        <el-icon><Delete /></el-icon> 删除
-                      </el-button>
+                      <div class="demand-card-actions">
+                        <el-button size="small" type="success" link @click="editingDemandIndex = -1">
+                          <el-icon><Check /></el-icon>
+                        </el-button>
+                        <el-button size="small" type="danger" link @click="removeDemand(i)">
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </div>
                     </div>
                     <el-row :gutter="12" style="margin-bottom: 8px;">
                       <el-col :span="16">
@@ -586,11 +593,8 @@
                   暂无企业诉求
                 </div>
                 <div class="demands-footer">
-                  <el-button v-if="businessAuth.hasPermission('investment', 'edit') && !isEditingAllDemands" size="small" @click="addDemand">
+                  <el-button v-if="businessAuth.hasPermission('investment', 'edit')" size="small" @click="addDemand">
                     <el-icon><Plus /></el-icon> 添加诉求
-                  </el-button>
-                  <el-button v-if="isEditingAllDemands" size="small" type="success" @click="isEditingAllDemands = false">
-                    <el-icon><Check /></el-icon> 完成
                   </el-button>
                 </div>
               </div>
@@ -857,7 +861,7 @@ const editDrawerVisible = ref(false)
 const editMode = ref('create')
 const editingId = ref(null)
 const editActiveTab = ref('project')
-const isEditingAllDemands = ref(false)
+const editingDemandIndex = ref(-1)
 const formRef = ref(null)
 const uploadRef = ref(null)
 const saving = ref(false)
@@ -1165,7 +1169,7 @@ async function openEdit(row) {
 
 function resetForm() {
   editActiveTab.value = 'project'
-  isEditingAllDemands.value = false
+  editingDemandIndex.value = -1
   Object.assign(form, defaultForm())
   fileList.value = []
   planFileList.value = []
@@ -1173,9 +1177,10 @@ function resetForm() {
 }
 
 function addDemand() {
+  const newIndex = form.demands.length
   form.demands.push({ _cascader: [], demand_type_code: '', demand_content: '', resolution: '', unit_code: '', status: 'pending' })
-  // 新增诉求时自动进入编辑模式
-  isEditingAllDemands.value = true
+  // 新增诉求时，只打开该条诉求的编辑模式
+  editingDemandIndex.value = newIndex
 }
 function removeDemand(i) { form.demands.splice(i, 1) }
 
@@ -1664,10 +1669,10 @@ async function handleDelete(row) {
 
 /* 诉求卡片 */
 .demands-section { margin-bottom: 16px; }
-.demands-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .demand-card { background: #fafbfc; border: 1px solid #e4e7ed; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
+.demand-card-actions { display: flex; align-items: center; gap: 4px; }
 .demands-footer { display: flex; gap: 8px; margin-top: 8px; }
 
 /* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/

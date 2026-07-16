@@ -559,8 +559,6 @@
                           <el-icon><Delete /></el-icon> 删除
                         </el-button>
                       </div>
-                        </el-button>
-                      </div>
                     </div>
                     <el-row :gutter="12" style="margin-bottom: 8px;">
                       <el-col :span="16">

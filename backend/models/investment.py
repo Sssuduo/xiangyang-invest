@@ -34,7 +34,9 @@ class InvestmentProject(db.Model):
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # last_updated_at 不再使用 onupdate 自动刷新，改为在 PUT 路由中手动控制，
+    # 使得"分类字段"（序号/类型/状态等）的变更不会触发"更新"标记
+    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     demands = db.relationship('EnterpriseDemand', backref='project', lazy='dynamic',
                               order_by='EnterpriseDemand.sort_order')

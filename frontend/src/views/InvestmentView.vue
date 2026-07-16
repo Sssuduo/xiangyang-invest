@@ -510,12 +510,8 @@
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
                       <div class="demand-card-actions">
-                        <el-button size="small" type="primary" plain @click="editingDemandIndex = i">
-                          <el-icon><Edit /></el-icon> 编辑
-                        </el-button>
-                        <el-button size="small" type="danger" plain @click="removeDemand(i)">
-                          <el-icon><Delete /></el-icon> 删除
-                        </el-button>
+                        <el-button size="small" type="primary" plain @click="editingDemandIndex = i">编辑</el-button>
+                        <el-button size="small" type="danger" plain @click="removeDemand(i)">删除</el-button>
                       </div>
                     </div>
                     <!-- 类型 / 对接单位：卡片式标签展示 -->
@@ -552,12 +548,8 @@
                     <div class="demand-card-header">
                       <span class="demand-card-title">诉求 {{ i + 1 }}</span>
                       <div class="demand-card-actions">
-                        <el-button size="small" type="success" plain @click="editingDemandIndex = -1">
-                          <el-icon><Check /></el-icon> 完成
-                        </el-button>
-                        <el-button size="small" type="danger" plain @click="removeDemand(i)">
-                          <el-icon><Delete /></el-icon> 删除
-                        </el-button>
+                        <el-button size="small" type="success" plain @click="editingDemandIndex = -1">完成</el-button>
+                        <el-button size="small" type="danger" plain @click="removeDemand(i)">删除</el-button>
                       </div>
                     </div>
                     <el-row :gutter="12" style="margin-bottom: 8px;">
@@ -1673,6 +1665,7 @@ async function handleDelete(row) {
 .demand-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .demand-card-title { font-size: 13px; font-weight: 600; color: #303133; }
 .demand-card-actions { display: flex; align-items: center; gap: 4px; }
+.demand-card-actions .el-button { padding: 4px 10px; }
 .demands-footer { display: flex; gap: 8px; margin-top: 8px; }
 
 /* 诉求卡片标签行：类型（info灰）+ 对接单位（默认白）+ 状态（彩色）*/

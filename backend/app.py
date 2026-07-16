@@ -126,14 +126,6 @@ def create_app(config_name=None):
             import logging
             logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
 
-        # 启动期上传文件健康扫描（一次性，仅打日志，不阻塞启动）
-        try:
-            from utils.upload_health import log_missing_report
-            log_missing_report(app)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f'上传文件健康扫描启动失败：{e}')
-
     return app
 
 

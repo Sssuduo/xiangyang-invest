@@ -1,13 +1,11 @@
 import json
 from datetime import datetime, timedelta
-from flask import request, jsonify, current_app, session
-from flask_login import current_user
+from flask import request, jsonify
 from models import CarouselPage, ProvinceInfo, CityInfo, LLMModel, QuickPrompt, HomepageConfig, ContactInfo
 from models import InvestmentProject, FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict
 from models import InvestmentActivity, EnterpriseDemand
 from extensions import db
 from routes import api_bp
-from routes.business_auth import dual_login_required
 from services.llm_service import call_llm, build_messages
 from utils.image_upload import save_uploaded_image
 
@@ -178,6 +176,7 @@ def chat():
 @api_bp.route('/upload', methods=['POST'])
 def upload_image():
     """上传文件（图片/文档），保持原始文件名"""
+    from flask import current_app
 
     if 'file' not in request.files:
         return jsonify({'code': 1, 'message': '未找到上传文件'}), 400
@@ -188,40 +187,9 @@ def upload_image():
 
     try:
         result = save_uploaded_image(file, current_app.config['UPLOAD_FOLDER'], keep_original_name=True)
-        saved_path = result.get('saved_path') or os.path.join(current_app.config['UPLOAD_FOLDER'], os.path.basename(result['url']))
-        # 落盘校验:DB 若事务失败则把刚写的文件清掉,避免"DB 无记录、磁盘多孤儿"
-        if not os.path.exists(saved_path):
-            return jsonify({'code': 1, 'message': '文件落盘失败,请重试'}), 500
-        return jsonify({'code': 0, 'data': {'url': result['url'], 'original_name': result['original_name']}}), 200
+        return jsonify({'code': 0, 'data': {'url': result['url'], 'original_name': result['original_name']}})
     except ValueError as e:
         return jsonify({'code': 1, 'message': str(e)}), 400
-    except IOError as e:
-        return jsonify({'code': 1, 'message': f'文件写入失败:{str(e)}'}), 500
-
-
-# ============================================================
-# 上传文件健康检查（后台管理用）
-# ============================================================
-@api_bp.route('/uploads/health', methods=['GET'])
-@dual_login_required
-def uploads_health():
-    """
-    返回上传文件缺失统计。
-    响应:
-    {
-      "code": 0,
-      "data": {
-        "upload_folder": "/abs/path",
-        "total_referenced": 120,
-        "present_count": 117,
-        "missing_count": 3,
-        "missing": [ {table, field, id, label, url, expected_path}, ... ]
-      }
-    }
-    """
-    from utils.upload_health import scan_missing_uploads
-    report = scan_missing_uploads(current_app._get_current_object())
-    return jsonify({'code': 0, 'data': report}), 200
 
 
 # ============================================================

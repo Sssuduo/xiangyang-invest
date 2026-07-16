@@ -47,14 +47,13 @@
             <div class="file-thumbnail-grid">
               <div v-for="(url, idx) in activity.files" :key="idx" class="file-thumb-card" @click="openFile(url)">
                 <div class="thumb-preview">
-                  <img v-if="isImageUrl(url) && !imgLoadFailed.has(url)" :src="url" class="thumb-img" @error="imgLoadFailed.add(url)" />
+                  <img v-if="isImageUrl(url)" :src="url" class="thumb-img" />
                   <div v-else-if="isPdfUrl(url)" class="thumb-pdf">
                     <el-icon :size="32"><Document /></el-icon>
                     <span>PDF</span>
                   </div>
                   <div v-else class="thumb-generic">
-                    <el-icon :size="28"><Picture /></el-icon>
-                    <span class="thumb-generic-label">暂不可用</span>
+                    <el-icon :size="28"><Document /></el-icon>
                   </div>
                 </div>
                 <div class="thumb-name" :title="getFileName(url)">{{ getFileName(url) }}</div>
@@ -71,8 +70,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { Document, Picture, View } from '@element-plus/icons-vue'
+import { computed } from 'vue'
+import { Document, View } from '@element-plus/icons-vue'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
 
@@ -95,9 +94,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 const visible = computed({ get: () => props.modelValue, set: v => emit('update:modelValue', v) })
-
-// 图片加载失败记录:src 失败时加入集合,v-if 自动切到占位(避免破图)
-const imgLoadFailed = ref(new Set())
 
 function handleClose() { emit('update:modelValue', false) }
 
@@ -219,14 +215,6 @@ function openFile(url) {
   color: #e6a23c;
 }
 .thumb-generic {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  color: #909399;
-}
-.thumb-generic-label {
-  font-size: 10px;
   color: #909399;
 }
 .thumb-name {

@@ -65,20 +65,10 @@ def save_uploaded_image(file, upload_folder, keep_original_name=False):
             filepath = os.path.join(upload_folder, unique_name)
             counter += 1
 
-    # 保存文件(失败时清理半文件,避免孤儿)
-    filepath = os.path.join(upload_folder, unique_name)
-    try:
-        file.save(filepath)
-    except Exception as exc:
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except OSError:
-                pass
-        raise IOError(f'保存文件失败:{exc}') from exc
+    # 保存文件
+    file.save(filepath)
 
     return {
         'url': f'/static/uploads/{unique_name}',
-        'saved_path': filepath,
         'original_name': original_name,
     }

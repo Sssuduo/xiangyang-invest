@@ -296,6 +296,13 @@ def update_project(project_id):
         'project_type_code', 'person_in_charge', 'person_in_charge_phone', 'project_doc', 'investment_plan', 'conclusion', 'tags', 'team_leader_ids', 'first_contact_date'
     ]
 
+    # 排除字段：这些字段的变更不触发 last_updated_at 刷新（不视为"更新"）
+    # 包括：序号、项目类型、推介/责任单位、跟进/上会状态
+    excluded_from_update_flag = {
+        'order_no', 'project_type_code', 'recommend_unit_code',
+        'responsible_unit_code', 'follow_status_code', 'meeting_status_code'
+    }
+
     # 审计日志：保存旧值
     user_info = get_current_user_info()
     old_values = {}
@@ -312,6 +319,7 @@ def update_project(project_id):
 
     # 标记是否有实际内容变更（用于跳过时间戳刷新）
     project_changed = False
+    has_non_excluded_change = False
 
     for field in updatable_fields:
         if field in data:
@@ -338,6 +346,8 @@ def update_project(project_id):
             if changed:
                 setattr(project, field, val)
                 project_changed = True
+                if field not in excluded_from_update_flag:
+                    has_non_excluded_change = True
 
     # 审计日志：对比新旧值
     if user_info:
@@ -371,6 +381,11 @@ def update_project(project_id):
                 ))
 
     _renumber_investment_projects()
+
+    # 只有非排除字段变更时，才刷新 last_updated_at（标记为"更新"）
+    if has_non_excluded_change:
+        project.last_updated_at = datetime.utcnow()
+
     db.session.commit()
     return jsonify({'code': 0, 'data': project.to_dict(), 'message': '更新成功'})
 

@@ -393,6 +393,12 @@
                   </el-button>
                 </el-upload>
 
+                <!-- 上传进度条 -->
+                <div v-if="audioUploading" class="audio-upload-progress">
+                  <span class="audio-upload-label">正在上传... {{ audioUploadProgress }}%</span>
+                  <el-progress :percentage="audioUploadProgress" :stroke-width="6" :show-text="false" />
+                </div>
+
                 <!-- 文件操作按钮行 (位于录音卡片下方、转写内容上方，与分段原文垂直对齐) -->
                 <div v-if="audioFile && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
                   <el-button size="small" type="warning" plain @click="handleRetryAudio">
@@ -1561,7 +1567,19 @@ async function handleDelete(row) {
   box-shadow: 0 1px 0 #cbd5e1;
 }
 
-.audio-upload-progress { margin-top: 12px; }
+.audio-upload-progress {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border: 1px solid #e4e7ed;
+}
+.audio-upload-progress .audio-upload-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #606266;
+}
 
 /* 文件缩略图网格 */
 .file-thumbnail-grid {

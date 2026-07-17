@@ -168,16 +168,17 @@ def _post_single(filepath, url, timeout, language='zh'):
     return text.strip()
 
 
-def transcribe_audio(audio_file_path, base_url=None):
+def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
     """将音频文件转换为文字（纯 HTTP 客户端，不引 funasr-onnx）。
 
     Args:
         audio_file_path: 音频文件绝对路径
         base_url: ASR 服务基础 URL；None 时取 Config.ASR_API_URL
             （笔记本反代后生产端用 http://localhost:15002）
+        on_slice_done: 可选回调，每完成一个切片调用一次 on_slice_done(slice_index, total_slices)
 
     Returns:
-        dict: {'success': True, 'text': str, 'duration': float}
+        dict: {'success': True, 'text': str, 'duration': float, 'slices': int}
 
     Raises:
         RuntimeError: 任何失败场景，消息均含 _UNREACHABLE_HINT
@@ -191,6 +192,10 @@ def transcribe_audio(audio_file_path, base_url=None):
     try:
         if duration <= SEGMENT_DURATION:
             text = _post_single(audio_file_path, url, timeout)
+            if on_slice_done:
+                on_slice_done(1, 1)
+            logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
+            return {'success': True, 'text': text, 'duration': duration, 'slices': 1}
         else:
             logger.info(f'长音频（{duration:.0f}s），按 {SEGMENT_DURATION}s/段预切后逐段 ASR')
             tmp = tempfile.mkdtemp(prefix='asr_seg_')
@@ -199,17 +204,23 @@ def transcribe_audio(audio_file_path, base_url=None):
                 if not segs:
                     logger.warning('切片失败，回退到整段请求')
                     text = _post_single(audio_file_path, url, timeout)
+                    if on_slice_done:
+                        on_slice_done(1, 1)
+                    logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
+                    return {'success': True, 'text': text, 'duration': duration, 'slices': 1}
                 else:
                     parts = []
+                    total_slices = len(segs)
                     for i, seg in enumerate(segs):
-                        logger.info(f'ASR 段 [{i + 1}/{len(segs)}]: {os.path.basename(seg)}')
+                        logger.info(f'ASR 段 [{i + 1}/{total_slices}]: {os.path.basename(seg)}')
                         parts.append(_post_single(seg, url, timeout))
+                        if on_slice_done:
+                            on_slice_done(i + 1, total_slices)
                     text = '\n'.join(parts)
+                    logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s，共 {total_slices} 段')
+                    return {'success': True, 'text': text, 'duration': duration, 'slices': total_slices}
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
-
-        logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
-        return {'success': True, 'text': text, 'duration': duration}
 
     except (requests.ConnectionError, requests.Timeout) as e:
         raise RuntimeError(

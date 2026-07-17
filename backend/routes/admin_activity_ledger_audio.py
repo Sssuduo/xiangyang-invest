@@ -91,8 +91,11 @@ def _run_async_processing(app, item_id):
     """
     后台线程：对 audio_files 逐个 ASR 转写 → 实时更新进度 → 识别完成后自动调总结。
     已识别的段 (status === 'ok') 保留不覆盖。
+
+    进度追踪：基于切片级别（30s/段），实时计算百分比和预估剩余时间。
     """
     import logging
+    import time as _time
     logger = logging.getLogger(__name__)
 
     with app.app_context():
@@ -131,7 +134,44 @@ def _run_async_processing(app, item_id):
             total_err = 0
             # 内存中转写缓存：status==='ok' 时，记录转写文本供本轮后续文件复用
             _transcript_cache = {}
-            total_segments = len(files)
+            total_files = len(files)
+
+            # === 进度追踪：预计算总切片数 ===
+            SLICE_DURATION = 30  # 与 speech_to_text.SEGMENT_DURATION 一致
+            file_slice_counts = []  # 每个文件的切片数
+            for af in files:
+                dur = af.get('duration') or 0
+                if dur <= 0:
+                    file_slice_counts.append(1)  # 无法获取时长时按 1 段算
+                else:
+                    slices = max(1, int(dur + SLICE_DURATION - 1) // SLICE_DURATION)  # 向上取整
+                    file_slice_counts.append(slices)
+            total_slices = sum(file_slice_counts)
+            slices_completed = 0
+            start_time = _time.time()
+
+            def _update_progress(slice_idx, slice_total):
+                """每完成一个切片调用：更新 progress_pct 和预估剩余时间"""
+                nonlocal slices_completed
+                slices_completed += 1
+                pct = int(slices_completed / total_slices * 100) if total_slices > 0 else 0
+                item.progress_pct = min(pct, 99)
+
+                # 预估剩余时间（基于已用时间和完成比例）
+                elapsed = _time.time() - start_time
+                if slices_completed > 0 and elapsed > 1:
+                    avg_time_per_slice = elapsed / slices_completed
+                    remaining_slices = total_slices - slices_completed
+                    remaining_sec = int(avg_time_per_slice * remaining_slices)
+                    remaining_min = max(1, remaining_sec // 60)
+                    item.progress_message = f'正在识别 ({slices_completed}/{total_slices} 段) · 约 {remaining_min} 分钟'
+                else:
+                    item.progress_message = f'正在识别 ({slices_completed}/{total_slices} 段)...'
+
+                try:
+                    db.session.commit()
+                except Exception:
+                    pass
 
             for i, af in enumerate(files):
                 # 检查是否被取消
@@ -143,6 +183,7 @@ def _run_async_processing(app, item_id):
                     return
 
                 if af.get('status') == 'ok' and i in _transcript_cache:
+                    slices_completed += file_slice_counts[i]
                     all_texts.append(_transcript_cache[i])
                     continue
 
@@ -151,19 +192,14 @@ def _run_async_processing(app, item_id):
                     af['status'] = 'error'
                     af['error'] = '文件不存在'
                     total_err += 1
+                    slices_completed += file_slice_counts[i]
                     all_texts.append('')
                     continue
 
-                logger.info(f'后台 ASR [{i + 1}/{total_segments}]: {af["name"]}')
-                item.progress_message = f'正在识别第 {i+1}/{total_segments} 段...'
-                item.progress_pct = int((i / total_segments) * 100)
-                try:
-                    db.session.commit()
-                except Exception:
-                    pass
+                logger.info(f'后台 ASR [{i + 1}/{total_files}]: {af["name"]}')
 
                 try:
-                    asr_result = transcribe_audio(file_path)
+                    asr_result = transcribe_audio(file_path, on_slice_done=_update_progress)
                     text = asr_result['text']
                     af['status'] = 'ok'
                     af['error'] = ''
@@ -173,16 +209,13 @@ def _run_async_processing(app, item_id):
                     total_ok += 1
                     af.pop('_transcript', None)
                     _set_audio_files(item, files)
-                    try:
-                        db.session.commit()
-                    except Exception:
-                        pass
-                    logger.info(f'后台 ASR [{i + 1}/{total_segments}] 完成: {len(text)} 字')
+                    logger.info(f'后台 ASR [{i + 1}/{total_files}] 完成: {len(text)} 字')
                 except Exception as e:
-                    logger.error(f'后台 ASR [{i + 1}/{total_segments}] 失败: {e}')
+                    logger.error(f'后台 ASR [{i + 1}/{total_files}] 失败: {e}')
                     af['status'] = 'error'
                     af['error'] = str(e)[:300]
                     total_err += 1
+                    slices_completed += file_slice_counts[i]
                     all_texts.append(f'[识别失败：{af["name"]}]')
 
             # 拼接全文
@@ -196,7 +229,7 @@ def _run_async_processing(app, item_id):
             item.audio_transcript = full_text
             item.audio_status = 'asr_completed'
             item.progress_pct = 100
-            item.progress_message = f'识别完成 ({total_ok}/{total_segments})'
+            item.progress_message = f'识别完成 ({total_ok}/{total_files} 文件)'
             db.session.commit()
             logger.info(f'后台 ASR 完成: item_id={item_id}, {total_ok}/{total_segments} 成功')
 

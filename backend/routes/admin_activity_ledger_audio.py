@@ -241,6 +241,8 @@ def _run_async_processing(app, item_id):
                 try:
                     _apply_summary_to_item(item, full_text)
                     item.audio_status = 'completed'
+                    item.progress_pct = 100
+                    item.progress_message = '处理完成'
                     db.session.commit()
                     logger.info(f'后台处理完成: item_id={item_id}')
                 except Exception as summary_err:
@@ -251,6 +253,8 @@ def _run_async_processing(app, item_id):
                     db.session.commit()
             else:
                 item.audio_status = 'completed'
+                item.progress_pct = 100
+                item.progress_message = '处理完成（转写内容为空）'
                 item.audio_summary = '转写内容为空，无法生成总结'
                 db.session.commit()
 
@@ -293,6 +297,8 @@ def _run_summary_only(app, item_id, model_id=None):
             clean_transcript, _ = _apply_corrections_text(item.audio_transcript or '', 'clean')
             _apply_summary_to_item(item, clean_transcript, model_id=model_id)
             item.audio_status = 'completed'
+            item.progress_pct = 100
+            item.progress_message = '处理完成'
             db.session.commit()
         except Exception as e:
             item.audio_summary = f'总结失败: {str(e)[:200]}'
@@ -362,6 +368,8 @@ def _run_terminology_only(app, item_id):
         try:
             n = apply_corrections_to_item(item, 'all')
             item.audio_status = 'completed'
+            item.progress_pct = 100
+            item.progress_message = '处理完成'
             db.session.commit()
         except Exception as e:
             item.audio_status = 'failed'

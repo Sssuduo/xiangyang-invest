@@ -130,12 +130,12 @@ class VoiceKnowledgeService:
                 pinyin_index[py_key] = []
             pinyin_index[py_key].append(kb)
 
-        # 滑动窗口检测 (4字→3字→2字)
+        # 滑动窗口检测 (6字→5字→4字→3字→2字) — 支持长短语匹配
         text_len = len(text)
         results = []
         matched_positions = set()  # 避免重叠
 
-        for window_size in (4, 3, 2):
+        for window_size in (6, 5, 4, 3, 2):
             for i in range(text_len - window_size + 1):
                 # 跳过已匹配位置
                 if any(i <= p < i + window_size for p in matched_positions):

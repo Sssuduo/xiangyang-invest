@@ -241,8 +241,14 @@ def summarize_meeting(transcript: str, model_id=None) -> dict:
         transcript: 原始 ASR 转写文本
         model_id: 用户选择的 LLM 模型 ID (可选, None 使用默认激活模型)
 
+<<<<<<< Updated upstream
     Returns:
         dict: {'segmented': str, 'clean': str, 'summary': str}
+=======
+# ===================== Phase 4: 语音知识库提示注入 =====================
+
+def _build_knowledge_fragment(transcript_sample: str) -> str:
+>>>>>>> Stashed changes
     """
     if not transcript or not transcript.strip():
         return {'segmented': '', 'clean': '', 'summary': '无录音内容，无法生成总结。'}

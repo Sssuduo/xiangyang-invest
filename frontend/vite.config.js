@@ -8,6 +8,15 @@ export default defineConfig({
   plugins: [
     vue(),
     ElementPlus(),
+    {
+      name: 'inject-demand-button-style',
+      transformIndexHtml(html) {
+        return html.replace(
+          '</head>',
+          `<style>.demand-card-actions .el-button.is-link{font-weight:500}.demand-card-actions .el-button--primary.is-link{color:#409eff !important}.demand-card-actions .el-button--danger.is-link{color:#f56c6c !important}.demand-card-actions .el-button.is-link .el-icon{color:inherit}</style></head>`
+        )
+      }
+    }
   ],
   resolve: {
     alias: {

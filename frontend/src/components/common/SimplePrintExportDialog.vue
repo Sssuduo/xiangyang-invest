@@ -89,6 +89,23 @@
             <el-option label="仅待完成" value="pending" />
           </el-select>
         </el-form-item>
+        <el-form-item label="调度状态">
+          <el-select
+            v-model="subOptions.dispatchStatus"
+            multiple
+            collapse-tags
+            placeholder="选择调度状态"
+            style="width:100%"
+          >
+            <el-option
+              v-for="d in dispatchStatusOptions"
+              :key="d.code"
+              :label="d.name"
+              :value="d.code"
+            />
+          </el-select>
+          <div class="dispatch-hint">默认：调度中 + 不予调度；可补选其他状态</div>
+        </el-form-item>
       </template>
     </el-form>
 
@@ -136,6 +153,7 @@ const dialogTitle = computed(() => {
 const templates = ref([])
 const selectedTemplateId = ref(0)
 const processing = ref(false)
+const dispatchStatusOptions = ref([])  // 调度状态字典选项
 
 const subOptions = ref({
   // ---- 招商项目：动态范围（V15.3: 三选一） ----
@@ -150,10 +168,31 @@ const subOptions = ref({
   progressRange: '',
   progressMode: 'aggregate',
   workPathRange: 'pending',  // 默认仅待完成
+  // ---- 在建项目：调度状态（V15.4 新增 多选） ----
+  dispatchStatus: ['dispatching', 'no_dispatch'],  // 默认调度中+不予调度
 })
 
 async function onOpened() {
   await loadTemplates()
+  if (props.entityType === 'construction') await loadDispatchStatuses()
+}
+
+async function loadDispatchStatuses() {
+  // 拉取调度状态字典，供多选下拉使用
+  try {
+    const res = await fetch('/api/admin/construction/dicts', { credentials: 'same-origin' })
+    const data = await res.json()
+    if (data.code === 0 && Array.isArray(data.data?.dispatch_statuses)) {
+      dispatchStatusOptions.value = data.data.dispatch_statuses
+      // 校验默认选中项仍存在于字典中（过滤已删除/停用的）
+      const validCodes = new Set(dispatchStatusOptions.value.map(d => d.code))
+      subOptions.value.dispatchStatus = subOptions.value.dispatchStatus.filter(c => validCodes.has(c))
+      if (subOptions.value.dispatchStatus.length === 0) {
+        // 兜底：字典中前两项或全部
+        subOptions.value.dispatchStatus = dispatchStatusOptions.value.slice(0, 2).map(d => d.code)
+      }
+    }
+  } catch { /* 字典加载失败不影响主流程 */ }
 }
 
 async function loadTemplates() {
@@ -205,6 +244,9 @@ function buildDownloadUrl() {
     if (subOptions.value.progressRange) params.set('progress_range', subOptions.value.progressRange)
     if (subOptions.value.progressMode) params.set('progress_mode', subOptions.value.progressMode)
     if (subOptions.value.workPathRange) params.set('work_path_range', subOptions.value.workPathRange)
+    // 调度状态多选（逗号分隔），空则传默认
+    const ds = subOptions.value.dispatchStatus
+    params.set('dispatch_status', Array.isArray(ds) && ds.length > 0 ? ds.join(',') : 'dispatching,no_dispatch')
   }
 
   return `${basePath}?${params.toString()}`
@@ -317,3 +359,12 @@ async function handlePrint() {
     processing.value = false
   }
 }</script>
+
+<style scoped>
+.dispatch-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+}
+</style>

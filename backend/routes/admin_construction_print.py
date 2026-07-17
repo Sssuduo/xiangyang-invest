@@ -316,8 +316,12 @@ def get_print_data():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置打印字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False) \
-        .filter(ConstructionProject.dispatch_status_code != 'exited')
+    q = ConstructionProject.query.filter_by(is_deleted=False)
+    # 调度状态筛选：默认调度中+不予调度，支持多选
+    dispatch_status_str = request.args.get('dispatch_status', 'dispatching,no_dispatch').strip()
+    selected_statuses = [s.strip() for s in dispatch_status_str.split(',') if s.strip()] if dispatch_status_str else ['dispatching', 'no_dispatch']
+    if selected_statuses:
+        q = q.filter(ConstructionProject.dispatch_status_code.in_(selected_statuses))
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()
@@ -604,8 +608,12 @@ def print_download():
     if not fields:
         return jsonify({'code': 1, 'message': '未配置打印字段'}), 400
 
-    q = ConstructionProject.query.filter_by(is_deleted=False) \
-        .filter(ConstructionProject.dispatch_status_code != 'exited')
+    q = ConstructionProject.query.filter_by(is_deleted=False)
+    # 调度状态筛选：默认调度中+不予调度，支持多选
+    dispatch_status_str = request.args.get('dispatch_status', 'dispatching,no_dispatch').strip()
+    selected_statuses = [s.strip() for s in dispatch_status_str.split(',') if s.strip()] if dispatch_status_str else ['dispatching', 'no_dispatch']
+    if selected_statuses:
+        q = q.filter(ConstructionProject.dispatch_status_code.in_(selected_statuses))
     if project_ids:
         q = q.filter(ConstructionProject.id.in_(project_ids))
     projects = q.order_by(ConstructionProject.order_no.asc()).all()

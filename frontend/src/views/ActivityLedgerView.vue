@@ -1095,7 +1095,53 @@ function handleThumbRemove(idx) {
   fileList.value.splice(idx, 1)
 }
 
-// ---- 录音上传（异步，支持多文件追加） ----
+// ---- 录音上传（串行队列，确保多文件依次追加，每个文件独立进度） ----
+const _uploadQueue = []
+let _uploading = false
+
+async function _processQueue() {
+  if (_uploading) return
+  _uploading = true
+  audioUploading.value = true
+
+  while (_uploadQueue.length > 0) {
+    const file = _uploadQueue.shift()
+    if (!editingId.value) continue
+
+    const uploadItem = { name: file.name, progress: 0 }
+    audioUploadList.value = [...audioUploadList.value, uploadItem]
+
+    try {
+      // 串行：此时 audioFiles.value 已反映之前所有已上传文件
+      const appendMode = audioFiles.value.length > 0
+      const res = await uploadAudio(editingId.value, file, (progressEvent) => {
+        uploadItem.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+        audioUploadList.value = [...audioUploadList.value]
+      }, appendMode)
+      if (res.code === 0) {
+        audioFiles.value = res.data.audio_files || []
+        audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
+        audioDetail.value = { audio_transcript: null, audio_summary: null }
+        audioStatus.value = 'processing'
+        audioProcessing.value = true
+      } else {
+        ElMessage.error(res.message || '录音处理失败')
+      }
+    } catch (err) {
+      ElMessage.error('录音上传失败：' + (err.message || '网络错误'))
+    } finally {
+      audioUploadList.value = audioUploadList.value.filter(item => item.name !== file.name)
+    }
+  }
+
+  audioUploading.value = false
+  _uploading = false
+  if (editingId.value) {
+    startPolling(editingId.value)
+    fetchData()
+  }
+}
+
 async function handleAudioUpload(file) {
   if (!editingId.value) {
     ElMessage.warning('请先保存活动台账，再上传录音文件')
@@ -1107,39 +1153,9 @@ async function handleAudioUpload(file) {
     ElMessage.error('不支持的音频格式：.' + ext + '，支持：' + audioExts.join(', '))
     return
   }
-
   stopPolling()
-  audioUploading.value = true
-  // 为每个文件创建独立进度条目
-  const uploadItem = { name: file.name, progress: 0 }
-  audioUploadList.value = [...audioUploadList.value, uploadItem]
-
-  try {
-    const appendMode = audioFiles.value.length > 0
-    const res = await uploadAudio(editingId.value, file, (progressEvent) => {
-      uploadItem.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100)
-      // 触发响应式更新
-      audioUploadList.value = [...audioUploadList.value]
-    }, appendMode)
-    if (res.code === 0) {
-      ElMessage.success(appendMode ? '录音已追加，正在后台处理...' : '录音已上传，正在后台转写...')
-      audioFiles.value = res.data.audio_files || []
-      audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
-      audioDetail.value = { audio_transcript: null, audio_summary: null }
-      audioStatus.value = 'processing'
-      audioProcessing.value = true
-      startPolling(editingId.value)
-      fetchData()
-    } else {
-      ElMessage.error(res.message || '录音处理失败')
-    }
-  } catch (err) {
-    ElMessage.error('录音上传失败：' + (err.message || '网络错误'))
-  } finally {
-    audioUploading.value = false
-    // 上传完成后移除该文件进度（保留已完成的可选：这里移除）
-    audioUploadList.value = audioUploadList.value.filter(item => item.name !== file.name || item.progress < 100)
-  }
+  _uploadQueue.push(file)
+  _processQueue()
 }
 
 // 手动选择音频文件

@@ -15,6 +15,7 @@ class ConstructionProject(db.Model):
     dispatch_status_code = db.Column(db.String(32), nullable=False, default='dispatching')
     construction_content = db.Column(db.Text, default='')
     construction_location = db.Column(db.String(255), default='')
+    total_investment = db.Column(db.Float, default=0.0)   # 总投资（亿元）
     start_date = db.Column(db.String(10), default='')    # 年-月-日 格式
     end_date = db.Column(db.String(10), default='')      # 年-月-日 格式
     funding_source = db.Column(db.String(255), default='')
@@ -45,6 +46,7 @@ class ConstructionProject(db.Model):
             'dispatch_status_code': self.dispatch_status_code,
             'construction_content': self.construction_content or '',
             'construction_location': self.construction_location or '',
+            'total_investment': self.total_investment or 0.0,
             'start_date': self.start_date or '',
             'end_date': self.end_date or '',
             'funding_source': self.funding_source or '',

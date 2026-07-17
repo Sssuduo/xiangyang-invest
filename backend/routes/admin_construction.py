@@ -310,6 +310,7 @@ def create_project():
         responsible_person=(data.get('responsible_person') or '').strip(),
         responsible_person_phone=(data.get('responsible_person_phone') or '').strip(),
         construction_location=(data.get('construction_location') or '').strip(),
+        total_investment=float(data.get('total_investment') or 0),
         start_date=((data.get('start_date') or '').strip()[:10] or ''),
         end_date=((data.get('end_date') or '').strip()[:10] or ''),
         funding_source=(data.get('funding_source') or '').strip(),
@@ -483,6 +484,11 @@ def update_project(project_id):
     project.responsible_person = (data.get('responsible_person') or '').strip()
     project.responsible_person_phone = (data.get('responsible_person_phone') or '').strip()
     project.construction_location = (data.get('construction_location') or '').strip()
+    if 'total_investment' in data:
+        try:
+            project.total_investment = float(data.get('total_investment') or 0)
+        except (ValueError, TypeError):
+            project.total_investment = 0.0
     # start_date/end_date 存储为 YYYY-MM-DD 字符串（列类型 String(10)），非必填
     if 'start_date' in data:
         val = (data.get('start_date') or '').strip()

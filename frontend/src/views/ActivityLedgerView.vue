@@ -393,10 +393,12 @@
                   </el-button>
                 </el-upload>
 
-                <!-- 上传进度条 -->
-                <div v-if="audioUploading" class="audio-upload-progress">
-                  <span class="audio-upload-label">正在上传... {{ audioUploadProgress }}%</span>
-                  <el-progress :percentage="audioUploadProgress" :stroke-width="6" :show-text="false" />
+                <!-- 上传进度条（每个文件独立显示） -->
+                <div v-if="audioUploading && audioUploadList.length > 0" class="audio-upload-progress">
+                  <div v-for="(item, idx) in audioUploadList" :key="idx" class="audio-upload-item">
+                    <span class="audio-upload-label">{{ item.name }} · {{ item.progress }}%</span>
+                    <el-progress :percentage="item.progress" :stroke-width="6" :show-text="false" />
+                  </div>
                 </div>
 
                 <!-- 文件操作按钮行 (位于录音卡片下方、转写内容上方，与分段原文垂直对齐) -->
@@ -600,7 +602,7 @@ const unlinking = ref(false)
 const fileList = ref([])
 // 录音模块（支持多文件）
 const audioUploading = ref(false)
-const audioUploadProgress = ref(0)
+const audioUploadList = ref([])  // [{ name, progress }] 每个文件独立进度
 const audioFiles = ref([])
 const audioFile = ref(null)
 const audioDetail = ref(null)
@@ -993,7 +995,7 @@ function resetForm() {
   audioFiles.value = []
   audioDetail.value = null
   audioUploading.value = false
-  audioUploadProgress.value = 0
+  audioUploadList.value = []
   audioProcessing.value = false
   audioStatus.value = null
   editTranscript.value = ''
@@ -1108,13 +1110,16 @@ async function handleAudioUpload(file) {
 
   stopPolling()
   audioUploading.value = true
-  audioUploadProgress.value = 0
+  // 为每个文件创建独立进度条目
+  const uploadItem = { name: file.name, progress: 0 }
+  audioUploadList.value = [...audioUploadList.value, uploadItem]
 
   try {
-    // 如果有已有文件则 append，否则覆盖
     const appendMode = audioFiles.value.length > 0
     const res = await uploadAudio(editingId.value, file, (progressEvent) => {
-      audioUploadProgress.value = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+      uploadItem.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+      // 触发响应式更新
+      audioUploadList.value = [...audioUploadList.value]
     }, appendMode)
     if (res.code === 0) {
       ElMessage.success(appendMode ? '录音已追加，正在后台处理...' : '录音已上传，正在后台转写...')
@@ -1132,6 +1137,8 @@ async function handleAudioUpload(file) {
     ElMessage.error('录音上传失败：' + (err.message || '网络错误'))
   } finally {
     audioUploading.value = false
+    // 上传完成后移除该文件进度（保留已完成的可选：这里移除）
+    audioUploadList.value = audioUploadList.value.filter(item => item.name !== file.name || item.progress < 100)
   }
 }
 
@@ -1574,11 +1581,20 @@ async function handleDelete(row) {
   border-radius: 6px;
   border: 1px solid #e4e7ed;
 }
-.audio-upload-progress .audio-upload-label {
+.audio-upload-item {
+  margin-bottom: 8px;
+}
+.audio-upload-item:last-child {
+  margin-bottom: 0;
+}
+.audio-upload-item .audio-upload-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
+  margin-bottom: 4px;
+  font-size: 12px;
   color: #606266;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 文件缩略图网格 */

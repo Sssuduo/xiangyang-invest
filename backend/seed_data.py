@@ -497,6 +497,9 @@ def init_database(app):
     _seed_knowledge_from_demands()
     _seed_static_knowledge()
     _embed_existing_entries()
+    # 自动从项目生成知识库条目（常见错写/简称→正确全称）
+    from services.voice_knowledge import VoiceKnowledgeService
+    VoiceKnowledgeService.auto_generate_from_projects()
 
 
 def _seed_lead_assessment_prompt():

@@ -292,3 +292,75 @@ class VoiceKnowledgeService:
         record.persisted_to_knowledge = True
         db.session.commit()
         return existing
+
+    @classmethod
+    def auto_generate_from_projects(cls):
+        """从招商/在建项目自动生成知识库条目（常见错写/简称→正确全称）
+
+        策略：
+        1. 从项目名称中提取关键词作为可能的错写形式
+        2. 从企业名称中提取简称/错写形式
+        3. 生成知识条目（original=可能的错写, replacement=正确名称）
+        """
+        added = 0
+        try:
+            from models.investment import InvestmentProject
+            from models.construction import ConstructionProject
+        except ImportError:
+            return added
+
+        entries = []
+
+        # 招商项目：企业名称 → 生成可能的错写/简称
+        projects = InvestmentProject.query.filter_by(is_deleted=False).all()
+        for p in projects:
+            enterprise = p.invest_enterprise or ''
+            project_name = p.project_name or ''
+
+            # 生成企业名称的简称/错写形式
+            if len(enterprise) >= 6:
+                # 去掉"有限公司"等后缀的简称
+                short = enterprise.replace('有限公司', '').replace('有限责任公司', '').replace('股份有限公司', '')
+                if short != enterprise and len(short) >= 4:
+                    entries.append((short, enterprise, '招商对接项目: ' + project_name))
+
+                # 去掉"浙江"等前缀的简称
+                if len(enterprise) > 4:
+                    no_prefix = enterprise
+                    for prefix in ['浙江', '湖北', '河南', '山东', '江苏', '上海', '北京', '广东', '深圳', '杭州', '武汉', '襄阳']:
+                        if no_prefix.startswith(prefix):
+                            candidate = no_prefix[len(prefix):]
+                            if len(candidate) >= 4:
+                                entries.append((candidate, enterprise, '招商对接项目: ' + project_name))
+                            break
+
+        # 在建项目
+        constructions = ConstructionProject.query.all()
+        for c in constructions:
+            enterprise = c.invest_enterprise or c.construction_unit or ''
+            project_name = c.project_name or ''
+            if len(enterprise) >= 6:
+                short = enterprise.replace('有限公司', '').replace('有限责任公司', '').replace('股份有限公司', '')
+                if short != enterprise and len(short) >= 4:
+                    entries.append((short, enterprise, '在建项目: ' + project_name))
+
+        # 批量插入（跳过已存在的）
+        for original, replacement, context in entries:
+            existing = VoiceKnowledgeEntry.query.filter_by(
+                original=original, replacement=replacement, is_active=True
+            ).first()
+            if not existing:
+                try:
+                    cls.create_entry(
+                        original=original,
+                        replacement=replacement,
+                        context=context,
+                        source='auto_generated',
+                        confidence=0.90,
+                    )
+                    added += 1
+                except Exception as e:
+                    logger.warning(f'自动生成知识条目失败: {original} → {replacement}, 错误={e}')
+
+        logger.info(f'自动从项目生成知识库条目: {added} 条')
+        return added

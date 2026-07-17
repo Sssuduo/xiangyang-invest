@@ -231,7 +231,7 @@ def _run_async_processing(app, item_id):
             item.progress_pct = 100
             item.progress_message = f'识别完成 ({total_ok}/{total_files} 文件)'
             db.session.commit()
-            logger.info(f'后台 ASR 完成: item_id={item_id}, {total_ok}/{total_segments} 成功')
+            logger.info(f'后台 ASR 完成: item_id={item_id}, {total_ok}/{total_files} 成功')
 
             # ASR 完成 → 自动触发总结
             if full_text.strip():

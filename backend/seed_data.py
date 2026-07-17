@@ -214,6 +214,14 @@ def init_database(app):
             # V8: 项目标签 + 动态标签
             "ALTER TABLE investment_projects ADD COLUMN tags TEXT DEFAULT '[]'",
             "ALTER TABLE investment_activities ADD COLUMN tags TEXT DEFAULT '[]'",
+            # V15.4: 招商动态 - 录音识别字段
+            "ALTER TABLE investment_activities ADD COLUMN audio_files TEXT DEFAULT '[]'",
+            "ALTER TABLE investment_activities ADD COLUMN audio_transcript TEXT DEFAULT ''",
+            "ALTER TABLE investment_activities ADD COLUMN audio_summary TEXT DEFAULT ''",
+            "ALTER TABLE investment_activities ADD COLUMN audio_status VARCHAR(32) DEFAULT ''",
+            "ALTER TABLE investment_activities ADD COLUMN audio_duration FLOAT DEFAULT 0",
+            "ALTER TABLE investment_activities ADD COLUMN progress_pct INTEGER DEFAULT 0",
+            "ALTER TABLE investment_activities ADD COLUMN progress_message VARCHAR(255) DEFAULT ''",
             # 工作进展附件
             "ALTER TABLE work_progress ADD COLUMN files TEXT DEFAULT '[]'",
             # V11: 联系电话

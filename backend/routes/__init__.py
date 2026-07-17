@@ -53,6 +53,9 @@ admin_construction_print_bp = Blueprint('admin_construction_print', __name__, ur
 # 招商宣传视频
 admin_promo_video_bp = Blueprint('admin_promo_video', __name__, url_prefix='/api')
 
+# 招商动态 - 录音识别
+admin_activity_audio_bp = Blueprint('admin_activity_audio', __name__, url_prefix='/api/admin')
+
 # 专班工作人员管理
 admin_staff_bp = Blueprint('admin_staff', __name__, url_prefix='/api/admin')
 
@@ -62,6 +65,9 @@ admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix
 # 招商线索研判 + 本地招商知识库
 admin_lead_bp = Blueprint('admin_lead', __name__, url_prefix='/api/admin')
 admin_knowledge_bp = Blueprint('admin_knowledge', __name__, url_prefix='/api/admin')
+
+# 消息提醒站
+admin_message_bp = Blueprint('admin_message', __name__, url_prefix='/api/admin')
 
 # C 端 App 只读蓝图（内部人员查看 + AI 研判 + 周报）
 client_bp = Blueprint('client', __name__, url_prefix='/api/client')
@@ -102,6 +108,8 @@ def register_routes(app):
     from routes import admin_debug as _admin_debug
     from routes import admin_lead as _admin_lead
     from routes import admin_knowledge as _admin_knowledge
+    from routes import admin_message as _admin_message
+    from routes import user_messages as _user_messages
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)
@@ -142,6 +150,8 @@ def register_routes(app):
     app.register_blueprint(admin_print.admin_print_bp)
     app.register_blueprint(admin_construction_print.admin_construction_print_bp)
     app.register_blueprint(admin_promo_video.admin_promo_video_bp)
+    from routes import admin_activity_audio as _admin_activity_audio
+    app.register_blueprint(admin_activity_audio.admin_activity_audio_bp)
 
     # 注册业务用户认证和管理蓝图
     app.register_blueprint(business_auth.business_auth_bp)
@@ -149,6 +159,7 @@ def register_routes(app):
     app.register_blueprint(admin_business_users.admin_business_users_bp)
     app.register_blueprint(admin_lead.admin_lead_bp)
     app.register_blueprint(admin_knowledge.admin_knowledge_bp)
+    app.register_blueprint(admin_message.admin_message_bp)
 
     # 注册 C 端 App 只读蓝图（当前禁用：移动端功能暂不上线）
     # from routes import client as _client

@@ -27,8 +27,8 @@
           </el-form-item>
 
           <el-form-item label="投资金额" prop="invest_amount">
-            <el-input-number v-model="form.invest_amount" :min="0" :precision="2" :step="100" style="width: 220px;" />
-            <span class="field-unit">万元</span>
+            <el-input-number v-model="form.invest_amount" :min="0" :precision="2" :step="100" style="width: 260px;" />
+            万元
             <span class="input-hint">大于等于 10000 万时前台自动展示为亿元</span>
           </el-form-item>
 

@@ -46,7 +46,25 @@ logger = logging.getLogger(__name__)
 SEGMENT_DURATION = 30
 
 # ASR 不可达时的中文提示前缀，方便路由层识别并原样透传到 item.audio_summary
-_UNREACHABLE_HINT = '录音文件识别需依赖本地模型，请联系管理员苏铎'
+_UNREACHABLE_HINT = '录音转写服务未启动，请联系管理员苏铎'
+
+
+def check_asr_health(base_url=None):
+    """检查 ASR 服务是否可用。
+
+    Returns:
+        bool: True 表示可用，False 表示不可用
+    """
+    url = (base_url or Config.ASR_API_URL).rstrip('/')
+    try:
+        resp = requests.get(f'{url}/health', timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('status') == 'ok':
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def _get_audio_duration(filepath):

@@ -108,7 +108,7 @@ async function fetchData() {
     const params = {}
     if (filterStatus.value) params.status = filterStatus.value
     const res = await getDrafts(params)
-    if (res.code === 0) drafts.value = res.data || []
+    if (res.code === 0) drafts.value = res.data?.items || []
   } catch { drafts.value = [] }
   finally { loading.value = false }
 }

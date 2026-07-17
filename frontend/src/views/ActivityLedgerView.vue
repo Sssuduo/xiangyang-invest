@@ -309,7 +309,7 @@
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传；也可 <kbd>Ctrl+V</kbd> 粘贴图片</div>
+                  <div class="el-upload__tip">支持 PDF/DOC/DOCX/PPT/XLS/图片，可多个上传</div>
                 </template>
               </el-upload>
               <!-- 文件缩略图网格 -->
@@ -331,6 +331,12 @@
                   <div class="thumb-name" :title="getFileName(file)">{{ getFileName(file) }}</div>
                 </div>
               </div>
+            </div>
+            <!-- 粘贴图片专属区域 -->
+            <div class="paste-zone" @paste="handleClipboardPaste" tabindex="0" title="点击此处后按 Ctrl+V 粘贴图片">
+              <span class="paste-icon"><el-icon><Picture /></el-icon></span>
+              <span class="paste-label">粘贴截图</span>
+              <span class="paste-hint">点击此处 / 鼠标停留 · 按 <kbd>Ctrl+V</kbd> 插入图片</span>
             </div>
           </el-form-item>
 
@@ -530,7 +536,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels } from '@/api/activityLedger'
@@ -1519,6 +1525,42 @@ async function handleDelete(row) {
 }
 
 .upload-wrapper { width: 100%; }
+
+/* 粘贴图片专属区域 */
+.paste-zone {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1.5px dashed #c8d0db;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: #8a95a5;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  outline: none;
+}
+.paste-zone:hover,
+.paste-zone:focus {
+  border-color: #409eff;
+  background: #e8f3ff;
+  color: #2c5fb8;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12);
+}
+.paste-icon { display: flex; font-size: 22px; color: inherit; }
+.paste-label { font-size: 14px; font-weight: 600; }
+.paste-hint { font-size: 12px; margin-left: auto; color: inherit; opacity: 0.8; }
+.paste-zone kbd {
+  padding: 1px 5px;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 #cbd5e1;
+}
+
 .audio-upload-progress { margin-top: 12px; }
 
 /* 文件缩略图网格 */

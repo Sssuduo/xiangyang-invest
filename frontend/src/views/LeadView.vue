@@ -684,7 +684,21 @@ async function copyPrompt(row) {
     }
     parts.push('【用户提示词】')
     parts.push(data.prompt_text)
-    await navigator.clipboard.writeText(parts.join('\n'))
+    const text = parts.join('\n')
+
+    // 兼容非 HTTPS 环境：优先用 Clipboard API，失败则用 execCommand
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     ElMessage.success('提示词已复制到剪贴板')
   } catch (err) {
     ElMessage.error(err.message || '复制失败')

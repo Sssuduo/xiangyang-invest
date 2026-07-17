@@ -445,6 +445,10 @@
             <span class="section-icon"><el-icon><InfoFilled /></el-icon></span>
             <span class="section-title">项目信息</span>
           </div>
+          <el-form-item label="总投资" prop="total_investment">
+            <el-input-number v-model="form.total_investment" :min="0" :precision="2" :step="0.1" style="width: 220px;" />
+            <span class="field-unit">亿元</span>
+          </el-form-item>
           <el-form-item label="建设地点">
             <el-input v-model="form.construction_location" placeholder="请输入建设地点" maxlength="255" />
           </el-form-item>

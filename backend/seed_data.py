@@ -238,6 +238,8 @@ def init_database(app):
             "ALTER TABLE construction_projects ADD COLUMN funding_source VARCHAR(255) DEFAULT ''",
             "ALTER TABLE construction_projects ADD COLUMN wuhua_platform VARCHAR(8) DEFAULT ''",
             "ALTER TABLE construction_projects ADD COLUMN team_leader_ids TEXT DEFAULT '[]'",
+            # V15.4: 在建项目 总投资（亿元）
+            "ALTER TABLE construction_projects ADD COLUMN total_investment FLOAT DEFAULT 0.0",
             # V13.4: 招商动态 ↔ 企业诉求 多对多关联表
             "CREATE TABLE IF NOT EXISTS activity_demand_link ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "

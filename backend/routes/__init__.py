@@ -66,9 +66,6 @@ admin_business_users_bp = Blueprint('admin_business_users', __name__, url_prefix
 admin_lead_bp = Blueprint('admin_lead', __name__, url_prefix='/api/admin')
 admin_knowledge_bp = Blueprint('admin_knowledge', __name__, url_prefix='/api/admin')
 
-# 消息提醒站
-admin_message_bp = Blueprint('admin_message', __name__, url_prefix='/api/admin')
-
 # C 端 App 只读蓝图（内部人员查看 + AI 研判 + 周报）
 client_bp = Blueprint('client', __name__, url_prefix='/api/client')
 
@@ -108,8 +105,6 @@ def register_routes(app):
     from routes import admin_debug as _admin_debug
     from routes import admin_lead as _admin_lead
     from routes import admin_knowledge as _admin_knowledge
-    from routes import admin_message as _admin_message
-    from routes import user_messages as _user_messages
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)
@@ -159,7 +154,6 @@ def register_routes(app):
     app.register_blueprint(admin_business_users.admin_business_users_bp)
     app.register_blueprint(admin_lead.admin_lead_bp)
     app.register_blueprint(admin_knowledge.admin_knowledge_bp)
-    app.register_blueprint(admin_message.admin_message_bp)
 
     # 注册 C 端 App 只读蓝图（当前禁用：移动端功能暂不上线）
     # from routes import client as _client

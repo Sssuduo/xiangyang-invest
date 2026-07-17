@@ -238,10 +238,17 @@ def _run_async_processing(app, item_id):
                 item.audio_status = 'summarizing'
                 item.progress_message = '正在总结...'
                 db.session.commit()
-                _apply_summary_to_item(item, full_text)
-                item.audio_status = 'completed'
-                db.session.commit()
-                logger.info(f'后台处理完成: item_id={item_id}')
+                try:
+                    _apply_summary_to_item(item, full_text)
+                    item.audio_status = 'completed'
+                    db.session.commit()
+                    logger.info(f'后台处理完成: item_id={item_id}')
+                except Exception as summary_err:
+                    # 总结失败不影响转写内容展示
+                    logger.warning(f'总结失败（转写成功）: item_id={item_id}, 错误={summary_err}')
+                    item.audio_status = 'summary_failed'
+                    item.audio_summary = f'总结失败：{str(summary_err)[:200]}'
+                    db.session.commit()
             else:
                 item.audio_status = 'completed'
                 item.audio_summary = '转写内容为空，无法生成总结'

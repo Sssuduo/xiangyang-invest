@@ -243,6 +243,14 @@ class InvestmentActivity(db.Model):
     content = db.Column(db.Text, nullable=False)
     files = db.Column(db.Text, default='[]')
     tags = db.Column(db.Text, default='[]')
+    # V15.4: 录音识别总结（与活动台账同结构）
+    audio_files = db.Column(db.Text, default='[]')        # [{url, name, duration, size, status, error}]
+    audio_transcript = db.Column(db.Text, default='')
+    audio_summary = db.Column(db.Text, default='')
+    audio_status = db.Column(db.String(32), default='')
+    audio_duration = db.Column(db.Float, default=0)
+    progress_pct = db.Column(db.Integer, default=0)
+    progress_message = db.Column(db.String(255), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -265,6 +273,14 @@ class InvestmentActivity(db.Model):
             'content': self.content,
             'files': json.loads(self.files) if self.files else [],
             'tags': json.loads(self.tags) if self.tags else [],
+            # V15.4: 录音识别
+            'audio_files': json.loads(self.audio_files) if self.audio_files else [],
+            'audio_transcript': self.audio_transcript or '',
+            'audio_summary': self.audio_summary or '',
+            'audio_status': self.audio_status or '',
+            'audio_duration': self.audio_duration or 0,
+            'progress_pct': self.progress_pct or 0,
+            'progress_message': self.progress_message or '',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

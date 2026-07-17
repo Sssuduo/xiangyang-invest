@@ -109,7 +109,17 @@ def _run_async_processing(app, item_id):
                 db.session.commit()
                 return
 
-            from services.speech_to_text import transcribe_audio
+            from services.speech_to_text import transcribe_audio, check_asr_health
+
+            # 先检查 ASR 服务是否可用
+            if not check_asr_health():
+                item.audio_status = 'failed'
+                item.audio_summary = '录音转写服务未启动，请联系管理员苏铎'
+                item.progress_message = None
+                item.progress_pct = 0
+                db.session.commit()
+                logger.error(f'后台处理：ASR 服务不可用，item_id={item_id}')
+                return
 
             item.audio_status = 'asr_processing'
             item.progress_message = '转写准备中...'

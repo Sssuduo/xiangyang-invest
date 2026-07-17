@@ -283,7 +283,7 @@ def get_meeting_prompt_templates() -> dict:
 
 # ===================== Phase 4: 语音知识库提示注入 =====================
 
-def _build_knowledge_fragment(transcript_sample: str) str:
+def _build_knowledge_fragment(transcript_sample: str) -> str:
     """
     根据当前知识库生成提示词片段, 注入到 LLM system prompt 中。
 

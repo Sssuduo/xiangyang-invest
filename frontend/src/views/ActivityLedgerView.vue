@@ -332,11 +332,11 @@
                 </div>
               </div>
             </div>
-            <!-- 粘贴图片专属区域 -->
+            <!-- 粘贴图片专属区域：点击后按 Ctrl+V 粘贴图片 -->
             <div class="paste-zone" @paste="handleClipboardPaste" tabindex="0" title="点击此处后按 Ctrl+V 粘贴图片">
               <span class="paste-icon"><el-icon><Picture /></el-icon></span>
-              <span class="paste-label">粘贴截图</span>
-              <span class="paste-hint">点击此处 / 鼠标停留 · 按 <kbd>Ctrl+V</kbd> 插入图片</span>
+              <span class="paste-label">粘贴图片</span>
+              <span class="paste-hint">点击此处 · 按 <kbd>Ctrl+V</kbd> 插入图片</span>
             </div>
           </el-form-item>
 

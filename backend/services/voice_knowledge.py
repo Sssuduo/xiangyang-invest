@@ -337,7 +337,7 @@ class VoiceKnowledgeService:
         # 在建项目
         constructions = ConstructionProject.query.all()
         for c in constructions:
-            enterprise = c.invest_enterprise or c.construction_unit or ''
+            enterprise = c.construction_unit or ''
             project_name = c.project_name or ''
             if len(enterprise) >= 6:
                 short = enterprise.replace('有限公司', '').replace('有限责任公司', '').replace('股份有限公司', '')

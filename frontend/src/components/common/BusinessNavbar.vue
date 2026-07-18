@@ -57,11 +57,6 @@
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
-          <!-- 消息提醒 icon -->
-          <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="nav-message-badge" @click="showMessageCenter = true">
-            <el-button circle :icon="Bell" class="nav-message-btn" />
-          </el-badge>
-
           <span class="nav-item nav-user nav-user-clickable" @click="showProfileDialog = true">
             <el-icon><UserFilled /></el-icon>
             {{ businessAuth.user?.display_name || businessAuth.user?.username }}
@@ -155,12 +150,10 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, UserFilled, User, Lock, Bell } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { clearAuthCache } from '@/router'
-import { userMessageApi } from '@/api/userMessage.js'
-import MessageCenter from '@/components/common/MessageCenter.vue'
 
 const props = defineProps({
   variant: { type: String, default: 'light' }, // 'home' | 'light' | 'overlay' | 'contact'
@@ -172,29 +165,6 @@ const router = useRouter()
 const businessAuth = useBusinessAuthStore()
 
 // 消息中心
-const showMessageCenter = ref(false)
-const messageCenterRef = ref(null)
-const unreadCount = ref(0)
-let unreadTimer = null
-
-async function refreshUnreadCount() {
-  if (!businessAuth.isLoggedIn) return
-  try {
-    const res = await userMessageApi.unreadCount()
-    unreadCount.value = res.data.data?.count || 0
-  } catch {
-    // 静默失败
-  }
-}
-
-onMounted(() => {
-  refreshUnreadCount()
-  unreadTimer = setInterval(refreshUnreadCount, 60_000)  // 每 60 秒刷新
-})
-onUnmounted(() => {
-  if (unreadTimer) clearInterval(unreadTimer)
-})
-
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge'))

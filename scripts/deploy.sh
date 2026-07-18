@@ -116,3 +116,55 @@ echo "  版本: $CURRENT_TAG"
 echo "  提交: $CURRENT_COMMIT"
 echo "  时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=============================================="
+
+# ── 7. 持久化 nginx /static/uploads/ 配置（防止环境漂移）──
+# 历史原因：nginx 的 /static/uploads/ alias 曾被 V15.5 修复为 backend/static/uploads/，
+# 但部署流程不动 nginx，导致修复被覆盖回错误目录（缺失 backend 段）。
+# 这里做一次幂等的 alias 修正 + 全杀 worker，避免首页轮播第一张图 404 复发。
+echo ""
+echo "[7/7] 持久化 nginx /static/uploads/ 配置..."
+
+NGINX_CONF="/etc/nginx/conf.d/invest-app.conf"
+
+if [ -f "$NGINX_CONF" ]; then
+    # 检测是否存在错误 alias（缺少 backend 段）
+    if grep -q "alias /www/wwwroot/invest-app/static/uploads/;" "$NGINX_CONF" 2>/dev/null; then
+        echo "  ⚠ 检测到错误 alias，进行修正..."
+        # 备份（保留，便于回溯）
+        cp -p "$NGINX_CONF" "${NGINX_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+        # 文件可能被 chattr +i 锁定，先解锁
+        if lsattr "$NGINX_CONF" 2>/dev/null | grep -q '^....i'; then
+            chattr -i "$NGINX_CONF"
+            echo "  ✓ 已解除 chattr +i 锁定"
+        fi
+        # 修正 alias
+        sed -i 's|alias /www/wwwroot/invest-app/static/uploads/;|alias /www/wwwroot/invest-app/backend/static/uploads/;|' "$NGINX_CONF"
+        # 重新锁定（防止误改）
+        chattr +i "$NGINX_CONF"
+        echo "  ✓ alias 已修正"
+        # 验证配置
+        if nginx -t 2>/dev/null; then
+            echo "  ✓ nginx 配置验证通过"
+            # 全杀 worker + reload（避免老 worker 持有旧配置）
+            nginx -s stop 2>/dev/null || true
+            sleep 1
+            nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
+            echo "  ✓ nginx 已重启（全杀 worker）"
+        else
+            echo "  ⚠ nginx 配置验证失败，回滚备份"
+            cp -p "${NGINX_CONF}.bak."* "$NGINX_CONF" 2>/dev/null || true
+            nginx -s stop 2>/dev/null || true
+            sleep 1
+            nginx 2>/dev/null || true
+        fi
+    else
+        echo "  ✓ nginx alias 正确，跳过修正"
+    fi
+else
+    echo "  ⚠ 未找到 $NGINX_CONF，跳过 nginx 修正"
+fi
+
+echo ""
+echo "=============================================="
+echo "  最终部署完成"
+echo "=============================================="

@@ -70,10 +70,27 @@ def get_provinces():
 # ============================================================
 # 城市信息（省份子级）
 # ============================================================
+@api_bp.route('/provinces/<int:province_id>', methods=['GET'])
+def get_province(province_id):
+    """获取单个省份详情（兼容 id 和 region_code 两种传参）"""
+    # 优先按主键 id 查；若不存在且传入 6 位 region_code，按 region_code 匹配
+    province = ProvinceInfo.query.get(province_id)
+    if province is None and len(str(province_id)) == 6:
+        province = ProvinceInfo.query.filter_by(region_code=str(province_id)).first()
+    if province is None:
+        return jsonify({'code': 1, 'message': f'省份 id/编码 {province_id} 不存在'}), 404
+    return jsonify({'code': 0, 'data': province.to_dict()})
+
+
 @api_bp.route('/provinces/<int:province_id>/cities', methods=['GET'])
 def get_province_cities(province_id):
-    """获取省份下高亮的城市"""
-    province = ProvinceInfo.query.get_or_404(province_id)
+    """获取省份下高亮的城市（兼容 id 和 region_code 两种传参）"""
+    # 优先按主键 id 查；若不存在且传入 6 位 region_code，按 region_code 匹配
+    province = ProvinceInfo.query.get(province_id)
+    if province is None and len(str(province_id)) == 6:
+        province = ProvinceInfo.query.filter_by(region_code=str(province_id)).first()
+    if province is None:
+        return jsonify({'code': 1, 'message': f'省份 id/编码 {province_id} 不存在'}), 404
     cities = province.cities.filter_by(is_highlighted=True).all()
     return jsonify({'code': 0, 'data': [c.to_dict() for c in cities]})
 

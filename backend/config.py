@@ -1,6 +1,7 @@
 import os
 from os import getenv
 from dotenv import load_dotenv
+from sqlalchemy.pool import NullPool as _NullPool
 
 load_dotenv()
 
@@ -17,14 +18,14 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         f'sqlite:///{os.path.join(project_root, "instance", "app.db")}'
 
-    # SQLAlchemy 引擎选项（连接池 + SQLite 优化）
+    # SQLAlchemy 引擎选项
+    # SQLite 单文件单写者场景推荐 NullPool（池化反而增加锁复杂度）
+    # 参考：https://docs.sqlalchemy.org/en/20/dialects/sqlite.html#threading-pooling-behavior
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 10,
-        'pool_timeout': 30,
-        'pool_recycle': 3600,
+        'poolclass': _NullPool,  # 每次请求用完即销毁，适合 SQLite
         'connect_args': {
-            'check_same_thread': False,
-            'timeout': 30,
+            'check_same_thread': False,  # 多线程可写同一 SQLite 文件
+            'timeout': 30,                # SQLite busy 等待超时（秒）
         },
         'pool_pre_ping': True,
     }

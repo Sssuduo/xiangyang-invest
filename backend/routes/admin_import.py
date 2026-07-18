@@ -372,6 +372,8 @@ def import_execute():
         )
         db.session.add(project)
         imported += 1
+        if imported % 50 == 0:
+            db.session.flush()  # 分批 flush，释放写锁给其他写者
 
     db.session.commit()
     return jsonify({'code': 0, 'message': f'成功导入 {imported} 条记录', 'data': {'count': imported}})

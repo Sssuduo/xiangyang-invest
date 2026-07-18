@@ -79,7 +79,11 @@ def list_activities():
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 20, type=int)
 
-    q = InvestmentActivity.query.join(InvestmentProject)
+    # 预加载 project 避免 to_dict 内隐式 N+1 查询
+    from sqlalchemy.orm import joinedload
+    q = InvestmentActivity.query.options(
+        joinedload(InvestmentActivity.project)
+    ).join(InvestmentProject)
 
     if search:
         like = f'%{search}%'

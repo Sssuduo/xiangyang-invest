@@ -646,6 +646,9 @@ def import_execute():
         )
         db.session.add(project)
         db.session.flush()  # 获取 project.id
+        imported += 1
+        if imported % 20 == 0:
+            db.session.flush()  # 每 20 条 flush，释放写锁
 
         # 解析并创建子表数据
         parsed = row.get('parsed', {})

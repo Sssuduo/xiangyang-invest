@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 def start_message_scheduler(app):
-    """启动消息提醒定时调度器(每天 08:00 跑一次)"""
+    """启动消息提醒定时调度器(每天 09:00 跑一次，避开 08:00 业务高峰)"""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
     except ImportError:
@@ -23,7 +23,7 @@ def start_message_scheduler(app):
             except Exception as exc:
                 logger.error(f'[message_scheduler] 消息规则评估异常: {exc}')
 
-    # 每天 08:00 执行
-    scheduler.add_job(_job, 'cron', hour=8, minute=0, id='message_rule_evaluate')
+    # 每天 09:00 执行（错开 08:00 业务写入高峰 + 夜间压缩 02:00-03:00）
+    scheduler.add_job(_job, 'cron', hour=9, minute=0, id='message_rule_evaluate')
     scheduler.start()
-    logger.info('[message_scheduler] 消息提醒定时任务已启动(每天 08:00)')
+    logger.info('[message_scheduler] 消息提醒定时任务已启动(每天 09:00)')

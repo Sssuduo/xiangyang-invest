@@ -87,7 +87,12 @@ def list_leads():
     project_type = request.args.get('project_type', '').strip()
     converted_filter = request.args.get('converted', '').strip()  # 'yes' / 'no' / ''
 
-    q = InvestmentLead.query.filter_by(is_deleted=False)
+    # 预加载 converted_project + ai_model 避免 to_dict 内隐式 N+1 查询
+    from sqlalchemy.orm import joinedload
+    q = InvestmentLead.query.options(
+        joinedload(InvestmentLead.converted_project),
+        joinedload(InvestmentLead.ai_model)
+    ).filter_by(is_deleted=False)
 
     if search:
         like = f'%{search}%'
@@ -1050,7 +1055,11 @@ def create_assessment_session(lead_id):
 def list_assessment_sessions(lead_id):
     """获取线索的所有研判会话"""
     _ = InvestmentLead.query.filter_by(id=lead_id, is_deleted=False).first_or_404()
-    sessions = LeadAssessmentSession.query.filter_by(lead_id=lead_id)\
+    # 预加载 model（to_dict 内访问 self.model.name）
+    from sqlalchemy.orm import joinedload
+    sessions = LeadAssessmentSession.query.options(
+        joinedload(LeadAssessmentSession.model)
+    ).filter_by(lead_id=lead_id)\
         .order_by(LeadAssessmentSession.created_at.desc()).all()
     return jsonify({
         'code': 0,

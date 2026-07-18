@@ -369,6 +369,8 @@ def import_execute():
         )
         db.session.add(wp)
         imported += 1
+        if imported % 50 == 0:
+            db.session.flush()  # 分批 flush，释放写锁给其他写者
 
     try:
         db.session.commit()

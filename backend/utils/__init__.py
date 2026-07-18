@@ -51,3 +51,62 @@ def log_changes(table_name, record_id, changes_dict, change_type, user_info):
                 changed_by_name=user_info[2]
             )
             db.session.add(record)
+
+
+# ============================================================
+# SQLite 监控：锁等待 + 慢操作装饰器
+# ============================================================
+import time as _time
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+# 慢操作阈值（秒）：超过则记 warning 日志
+SLOW_OPERATION_THRESHOLD = 1.0
+
+
+def monitor_db_operation(func):
+    """
+    装饰器：监控 DB 操作的锁等待时间。
+
+    用法：在调用 DB 的关键函数上加 @monitor_db_operation
+    示例：
+        @monitor_db_operation
+        def import_activities():
+            ...
+
+    触发条件：
+      - 抛出 'database is locked' 异常时记 warning
+      - 单次操作超过 SLOW_OPERATION_THRESHOLD 时记 warning
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = _time.time()
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            if 'database is locked' in str(exc).lower() or 'locked' in str(exc).lower():
+                _logger.warning(
+                    f'[SQLite 锁等待超时] {func.__name__}({args!r}, {kwargs!r}): {exc}'
+                )
+            raise
+        finally:
+            elapsed = _time.time() - start
+            if elapsed > SLOW_OPERATION_THRESHOLD:
+                _logger.warning(
+                    f'[SQLite 慢操作] {func.__name__} 耗时 {elapsed:.3f}s (阈值 {SLOW_OPERATION_THRESHOLD}s)'
+                )
+    return wrapper
+
+
+def log_slow_query(sql: str, elapsed: float):
+    """
+    供路由层调用：手动记录慢查询。
+
+    用法（在路由内）：
+        log_slow_query("SELECT ... FROM large_table", elapsed=1.23)
+    """
+    if elapsed > SLOW_OPERATION_THRESHOLD:
+        _logger.warning(f'[慢查询] {elapsed:.3f}s | {sql[:200]}')

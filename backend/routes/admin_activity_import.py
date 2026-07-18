@@ -11,6 +11,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from models import ImportFieldConfigActivity, InvestmentActivity, InvestmentProject, FollowStatusDict
 from extensions import db
 from routes import admin_activity_import_bp
+from utils import monitor_db_operation
 
 
 # ============================================================
@@ -591,6 +592,7 @@ def import_preview():
 
 @admin_activity_import_bp.route('/activity-import/execute', methods=['POST'])
 @login_required
+@monitor_db_operation  # 监控锁等待时间，超时自动记 warning
 def import_execute():
     """将预览通过的数据写入数据库"""
     data = request.get_json()
@@ -653,6 +655,8 @@ def import_execute():
         )
         db.session.add(activity)
         imported += 1
+        if imported % 50 == 0:
+            db.session.flush()  # 分批 flush，释放写锁给其他写者
 
     db.session.commit()
     return jsonify({'code': 0, 'message': f'成功导入 {imported} 条记录', 'data': {'count': imported}})

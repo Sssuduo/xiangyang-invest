@@ -140,7 +140,7 @@ def init_database(app):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA cache_size=-8000")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA busy_timeout=10000")  # 10 秒：长事务拆小后锁持有时间缩短，写者应更耐心
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
@@ -166,6 +166,13 @@ def init_database(app):
         "CREATE INDEX IF NOT EXISTS ix_construction_projects_order_no ON construction_projects(order_no)",
         "CREATE INDEX IF NOT EXISTS ix_investment_projects_last_updated ON investment_projects(last_updated_at)",
         "CREATE INDEX IF NOT EXISTS ix_construction_projects_last_updated ON construction_projects(last_updated_at)",
+        # === SQLite 优化专项：覆盖高频查询的前缀索引 ===
+        "CREATE INDEX IF NOT EXISTS ix_demands_lead_id ON enterprise_demands(lead_id)",                  # 线索关联查询
+        "CREATE INDEX IF NOT EXISTS ix_leads_is_deleted ON investment_leads(is_deleted)",                # 软删除筛选（列表必带）
+        "CREATE INDEX IF NOT EXISTS ix_audit_object ON change_history(object_type, object_id)",          # 审计追溯查询
+        "CREATE INDEX IF NOT EXISTS ix_knowledge_active ON knowledge_entries(is_active)",                # 知识库启用筛选
+        "CREATE INDEX IF NOT EXISTS ix_construction_phone ON construction_projects(responsible_person_phone)",  # 在建电话查询
+        "CREATE INDEX IF NOT EXISTS ix_leads_converted_project ON investment_leads(converted_project_id)",  # 线索转项目查询
     ]
     for sql in index_sqls:
         try:

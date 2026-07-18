@@ -10,12 +10,18 @@ from utils import get_current_user_info, log_changes
 
 
 def _renumber_investment_projects():
-    """将招商项目序号重新编排为连续整数 1, 2, 3, ..."""
+    """将招商项目序号重新编排为连续整数 1, 2, 3, ...
+
+    优化：每 20 条 flush 一次，释放写锁给其他写者，避免长时间持有 lock
+    """
     projects = InvestmentProject.query.filter_by(is_deleted=False)\
         .order_by(InvestmentProject.order_no.asc(), InvestmentProject.id.asc()).all()
+    BATCH_SIZE = 20
     for i, p in enumerate(projects, 1):
         if p.order_no != i:
             p.order_no = i
+            if i % BATCH_SIZE == 0:
+                db.session.flush()  # flush 释放写锁（不 commit，保持原子性）
     # 注意：不在此处 commit，由调用方统一 commit
 
 
@@ -365,11 +371,39 @@ def update_project(project_id):
                 changes[field] = (old_val, new_val)
         log_changes('investment_projects', project_id, changes, 'update', user_info)
 
-    # 同步企业诉求：先删后建
+    # 同步企业诉求：增量更新（避免先删后建长时间持有写锁）
     if 'demands' in data:
-        EnterpriseDemand.query.filter_by(project_id=project_id).delete()
-        for i, d in enumerate(data['demands'] or []):
-            if d.get('demand_content', '').strip():
+        incoming_demands = data['demands'] or []
+        # 取现有诉求 ID 集合
+        existing_demands = {
+            d.id: d
+            for d in EnterpriseDemand.query.filter_by(project_id=project_id).all()
+        }
+        incoming_ids = {
+            d['id'] for d in incoming_demands
+            if d.get('id') and d['id'] in existing_demands
+        }
+
+        # 1) 删除前端已移除的诉求
+        for eid, edemand in existing_demands.items():
+            if eid not in incoming_ids:
+                db.session.delete(edemand)
+
+        # 2) 更新已存在的诉求 + 新增
+        for i, d in enumerate(incoming_demands):
+            if not d.get('demand_content', '').strip():
+                continue
+            if d.get('id') and d['id'] in existing_demands:
+                # 更新已有诉求
+                edemand = existing_demands[d['id']]
+                edemand.demand_type_code = d.get('demand_type_code', '')
+                edemand.demand_content = d['demand_content']
+                edemand.resolution = d.get('resolution', '')
+                edemand.unit_code = d.get('unit_code', '')
+                edemand.status = d.get('status', 'pending')
+                edemand.sort_order = i + 1
+            else:
+                # 新增诉求
                 db.session.add(EnterpriseDemand(
                     project_id=project_id,
                     demand_type_code=d.get('demand_type_code', ''),

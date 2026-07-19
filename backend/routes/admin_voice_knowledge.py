@@ -13,6 +13,7 @@ import logging
 from flask import request, jsonify
 
 from models import VoiceKnowledgeEntry, ActivityLedger, TextCorrectionRecord
+from models.investment import InvestmentActivity
 from routes import admin_voice_knowledge_bp
 from routes.business_auth import dual_login_required, visitor_block
 from services.voice_knowledge import VoiceKnowledgeService
@@ -284,6 +285,144 @@ def save_corrected_text(item_id):
 
     db.session.commit()
 
+    return jsonify({
+        'code': 0,
+        'message': f'已保存文本和 {len(corrections)} 条校正',
+        'data': {'corrections_count': len(corrections)},
+    })
+
+
+# ======================== 招商动态 (InvestmentActivity) 文本校正支持 ========================
+# 活动与台账结构对齐（audio_transcript / segmented / clean / summary_structured 字段同名），
+# 但两者是独立的实体，活动没有 ledger_id，因此单独提供一套 /activity/<id>/... 路由。
+# 注：活动校正不写 TextCorrectionRecord 审计表（该表 ledger_id 非空且关联台账），
+# 但仍会把校正应用到活动文本字段，并在勾选「沉淀到知识库」时写入 VoiceKnowledgeEntry。
+
+def _get_activity_or_404(item_id: int) -> InvestmentActivity:
+    return InvestmentActivity.query.filter_by(id=item_id).first_or_404()
+
+
+@admin_voice_knowledge_bp.route('/activity/<int:item_id>/summary-data', methods=['GET'])
+@dual_login_required
+def get_activity_summary_page_data(item_id):
+    """获取招商动态文本校正页所需数据。"""
+    item = _get_activity_or_404(item_id)
+    return jsonify({
+        'code': 0,
+        'data': {
+            'transcript': item.audio_transcript or '',
+            'transcript_segmented': item.audio_transcript_segmented or '',
+            'transcript_clean': item.audio_transcript_clean or '',
+            'summary_structured': item.audio_summary_structured or '',
+            'corrections': [],
+            'entity_type': 'activity',
+        },
+    })
+
+
+@admin_voice_knowledge_bp.route('/activity/<int:item_id>/save-corrections', methods=['POST'])
+@dual_login_required
+@visitor_block
+def save_activity_corrections(item_id):
+    """保存招商动态 Web 文本校正结果。"""
+    item = _get_activity_or_404(item_id)
+    data = request.get_json(silent=True) or {}
+    corrections = data.get('corrections', [])
+    persist = data.get('persist_to_knowledge', False)
+
+    # 把校正应用到活动文本字段
+    if corrections:
+        for field in ('audio_transcript_segmented', 'audio_transcript_clean',
+                      'audio_summary_structured', 'audio_transcript'):
+            text = getattr(item, field, None) or ''
+            for c in corrections:
+                original = c.get('original', '')
+                replacement = c.get('replacement', '')
+                if original and replacement and original != replacement:
+                    text = text.replace(original, replacement)
+            setattr(item, field, text)
+
+    # 沉淀到知识库
+    if persist:
+        for c in corrections:
+            original = c.get('original', '')
+            replacement = c.get('replacement', '')
+            if not (original and replacement) or original == replacement:
+                continue
+            existing = VoiceKnowledgeEntry.query.filter_by(
+                original=original, replacement=replacement, is_active=True).first()
+            if existing:
+                existing.increment_usage()
+                existing.confidence = min(existing.confidence + 0.01, 0.99)
+            else:
+                VoiceKnowledgeService.create_entry(
+                    original=original, replacement=replacement,
+                    source='auto_detected', confidence=c.get('confidence') or 0.80)
+
+    db.session.commit()
+    return jsonify({
+        'code': 0,
+        'message': f'已保存 {len(corrections)} 条校正',
+        'data': {'count': len(corrections), 'persisted': persist},
+    })
+
+
+@admin_voice_knowledge_bp.route('/activity/<int:item_id>/auto-correct', methods=['POST'])
+@dual_login_required
+@visitor_block
+def auto_correct_activity(item_id):
+    """对招商动态自动检测同音词并替换高置信度项。"""
+    item = _get_activity_or_404(item_id)
+    data = request.get_json(silent=True) or {}
+    min_conf = data.get('min_confidence', VoiceKnowledgeService.CONFIDENCE_HIGH)
+
+    original_text = item.audio_transcript_segmented or item.audio_transcript or ''
+    if not original_text.strip():
+        return jsonify({'code': 1, 'message': '没有可校正的文本'}), 400
+
+    corrected_text, corrections = VoiceKnowledgeService.apply_corrections(
+        original_text, min_confidence=min_conf)
+    item.audio_transcript_segmented = corrected_text
+    db.session.commit()
+
+    return jsonify({
+        'code': 0,
+        'message': f'自动校正完成，替换 {len(corrections)} 处',
+        'data': {'applied': corrections, 'corrected_text': corrected_text},
+    })
+
+
+@admin_voice_knowledge_bp.route('/activity/<int:item_id>/save-corrected-text', methods=['PUT'])
+@dual_login_required
+@visitor_block
+def save_activity_corrected_text(item_id):
+    """保存招商动态 Web 页编辑后的文本。"""
+    item = _get_activity_or_404(item_id)
+    data = request.get_json(silent=True) or {}
+
+    if 'transcript_segmented' in data:
+        item.audio_transcript_segmented = data['transcript_segmented']
+    if 'transcript_clean' in data:
+        item.audio_transcript_clean = data['transcript_clean']
+    if 'summary_structured' in data:
+        item.audio_summary_structured = data['summary_structured']
+
+    corrections = data.get('corrections', [])
+    for c in corrections:
+        if data.get('persist_to_knowledge', False):
+            original = c.get('original', '')
+            replacement = c.get('replacement', '')
+            if original and replacement and original != replacement:
+                existing = VoiceKnowledgeEntry.query.filter_by(
+                    original=original, replacement=replacement, is_active=True).first()
+                if existing:
+                    existing.increment_usage()
+                else:
+                    VoiceKnowledgeService.create_entry(
+                        original=original, replacement=replacement,
+                        source='auto_detected', confidence=c.get('confidence') or 0.80)
+
+    db.session.commit()
     return jsonify({
         'code': 0,
         'message': f'已保存文本和 {len(corrections)} 条校正',

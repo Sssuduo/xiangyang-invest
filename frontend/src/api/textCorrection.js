@@ -18,15 +18,26 @@ export function detectHomophones(text, minConfidence = 0.70) {
 }
 
 // ---- 文本校正页 ----
-export function getSummaryPageData(ledgerId) {
-  return api.get(`/admin/voice-knowledge/activity-ledger/${ledgerId}/summary-data`)
+// entityType: 'activity-ledger' (活动台账) | 'activity' (招商动态)
+export function getSummaryPageData(entityType, ledgerId) {
+  return api.get(`/admin/voice-knowledge/${entityType}/${ledgerId}/summary-data`)
 }
 
 // 前端导入使用 saveCorrections (原名 saveCorrections 保持兼容)
 export const saveCorrections = saveTextCorrections
-export function saveTextCorrections(ledgerId, corrections, persistToKnowledge = false) {
-  return api.post(`/admin/voice-knowledge/activity-ledger/${ledgerId}/save-corrections`, {
+export function saveTextCorrections(entityType, ledgerId, corrections, persistToKnowledge = false) {
+  return api.post(`/admin/voice-knowledge/${entityType}/${ledgerId}/save-corrections`, {
     corrections,
     persist_to_knowledge: persistToKnowledge,
   })
+}
+
+export function autoCorrect(entityType, ledgerId, minConfidence = 0.90) {
+  return api.post(`/admin/voice-knowledge/${entityType}/${ledgerId}/auto-correct`, {
+    min_confidence: minConfidence,
+  })
+}
+
+export function saveCorrectedText(entityType, ledgerId, data) {
+  return api.put(`/admin/voice-knowledge/${entityType}/${ledgerId}/save-corrected-text`, data)
 }

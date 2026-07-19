@@ -59,6 +59,18 @@ def _run_auto_migrations(app):
         'llm_models': [
             ('search_model_id', 'INTEGER'),
         ],
+        # V15.1 录音功能迁移至招商动态（对齐活动台账的录音能力）
+        # progress_pct / progress_message 已在 InvestmentActivity 模型中定义，此处仅补剩余 7 个
+        'investment_activities': [
+            ('audio_transcript_segmented', 'TEXT'),
+            ('audio_transcript_clean', 'TEXT'),
+            ('audio_summary_structured', 'TEXT'),
+            ('audio_docx_path', 'VARCHAR(255)'),
+            ('audio_docx_size', 'INTEGER'),
+            ('audio_archive', 'TEXT'),
+            ('audio_archive_size', 'INTEGER'),
+            ('summary_model_id', 'INTEGER'),
+        ],
         # 后续如有新增字段，在此追加即可
     }
 

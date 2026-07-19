@@ -16,11 +16,19 @@ _TASK_CANCEL_EVENTS: dict[int, threading.Event] = {}
 _TASK_CANCEL_LOCK = threading.Lock()
 
 
-def is_task_cancelled(item_id: int) -> bool:
+def is_task_cancelled(item_id: int, model_class=None) -> bool:
+    """检查任务是否被取消。优先查内存注册表，回退查 DB 状态（V15.1 对齐活动台账双源检查）。"""
     with _TASK_CANCEL_LOCK:
         ev = _TASK_CANCEL_EVENTS.get(item_id)
         if ev is not None:
             return ev.is_set()
+    # DB 回退：避免内存注册表因重启/多 worker 丢失取消信号
+    if model_class is not None:
+        try:
+            item = model_class.query.get(item_id)
+            return item is not None and getattr(item, 'audio_status', None) == 'cancelled'
+        except Exception:
+            return False
     return False
 
 
@@ -60,10 +68,11 @@ def estimate_time(duration_s, transcript_chars):
     return int(asr + llm + 30)
 
 
-def run_async_processing(app, item_id, model_class):
+def run_async_processing(app, item_id, model_class, model_id: int = None):
     """
     后台线程：对 item.audio_files 逐个 ASR 转写 → 实时更新进度 → 完成后自动总结。
     model_class: ActivityLedger 或 InvestmentActivity 等模型类。
+    model_id: 可选，LLM 模型 ID（V15.1 retry-summary 透传，None 则 _apply_summary 自动选默认模型）。
     """
     from extensions import db
     from models import InvestmentActivity  # 避免循环导入
@@ -132,7 +141,7 @@ def run_async_processing(app, item_id, model_class):
                     pass
 
             for i, af in enumerate(files):
-                if is_task_cancelled(item_id):
+                if is_task_cancelled(item_id, model_class):
                     item.audio_status = 'cancelled'
                     item.audio_summary = '处理已取消'
                     db.session.commit()
@@ -187,7 +196,7 @@ def run_async_processing(app, item_id, model_class):
                 item.progress_message = '正在总结...'
                 db.session.commit()
                 try:
-                    _apply_summary(app, item, full_text)
+                    _apply_summary(app, item, full_text, model_id=model_id)
                     item.audio_status = 'completed'
                     item.progress_pct = 100
                     item.progress_message = '处理完成'
@@ -216,7 +225,7 @@ def run_async_processing(app, item_id, model_class):
 
 
 def _apply_summary(app, item, full_text, model_id=None):
-    """生成结构化总结"""
+    """生成结构化总结 (V15.1 对齐活动台账：支持 model_id 透传 + 记录 docx 大小)"""
     from extensions import db
     from services.text_summarizer import summarize_meeting
     from services.meeting_document import generate_meeting_docx
@@ -226,6 +235,9 @@ def _apply_summary(app, item, full_text, model_id=None):
     item.audio_transcript_clean = summary_result.get('clean', '')
     item.audio_summary_structured = summary_result.get('summary', '')
     item.audio_summary = summary_result.get('summary', '')
+    # V15.1 记录本次总结使用的 LLM 模型 ID，前端可回填选择器
+    if model_id is not None:
+        item.summary_model_id = model_id
 
     # 生成 docx
     try:
@@ -236,6 +248,16 @@ def _apply_summary(app, item, full_text, model_id=None):
             summary_text=summary_result.get('summary', '')
         )
         item.audio_docx_path = docx_url
+        # V15.1 记录 docx 文件大小（对齐活动台账 L341-342）
+        try:
+            docx_abs = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # backend/ → 项目根
+                'static', docx_url.replace('/static/', '')
+            )
+            if os.path.exists(docx_abs):
+                item.audio_docx_size = os.path.getsize(docx_abs)
+        except Exception:
+            pass
     except Exception:
         pass
 

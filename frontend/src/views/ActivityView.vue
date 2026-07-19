@@ -218,82 +218,162 @@
             </div>
           </el-form-item>
 
-          <!-- 录音识别（V15.4）-->
+          <!-- 录音识别（V15.1 对齐活动台账）-->
           <div class="section-header">
             <span class="section-icon"><el-icon><Headset /></el-icon></span>
             <span class="section-title">录音识别</span>
+            <span v-if="audioProcessing" class="audio-status-tag audio-status-processing">处理中</span>
+            <span v-else-if="audioStatus === 'completed'" class="audio-status-tag audio-status-done">已完成</span>
+            <span v-else-if="audioStatus === 'failed' || audioStatus === 'summary_failed'" class="audio-status-tag audio-status-failed">失败</span>
           </div>
           <el-form-item label="录音文件">
-            <div v-if="audioFiles.length > 0" class="audio-loaded">
-              <div v-for="(af, idx) in audioFiles" :key="idx" class="audio-player-card">
-                <div class="audio-info">
-                  <el-icon><Headset /></el-icon>
-                  <span class="audio-name">{{ af.name || '录音' + (idx + 1) }}</span>
-                  <span v-if="af.duration" class="audio-size">{{ formatDuration(af.duration) }}</span>
-                  <el-tag v-if="af.status === 'ok'" size="small" type="success" effect="plain">已识别</el-tag>
-                  <el-tag v-else-if="af.status === 'error'" size="small" type="danger" effect="plain">识别失败</el-tag>
-                  <el-tag v-else-if="af.status === 'pending'" size="small" type="info" effect="plain">待识别</el-tag>
+            <div class="audio-section">
+              <div v-if="audioFiles.length > 0" class="audio-loaded">
+                <div v-for="(af, idx) in audioFiles" :key="idx" class="audio-player-card">
+                  <div class="audio-info">
+                    <el-icon><Headset /></el-icon>
+                    <span class="audio-name">{{ af.name || '录音' + (idx + 1) }}</span>
+                    <span v-if="af.duration" class="audio-size">{{ formatDuration(af.duration) }}</span>
+                    <el-tag v-if="af.status === 'ok'" size="small" type="success" effect="plain">已识别</el-tag>
+                    <el-tag v-else-if="af.status === 'error'" size="small" type="danger" effect="plain">识别失败</el-tag>
+                    <el-tag v-else-if="af.status === 'pending'" size="small" type="info" effect="plain">待识别</el-tag>
+                  </div>
+                  <div class="audio-actions">
+                    <audio :src="af.url" controls class="mini-audio-player" />
+                    <el-popconfirm title="确定删除该录音文件吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudioFile(idx)">
+                      <template #reference>
+                        <el-button size="small" type="danger" :icon="Delete" circle />
+                      </template>
+                    </el-popconfirm>
+                  </div>
                 </div>
-                <div class="audio-actions">
-                  <audio :src="af.url" controls class="mini-audio-player" />
-                  <el-popconfirm title="确定删除该录音文件吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudioFile(idx)">
-                    <template #reference>
-                      <el-button size="small" type="danger" :icon="Delete" circle />
-                    </template>
-                  </el-popconfirm>
+                <!-- 压缩包下载 -->
+                <a v-if="audioDetail?.audio_archive" :href="audioDetail.audio_archive" :download="audioDetail.audio_archive.split('/').pop()" class="archive-download-link">
+                  <el-icon><Download /></el-icon> 下载压缩包<template v-if="audioDetail.audio_archive_size"> ({{ formatFileSize(audioDetail.audio_archive_size) }})</template>
+                </a>
+              </div>
+
+              <!-- 上传入口 -->
+              <el-upload
+                v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'"
+                :show-file-list="false"
+                :auto-upload="false"
+                :on-change="onAudioFileChange"
+                accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+              >
+                <el-button size="small" type="primary" plain>
+                  <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
+                </el-button>
+              </el-upload>
+
+              <!-- 上传进度条（每个文件独立）-->
+              <div v-if="audioUploading && audioUploadList.length > 0" class="audio-upload-progress">
+                <div v-for="(item, idx) in audioUploadList" :key="idx" class="audio-upload-item">
+                  <span class="audio-upload-label">{{ item.name }} · {{ item.progress }}%</span>
+                  <el-progress :percentage="item.progress" :stroke-width="6" :show-text="false" />
                 </div>
               </div>
-            </div>
 
-            <!-- 上传入口 -->
-            <el-upload
-              v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'"
-              :show-file-list="false"
-              :auto-upload="false"
-              :on-change="onAudioFileChange"
-              accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-            >
-              <el-button size="small" type="primary" plain>
-                <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
-              </el-button>
-            </el-upload>
-
-            <!-- 上传进度条（每个文件独立）-->
-            <div v-if="audioUploading && audioUploadList.length > 0" class="audio-upload-progress">
-              <div v-for="(item, idx) in audioUploadList" :key="idx" class="audio-upload-item">
-                <span class="audio-upload-label">{{ item.name }} · {{ item.progress }}%</span>
-                <el-progress :percentage="item.progress" :stroke-width="6" :show-text="false" />
+              <!-- 处理中的进度条 -->
+              <div v-if="audioProcessing && audioDetail" class="audio-progress-bar">
+                <span class="audio-progress-msg">{{ audioDetail.progress_message || (audioStatus === 'asr_processing' ? '正在识别...' : '正在总结...') }}</span>
+                <el-progress :percentage="audioDetail.progress_pct || 0" :stroke-width="4" :show-text="false" style="flex:1; min-width:80px;" />
+                <el-button size="small" type="danger" plain @click="handleCancelAudio">取消</el-button>
               </div>
-            </div>
 
-            <!-- 处理中的进度提示 -->
-            <div v-if="audioProcessing && audioDetail" class="audio-progress-bar">
-              <span class="audio-progress-msg">{{ audioDetail.progress_message || (audioStatus === 'asr_processing' ? '正在识别...' : '正在总结...') }}</span>
-              <el-progress :percentage="audioDetail.progress_pct || 0" :stroke-width="4" :show-text="false" style="flex:1; min-width:80px;" />
-            </div>
-
-            <!-- 操作按钮 -->
-            <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
-              <el-button size="small" type="warning" plain @click="handleRetryAudio">
-                <el-icon><RefreshRight /></el-icon> 重新识别
-              </el-button>
-              <el-popconfirm title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
-                <template #reference>
-                  <el-button size="small" type="danger" plain>删除全部录音</el-button>
-                </template>
-              </el-popconfirm>
+              <!-- 操作按钮 -->
+              <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
+                <el-button size="small" type="warning" plain @click="handleRetryAudio">
+                  <el-icon><RefreshRight /></el-icon> 重新识别
+                </el-button>
+                <el-popconfirm title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                  <template #reference>
+                    <el-button size="small" type="danger" plain>删除全部录音</el-button>
+                  </template>
+                </el-popconfirm>
+              </div>
             </div>
           </el-form-item>
 
-          <!-- 转写与总结结果 -->
+          <!-- V15.1 转写与总结结果：多版本 Tabs（对齐活动台账）-->
           <template v-if="audioDetail && (audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'summary_failed')">
-            <el-form-item label="转写内容">
-              <el-input v-model="editTranscript" type="textarea" :rows="6" placeholder="识别完成后显示转写内容..." />
-            </el-form-item>
-            <el-form-item label="AI 总结">
-              <el-input v-model="editSummary" type="textarea" :rows="4" placeholder="大模型总结结果..." />
+            <el-form-item label="转写与总结">
+              <div class="audio-transcript-section">
+                <div class="audio-section-header">
+                  <span class="section-label">总结结果</span>
+                  <span v-if="audioDetail.audio_transcript" class="audio-meta">{{ audioDetail.audio_transcript.length }} 字</span>
+                  <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
+                </div>
+                <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
+                  <el-tab-pane label="分段原文" name="segmented">
+                    <div v-if="!transcriptModified" class="audio-text-content">{{ audioDetail?.audio_transcript_segmented || audioDetail?.audio_transcript || '暂无转写内容' }}</div>
+                    <template v-else>
+                      <el-input v-model="editTranscript" type="textarea" :rows="6" class="audio-edit-textarea" @input="watchTranscriptEdit" />
+                      <div class="audio-edit-actions">
+                        <el-button size="small" type="primary" @click="handleSaveTranscript">保存转写</el-button>
+                        <el-button size="small" @click="handleCancelTranscriptEdit">取消</el-button>
+                      </div>
+                    </template>
+                  </el-tab-pane>
+                  <el-tab-pane label="清洁版" name="clean">
+                    <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_transcript_clean)"></div>
+                  </el-tab-pane>
+                  <el-tab-pane label="摘要版" name="summary">
+                    <div class="audio-markdown-content" v-html="renderMd(audioDetail?.audio_summary_structured)"></div>
+                  </el-tab-pane>
+                </el-tabs>
+                <div class="audio-content-actions">
+                  <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
+                    <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
+                  </el-select>
+                  <el-button size="small" type="primary" plain @click="handleRetrySummary">重新总结</el-button>
+                  <el-button size="small" plain @click="openTextCorrection">文本校正</el-button>
+                  <el-button size="small" plain @click="openTermDrawer">术语管理</el-button>
+                  <el-button v-if="audioDetail?.audio_docx_path" size="small" plain @click="downloadAudioDocx">
+                    <el-icon><Download /></el-icon> 下载 Word
+                  </el-button>
+                </div>
+                <div v-if="!audioDetail.audio_transcript && !audioDetail.audio_transcript_segmented" class="audio-failed-card">{{ audioDetail.audio_summary || '处理失败' }}</div>
+              </div>
             </el-form-item>
           </template>
+
+          <!-- 术语校正抽屉 -->
+          <el-drawer v-model="termDrawerVisible" direction="rtl" size="520px" title="术语校正">
+            <div class="term-correction-drawer">
+              <div class="term-form">
+                <el-input v-model="termForm.original" placeholder="原文词汇（如：田勇书记）" style="margin-bottom: 8px;" />
+                <el-input v-model="termForm.replacement" placeholder="替换词汇（如：天勇书记）" style="margin-bottom: 8px;" />
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+                  <el-select v-model="termForm.scope" placeholder="适用范围" style="width: 160px;">
+                    <el-option label="全部" value="all" />
+                    <el-option label="摘要版" value="summary" />
+                    <el-option label="清洁版" value="clean" />
+                    <el-option label="分段原文" value="segmented" />
+                  </el-select>
+                  <el-button type="primary" @click="handleSaveTerm">新增映射</el-button>
+                </div>
+              </div>
+              <el-table :data="termCorrections" size="small" style="margin-top: 12px;">
+                <el-table-column prop="original" label="原文" width="120" />
+                <el-table-column prop="replacement" label="替换为" width="120" />
+                <el-table-column prop="apply_scope" label="范围" width="80">
+                  <template #default="{ row }">
+                    <el-tag size="small">{{ scopeLabel(row.apply_scope) }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="{ row }">
+                    <el-button size="small" text type="danger" @click="handleDeleteTerm(row.id)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="term-drawer-footer">
+                <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并重新总结</el-button>
+                <el-button @click="termDrawerVisible = false">关闭</el-button>
+              </div>
+            </div>
+          </el-drawer>
           <div class="section-header">
             <span class="section-icon"><el-icon><PriceTag /></el-icon></span>
             <span class="section-title">动态标签</span>
@@ -499,11 +579,21 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag, Close, Picture } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import MarkdownIt from 'markdown-it'
+import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag, Close, Picture, Headset, RefreshRight } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
-import { getPublicActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities, uploadActivityAudio, getActivityAudioDetail, retryActivityAudio, cancelActivityAudio, deleteActivityAudio, deleteActivityAudioFile } from '@/api/activity'
+import {
+  getPublicActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities,
+  uploadActivityAudio, getActivityAudioDetail, retryActivityAudio, cancelActivityAudio, deleteActivityAudio, deleteActivityAudioFile,
+  // V15.1 招商动态录音能力升级（对齐活动台账）
+  updateActivityAudioTranscript, getActivityAudioVersions, getActivityAudioDocxUrl,
+  retryActivityAudioSummary, getLLMModels, cancelActivityAudioProcessing,
+  // V15.1 术语校正（共用 /api/admin/term-corrections）
+  getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections,
+} from '@/api/activity'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { downloadActivityExcel } from '@/api/activity_export'
 import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
@@ -559,14 +649,14 @@ const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 const projectDemands = ref([])
 
-// ---- 录音识别（V15.4，复用 composable）----
+// ---- 录音识别（V15.1，复用 composable + 手写 Ledger 多版本逻辑）----
 import { useAudioRecording } from '@/composables/useAudioRecording'
 const audio = useAudioRecording({
   getItemId: () => editingId.value,
   apiUpload: uploadActivityAudio,
   apiDetail: getActivityAudioDetail,
   apiRetry: retryActivityAudio,
-  apiCancel: cancelActivityAudio,
+  apiCancel: cancelActivityAudioProcessing,
   apiDelete: deleteActivityAudio,
   apiDeleteFile: deleteActivityAudioFile,
 })
@@ -576,6 +666,22 @@ const {
   enqueueUpload, loadAudioDetail, retryAudio, cancelAudio,
   deleteAudio, deleteAudioFile, startPolling, stopPolling, resetAudio,
 } = audio
+
+// V15.1 多版本 Tabs / LLM / 术语 / 编辑脏标记（对齐活动台账 L604-625）
+const router = useRouter()
+const audioActiveTab = ref('segmented')
+const editTranscript = ref('')
+const editSummary = ref('')
+const _originalTranscript = ref('')
+const _originalSummary = ref('')
+const transcriptModified = ref(false)
+const summaryModified = ref(false)
+const llmModels = ref([])
+const selectedLlmModel = ref(null)
+const termDrawerVisible = ref(false)
+const termCorrections = ref([])
+const termLoading = ref(false)
+const termForm = ref({ original: '', replacement: '', scope: 'all' })
 
 // ---- 下载导入模板对话框 ----
 const templateDialogVisible = ref(false)
@@ -907,6 +1013,10 @@ function resetForm() {
   Object.assign(form, defaultForm())
   fileList.value = []
   formRef.value?.clearValidate()
+  // V15.1 关闭编辑抽屉时清理录音 composable 状态（对齐活动台账，避免跨条目串扰）
+  stopPolling()
+  resetAudio?.()
+  termDrawerVisible.value = false
 }
 
 // ---- 文件上传处理 ----
@@ -998,14 +1108,45 @@ function handleThumbRemove(idx) {
 }
 
 // ---- 录音识别处理 ----
-const editTranscript = ref('')
-const editSummary = ref('')
+
+// 预估耗时显示（对齐活动台账 L628-633）
+function formatEstimate(seconds) {
+  if (!seconds) return ''
+  if (seconds < 60) return `约 ${seconds} 秒`
+  const mins = Math.ceil(seconds / 60)
+  return `约 ${mins} 分钟`
+}
+
+// 文件大小显示（用于压缩包标签）
+function formatFileSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+// Markdown 渲染器（对齐活动台账 L770-781）
+let _md = null
+function getMd() {
+  if (!_md) {
+    _md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: true })
+  }
+  return _md
+}
+function renderMd(text) {
+  if (!text) return ''
+  try { return getMd().render(String(text)) } catch { return String(text).replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+}
 
 function formatDuration(seconds) {
   if (!seconds) return ''
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return m > 0 ? `${m}分${s}秒` : `${s}秒`
+}
+
+function scopeLabel(scope) {
+  return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
 }
 
 function onAudioFileChange(file) {
@@ -1025,6 +1166,23 @@ function onAudioFileChange(file) {
   enqueueUpload(f)
 }
 
+// 取消正在进行的识别/总结（对齐活动台账 L640-654）
+async function handleCancelAudio() {
+  if (!editingId.value) return
+  try {
+    const res = await cancelActivityAudioProcessing(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success('已取消处理')
+      audioStatus.value = 'cancelled'
+      audioProcessing.value = false
+    } else {
+      ElMessage.error(res.message || '取消失败')
+    }
+  } catch (err) {
+    ElMessage.error('取消失败：' + (err.message || ''))
+  }
+}
+
 async function handleRetryAudio() {
   if (!editingId.value) return
   stopPolling()
@@ -1041,13 +1199,160 @@ async function handleDeleteAudioFile(idx) {
   await deleteAudioFile(editingId.value, idx)
 }
 
-// 打开编辑时加载录音详情
+// 重新总结（与 ASR 解耦，对齐活动台账 L657-685）
+async function handleRetrySummary() {
+  if (!editingId.value) return
+  const hasTranscript = (audioDetail.value?.audio_transcript && audioDetail.value.audio_transcript.strip()) ||
+                        (audioDetail.value?.audio_transcript_segmented && audioDetail.value.audio_transcript_segmented.strip())
+  const isCompleted = audioStatus.value === 'completed' || audioStatus.value === 'asr_completed'
+  if (!hasTranscript && !isCompleted) {
+    ElMessage.warning('没有转写内容，请先完成识别或手动输入转写文本')
+    return
+  }
+  stopPolling()
+  try {
+    const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
+    const res = await retryActivityAudioSummary(editingId.value, payload)
+    if (res.code === 0) {
+      ElMessage.success('正在重新生成总结（与 ASR 服务独立）')
+      audioStatus.value = 'summarizing'
+      audioProcessing.value = true
+      startPolling(editingId.value)
+    } else {
+      ElMessage.error(res.message || '操作失败')
+    }
+  } catch (err) {
+    ElMessage.error('请求失败：' + (err.message || ''))
+  }
+}
+
+// 加载 LLM 模型列表（对齐活动台账 L688-693）
+async function loadLLMModels() {
+  try {
+    const res = await getLLMModels()
+    if (res.code === 0) llmModels.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+// 打开 Web 文本校正页（对齐活动台账 L760-768）
+function openTextCorrection() {
+  if (!editingId.value) {
+    ElMessage.warning('请先保存动态')
+    return
+  }
+  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value } })
+  window.open(href, '_blank', 'noopener')
+}
+
+// 下载 docx（对齐活动台账 L1377-1397）
+async function downloadAudioDocx() {
+  if (!editingId.value) return
+  try {
+    const res = await fetch(getActivityAudioDocxUrl(editingId.value))
+    if (!res.ok) {
+      ElMessage.error('文件下载失败，请重新生成总结')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `招商动态_会议总结_${editingId.value}.docx`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    ElMessage.error('下载失败：' + (err.message || ''))
+  }
+}
+
+// 转写编辑脏标记 + 保存（对齐活动台账 L1264-1287）
+function watchTranscriptEdit() { transcriptModified.value = editTranscript.value !== _originalTranscript.value }
+async function handleSaveTranscript() {
+  if (!editingId.value) return
+  try {
+    await updateActivityAudioTranscript(editingId.value, { transcript: editTranscript.value })
+    ElMessage.success('转写文本已保存')
+    _originalTranscript.value = editTranscript.value
+    transcriptModified.value = false
+    fetchData()
+  } catch (err) { ElMessage.error('保存失败：' + (err.message || '未知错误')) }
+}
+function handleCancelTranscriptEdit() { editTranscript.value = _originalTranscript.value; transcriptModified.value = false }
+
+// 术语校正抽屉（对齐活动台账 L696-751）
+async function loadTermCorrections() {
+  try {
+    const res = await getTermCorrections()
+    if (res.code === 0) termCorrections.value = res.data || []
+  } catch { /* ignore */ }
+}
+function openTermDrawer() { termDrawerVisible.value = true; loadTermCorrections() }
+async function handleSaveTerm() {
+  const { original, replacement, scope } = termForm.value
+  if (!original || !replacement) {
+    ElMessage.warning('原文和替换词不能为空')
+    return
+  }
+  try {
+    const res = await createTermCorrection({ original, replacement, scope })
+    if (res.code === 0) {
+      ElMessage.success('已保存')
+      termForm.value = { original: '', replacement: '', scope: 'all' }
+      loadTermCorrections()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (err) {
+    ElMessage.error('保存失败：' + (err.message || ''))
+  }
+}
+async function handleDeleteTerm(id) {
+  try {
+    await deleteTermCorrection(id)
+    ElMessage.success('已删除')
+    loadTermCorrections()
+  } catch { /* ignore */ }
+}
+async function handleApplyTerms() {
+  if (!editingId.value) return
+  try {
+    termLoading.value = true
+    const res = await applyTermCorrections(editingId.value)
+    if (res.code === 0) {
+      ElMessage.success(res.message || '已应用')
+      await loadAudioDetail(editingId.value)
+    } else {
+      ElMessage.error(res.message || '应用失败')
+    }
+  } catch (err) {
+    ElMessage.error('应用失败：' + (err.message || ''))
+  } finally {
+    termLoading.value = false
+  }
+}
+
+// 打开编辑时加载录音详情（V15.1 对齐活动台账 L1167-1217：加载后回填 segmented + 合并 versions + 模型回填）
 async function loadAudioOnOpen() {
   if (!editingId.value) return
   await loadAudioDetail(editingId.value)
   if (audioDetail.value) {
-    editTranscript.value = audioDetail.value.audio_transcript || ''
-    editSummary.value = audioDetail.value.audio_summary || ''
+    // 拉取结构化多版本
+    try {
+      const vRes = await getActivityAudioVersions(editingId.value)
+      if (vRes.code === 0 && vRes.data) {
+        audioDetail.value = { ...audioDetail.value, ...vRes.data }
+      }
+    } catch { /* ignore */ }
+    editTranscript.value = audioDetail.value.audio_transcript_segmented || audioDetail.value.audio_transcript || ''
+    editSummary.value = audioDetail.value.audio_summary_structured || audioDetail.value.audio_summary || ''
+    _originalTranscript.value = editTranscript.value
+    _originalSummary.value = editSummary.value
+    transcriptModified.value = false
+    summaryModified.value = false
+    // V15.1 LLM 模型回填
+    if (audioDetail.value.summary_model_id) selectedLlmModel.value = audioDetail.value.summary_model_id
   }
 }
 
@@ -1158,6 +1463,35 @@ async function handleDelete(row) {
 }
 .section-icon { color: #1a3a5c; font-size: 16px; display: flex; align-items: center; }
 .section-title { font-size: 14px; font-weight: 600; color: #303133; }
+/* V15.1 录音状态徽标 */
+.audio-status-tag { margin-left: auto; font-size: 12px; padding: 2px 10px; border-radius: 10px; font-weight: 500; }
+.audio-status-processing { background: #fef0f0; color: #f56c6c; }
+.audio-status-done { background: #f0f9eb; color: #67c23a; }
+.audio-status-failed { background: #fdf6ec; color: #e6a23c; }
+/* V15.1 压缩包下载 */
+.archive-download-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; color: #409eff; font-size: 13px; text-decoration: none; }
+.archive-download-link:hover { text-decoration: underline; }
+/* V15.1 总结结果区段 */
+.audio-transcript-section { width: 100%; }
+.audio-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.section-label { font-size: 14px; font-weight: 600; color: #303133; }
+.audio-meta { font-size: 12px; color: #909399; }
+/* V15.1 多版本 tabs */
+.audio-version-tabs { margin-bottom: 12px; }
+.audio-text-content { min-height: 80px; padding: 8px 0; white-space: pre-wrap; color: #303133; line-height: 1.7; }
+.audio-markdown-content { min-height: 80px; padding: 8px 0; line-height: 1.7; color: #303133; }
+.audio-markdown-content :deep(h1), .audio-markdown-content :deep(h2), .audio-markdown-content :deep(h3) { margin: 8px 0; }
+.audio-markdown-content :deep(p) { margin: 4px 0; }
+.audio-markdown-content :deep(ul), .audio-markdown-content :deep(ol) { padding-left: 20px; }
+.audio-edit-textarea { margin-bottom: 8px; }
+.audio-edit-actions { display: flex; gap: 8px; }
+/* V15.1 操作条 / 失败卡片 */
+.audio-content-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.audio-failed-card { margin-top: 10px; padding: 12px; border-radius: 6px; background: #fef0f0; color: #f56c6c; line-height: 1.6; }
+/* V15.1 术语校正抽屉 */
+.term-correction-drawer { padding: 0 4px; }
+.term-form { margin-bottom: 12px; }
+.term-drawer-footer { margin-top: 20px; display: flex; gap: 12px; justify-content: flex-end; }
 
 .drawer-footer { display: flex; justify-content: center; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #ebeef5; }
 

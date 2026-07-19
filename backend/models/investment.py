@@ -251,6 +251,15 @@ class InvestmentActivity(db.Model):
     audio_duration = db.Column(db.Float, default=0)
     progress_pct = db.Column(db.Integer, default=0)
     progress_message = db.Column(db.String(255), default='')
+    # === V15.1 招商动态录音能力升级（对齐活动台账 segmented/clean/structured/docx/压缩包/LLM 模型回填）===
+    audio_transcript_segmented = db.Column(db.Text, nullable=True)   # 模型按发言轮次分段后的原文 (覆盖展示)
+    audio_transcript_clean = db.Column(db.Text, nullable=True)       # LLM 清洁版 (书面语+结构化)
+    audio_summary_structured = db.Column(db.Text, nullable=True)     # LLM 摘要版 (4 维度结构化)
+    audio_docx_path = db.Column(db.String(255), nullable=True)       # 生成 docx 相对 /static 路径
+    audio_docx_size = db.Column(db.Integer, nullable=True)            # docx 文件大小 (字节)
+    audio_archive = db.Column(db.Text, nullable=True)                 # 夜间压缩包路径（所有文件合并 .zip，可下载）
+    audio_archive_size = db.Column(db.Integer, nullable=True)         # 压缩包大小（字节）
+    summary_model_id = db.Column(db.Integer, db.ForeignKey('llm_models.id'), nullable=True)  # 本次总结使用的 LLM 模型 ID (回填)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -281,6 +290,15 @@ class InvestmentActivity(db.Model):
             'audio_duration': self.audio_duration or 0,
             'progress_pct': self.progress_pct or 0,
             'progress_message': self.progress_message or '',
+            # V15.1 结构化总结 + docx + 压缩包 + LLM 模型回填
+            'audio_transcript_segmented': self.audio_transcript_segmented or '',
+            'audio_transcript_clean': self.audio_transcript_clean or '',
+            'audio_summary_structured': self.audio_summary_structured or '',
+            'audio_docx_path': self.audio_docx_path or '',
+            'audio_docx_size': self.audio_docx_size or 0,
+            'audio_archive': self.audio_archive or '',
+            'audio_archive_size': self.audio_archive_size or 0,
+            'summary_model_id': self.summary_model_id or 0,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

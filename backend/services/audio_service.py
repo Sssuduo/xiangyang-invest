@@ -167,7 +167,7 @@ def run_async_processing(app, model_class: type, item_id: int):
             slices_completed = 0
             start_time = _time.time()
 
-            def _update_progress():
+            def _update_progress(done=None, total=None):
                 nonlocal slices_completed
                 slices_completed += 1
                 pct = int(slices_completed / total_slices * 100) if total_slices > 0 else 0

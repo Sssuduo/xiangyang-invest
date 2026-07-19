@@ -223,8 +223,11 @@
             <span class="section-icon"><el-icon><Headset /></el-icon></span>
             <span class="section-title">录音识别</span>
             <span v-if="audioProcessing" class="audio-status-tag audio-status-processing">处理中</span>
-            <span v-else-if="audioStatus === 'completed'" class="audio-status-tag audio-status-done">已完成</span>
-            <span v-else-if="audioStatus === 'failed' || audioStatus === 'summary_failed'" class="audio-status-tag audio-status-failed">失败</span>
+            <span v-else-if="audioStatus === 'completed'" class="audio-status-tag audio-status-done">总结完成</span>
+            <span v-else-if="audioStatus === 'asr_completed'" class="audio-status-tag audio-status-done">转写完成</span>
+            <span v-else-if="audioStatus === 'summary_failed'" class="audio-status-tag audio-status-failed">总结失败</span>
+            <span v-else-if="audioStatus === 'asr_failed'" class="audio-status-tag audio-status-failed">识别失败</span>
+            <span v-else-if="audioStatus === 'failed'" class="audio-status-tag audio-status-failed">失败</span>
           </div>
           <el-form-item label="录音文件">
             <div class="audio-section">

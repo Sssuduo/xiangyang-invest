@@ -1,5 +1,38 @@
 # 更新日志
 
+## V15.6 (2026-07-19) — 录音转写与总结解耦（状态语义分离）
+
+> 关联问题：活动台账「重新上传录音 → 重新识别」显示识别失败、且无切片进度提示。
+> 根因之一为「总结失败被误报为识别失败」（另一根因为 ASR 服务未连接，已在上一轮修复）。
+
+### 转写 / 总结正式解耦
+
+- 后端 `run_async_processing` 转写完成后**不再自动串联总结**，状态停在 `asr_completed`，
+  总结改由前端独立的「重新总结」按钮（`retry-summary` / `run_summary_only`）触发。
+- 「重新识别」接口语义收敛为「仅重新转写」，与总结互不影响，可分别重试。
+
+### 状态语义分离（修复「总结失败误报识别失败」）
+
+| 状态 | 含义 |
+|------|------|
+| `asr_processing` | 转写中（含切片进度 `progress_message`：`正在识别 (N/M 段) · 约 X 分钟`）|
+| `asr_completed` | 转写完成，等待用户点击「重新总结」|
+| `summarizing` | 总结中 |
+| `completed` | 总结完成（全流程结束）|
+| `asr_failed` | 转写失败（如 ASR 服务未连接）|
+| `summary_failed` | 总结失败（转写成功，仅 LLM/docx 失败）|
+| `failed` | 兜底异常 |
+
+- `apply_summary_to_item` / `run_summary_only` 总结失败由 `'failed'` 改为 `'summary_failed'`；
+- `run_async_processing` 转写阶段失败（含 ASR 不可达、未捕获异常）归为 `'asr_failed'`。
+
+### 前端适配
+
+- 活动台账 `ActivityLedgerView.vue`：状态标签、转写内容展示、失败卡片、操作行、轮询终态分别识别
+  `asr_completed` / `summary_failed` / `asr_failed`；`asr_completed` 提示「请点击重新总结」。
+- 招商动态 `ActivityView.vue` + 共享 composable `useAudioRecording.js`：状态标签与轮询终态同步识别新状态。
+- 修复：总结失败时不再显示「识别失败」，而是「总结失败」并提供「重新总结」按钮。
+
 ## V13.5 (2026-07-02) — 编辑侧滑页标签化 + 性能全面优化
 
 ### 招商项目编辑侧滑页标签化

@@ -138,7 +138,13 @@ def run_async_processing(app, model_class: type, item_id: int):
             from services.speech_to_text import transcribe_audio, check_asr_health
 
             if not check_asr_health():
-                _set_status_failed(item, '录音转写服务未启动，请联系管理员苏铎')
+                # 转写阶段失败：明确为 asr_failed，区别于总结阶段的 summary_failed
+                _set_status(item, 'asr_failed', 0, '录音转写服务未启动，请联系管理员苏铎')
+                setattr(item, _fields(item)["summary"], '录音转写服务未启动，请联系管理员苏铎')
+                try:
+                    db.session.commit()
+                except Exception:
+                    pass
                 return
 
             f = _fields(item)
@@ -226,30 +232,22 @@ def run_async_processing(app, model_class: type, item_id: int):
             setattr(item, f["transcript"], full_text)
             setattr(item, f["status"], 'asr_completed')
             setattr(item, f["pct"], 100)
-            setattr(item, f["message"], f'识别完成 ({total_ok}/{total_files} 文件)')
+            setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
             db.session.commit()
 
-            # 自动触发总结
+            # 解耦：转写完成即结束，总结交由前端“重新总结”按钮独立触发。
+            # 状态停在 asr_completed，不再自动串联总结，
+            # 以避免“总结失败”被误报为“识别失败”（两者失败语义已分离：
+            # 转写失败 = asr_failed，总结失败 = summary_failed）。
             if full_text.strip():
-                setattr(item, f["status"], 'summarizing')
-                setattr(item, f["message"], '正在总结...')
-                db.session.commit()
-                try:
-                    apply_summary_to_item(item, full_text)
-                    setattr(item, f["status"], 'completed')
-                    setattr(item, f["pct"], 100)
-                    setattr(item, f["message"], '处理完成')
-                    db.session.commit()
-                except Exception as e:
-                    setattr(item, f["status"], 'summary_failed')
-                    setattr(item, f["summary"], f'总结失败：{str(e)[:200]}')
-                    db.session.commit()
+                setattr(item, f["status"], 'asr_completed')
+                setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
             else:
                 setattr(item, f["status"], 'completed')
                 setattr(item, f["pct"], 100)
                 setattr(item, f["message"], '处理完成（转写内容为空）')
                 setattr(item, f["summary"], '转写内容为空，无法生成总结')
-                db.session.commit()
+            db.session.commit()
 
         except Exception as e:
             logger.error(f'后台处理失败：{model_class.__name__} {item_id}, 错误：{e}', exc_info=True)
@@ -258,7 +256,8 @@ def run_async_processing(app, model_class: type, item_id: int):
                 item = db.session.get(model_class, item_id)
                 if item:
                     err_msg = str(e)[:500]
-                    setattr(item, _fields(item)["status"], 'failed')
+                    # 转写阶段未捕获异常：归为 asr_failed
+                    setattr(item, _fields(item)["status"], 'asr_failed')
                     setattr(item, _fields(item)["summary"],
                             err_msg if '请联系管理员苏铎' in err_msg else f'处理失败：{err_msg}')
                     db.session.commit()
@@ -289,7 +288,7 @@ def run_summary_only(app, model_class: type, item_id: int, model_id: int = None)
             db.session.commit()
         except Exception as e:
             setattr(item, f["summary"], f'总结失败: {str(e)[:200]}')
-            setattr(item, f["status"], 'failed')
+            setattr(item, f["status"], 'summary_failed')
             db.session.commit()
 
 
@@ -329,7 +328,7 @@ def apply_summary_to_item(item, full_text: str, model_id: int = None):
     except Exception as e:
         logger.error(f'summary failed: {e}', exc_info=True)
         setattr(item, f["summary"], f'总结失败: {str(e)[:200]}')
-        setattr(item, f["status"], 'failed')
+        setattr(item, f["status"], 'summary_failed')
         db.session.commit()
 
 

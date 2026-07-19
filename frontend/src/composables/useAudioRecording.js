@@ -55,7 +55,7 @@ export function useAudioRecording(opts) {
           audioDetail.value = res.data
           audioFiles.value = res.data.audio_files || []
           audioStatus.value = res.data.audio_status
-          if (['completed', 'summary_failed', 'failed', 'cancelled', 'asr_completed'].includes(res.data.audio_status)) {
+          if (['completed', 'summary_failed', 'asr_failed', 'failed', 'cancelled', 'asr_completed'].includes(res.data.audio_status)) {
             stopPolling()
             audioProcessing.value = false
           }

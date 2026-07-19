@@ -91,6 +91,13 @@ export function useAudioRecording(opts) {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
   }
 
+  // 模板按钮调用时通常不带 itemId（传入的是事件对象），统一回退到 getItemId()
+  function _resolveId(passed) {
+    if (passed != null && typeof passed === 'number' && !Number.isNaN(passed)) return passed
+    if (typeof passed === 'string' && /^\d+$/.test(String(passed).trim())) return Number(passed)
+    return getItemId ? getItemId() : passed
+  }
+
   async function startPolling(itemId) {
     stopPolling()
     if (!itemId) return
@@ -264,10 +271,11 @@ export function useAudioRecording(opts) {
   }
 
   async function retryAudio(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     stopPolling()
     try {
-      const res = await apiRetry(itemId)
+      const res = await apiRetry(id)
       if (res.code === 0) {
         ElMessage.success('已重新开始语音识别')
         audioStatus.value = 'asr_processing'
@@ -278,7 +286,7 @@ export function useAudioRecording(opts) {
         _originalSummary.value = ''
         transcriptModified.value = false
         summaryModified.value = false
-        startPolling(itemId)
+        startPolling(id)
       } else {
         ElMessage.error(res.message || '重新识别失败')
       }
@@ -288,10 +296,11 @@ export function useAudioRecording(opts) {
   }
 
   async function cancelAudio(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     stopPolling()
     try {
-      await apiCancel(itemId)
+      await apiCancel(id)
       ElMessage.success('已取消处理')
       audioStatus.value = 'cancelled'
       audioProcessing.value = false
@@ -301,10 +310,11 @@ export function useAudioRecording(opts) {
   }
 
   async function deleteAudio(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     stopPolling()
     try {
-      const res = await apiDelete(itemId)
+      const res = await apiDelete(id)
       if (res.code === 0) {
         ElMessage.success('录音已删除')
         audioFiles.value = []
@@ -321,10 +331,11 @@ export function useAudioRecording(opts) {
     }
   }
 
-  async function deleteAudioFile(itemId, fileIndex) {
-    if (!itemId) return
+  async function deleteAudioFile(fileIndex) {
+    const id = getItemId ? getItemId() : null
+    if (id == null) return
     try {
-      const res = await apiDeleteFile(itemId, fileIndex)
+      const res = await apiDeleteFile(id, fileIndex)
       if (res.code === 0) {
         audioFiles.value = res.data?.audio_files || []
         if (audioFiles.value.length === 0) {
@@ -332,7 +343,7 @@ export function useAudioRecording(opts) {
           audioStatus.value = null
           audioProcessing.value = false
         } else {
-          await loadAudioDetail(itemId)
+          await loadAudioDetail(id)
         }
         ElMessage.success('文件已删除')
         onRefresh?.()
@@ -344,7 +355,8 @@ export function useAudioRecording(opts) {
 
   // 重新总结（与 ASR 解耦）
   async function retrySummary(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     const hasTranscript = (audioDetail.value?.audio_transcript && audioDetail.value.audio_transcript.trim()) ||
                           (audioDetail.value?.audio_transcript_segmented && audioDetail.value.audio_transcript_segmented.trim())
     const isCompleted = audioStatus.value === 'completed' || audioStatus.value === 'asr_completed'
@@ -355,12 +367,12 @@ export function useAudioRecording(opts) {
     stopPolling()
     try {
       const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
-      const res = await apiRetrySummary(itemId, payload)
+      const res = await apiRetrySummary(id, payload)
       if (res.code === 0) {
         ElMessage.success('正在重新生成总结（与 ASR 服务独立）')
         audioStatus.value = 'summarizing'
         audioProcessing.value = true
-        startPolling(itemId)
+        startPolling(id)
       } else {
         ElMessage.error(res.message || '操作失败')
       }
@@ -371,9 +383,10 @@ export function useAudioRecording(opts) {
 
   // 保存转写文本
   async function saveTranscript(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     try {
-      const res = await apiUpdateTranscript(itemId, { transcript: editTranscript.value })
+      const res = await apiUpdateTranscript(id, { transcript: editTranscript.value })
       if (res.code === 0) {
         ElMessage.success('转写文本已保存')
         _originalTranscript.value = editTranscript.value
@@ -401,8 +414,9 @@ export function useAudioRecording(opts) {
 
   // 下载 Word（用 fetch + blob 避免 <a> 包裹 <el-button> 点击穿透）
   async function downloadDocx(itemId, filename) {
-    if (!itemId || !apiDocxUrl) return
-    const url = apiDocxUrl(itemId)
+    const id = _resolveId(itemId)
+    if (!id || !apiDocxUrl) return
+    const url = apiDocxUrl(id)
     if (!url) return
     try {
       const res = await fetch(url)
@@ -414,7 +428,7 @@ export function useAudioRecording(opts) {
       const objectUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = objectUrl
-      a.download = filename || `audio_${itemId}.docx`
+      a.download = filename || `audio_${id}.docx`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -464,13 +478,14 @@ export function useAudioRecording(opts) {
     } catch { /* ignore */ }
   }
   async function applyTerms(itemId) {
-    if (!itemId) return
+    const id = _resolveId(itemId)
+    if (!id) return
     termLoading.value = true
     try {
-      const res = await applyTermCorrections(itemId)
+      const res = await applyTermCorrections(id)
       if (res.code === 0) {
         ElMessage.success(res.message || '已应用')
-        await loadAudioDetail(itemId)
+        await loadAudioDetail(id)
       } else {
         ElMessage.error(res.message || '应用失败')
       }

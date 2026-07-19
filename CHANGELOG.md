@@ -1,5 +1,29 @@
 # 更新日志
 
+## V16.4 (2026-07-20) — 修复「校正文本」报 500（语音知识库列表崩溃 + 活动无校正路由）
+
+> 现象：招商动态生成总结后点「校正文本」，新标签页加载失败，控制台报 `500 (INTERNAL SERVER ERROR)`，URL 为 `/api/admin/voice-knowledge`（及其 `/activity-ledger/35/summary-data`）。
+
+### 根因（两个独立问题叠加）
+1. **知识库列表接口崩溃**：`VoiceKnowledgeEntry.to_dict()` 用 `json.loads(self.pinyin)` 反序列化拼音，但库里有一条历史脏数据（`pinyin='zhejianghehuashi'`，非合法 JSON 字符串），`json.loads` 抛 `JSONDecodeError`，导致整条 `GET /api/admin/voice-knowledge` 接口 500，知识库面板与校正页加载全部失败。
+2. **活动无对应校正路由**：招商动态(`InvestmentActivity`)与活动台账(`ActivityLedger`)是两套独立实体，活动没有 `ledger_id` 关联。而 `ActivityView` 的「文本校正」按钮把**活动 id** 传给只认**台账 id** 的 `/api/admin/voice-knowledge/activity-ledger/<id>/summary-data`，台账不存在 → `first_or_404` 404，Werkzeug 包装后返回 500。
+
+### 修复
+- `models/voice_knowledge.py`：`to_dict()` 对 `pinyin` 做容错——`json.loads` 失败（或不是 list）时回退为空列表 `[]`，不再让单条脏数据拖垮整个列表接口。
+- `routes/admin_voice_knowledge.py`：新增一套**招商动态**校正路由（复用既有服务层，无需改表）：
+  - `GET  /activity/<id>/summary-data`
+  - `POST /activity/<id>/save-corrections`
+  - `POST /activity/<id>/auto-correct`
+  - `PUT  /activity/<id>/save-corrected-text`
+  
+  活动校正直接读写活动表的 `audio_transcript / _segmented / _clean / _summary_structured` 字段，并在勾选「沉淀到知识库」时写入 `VoiceKnowledgeEntry`。注：活动校正不写 `TextCorrectionRecord` 审计表（该表 `ledger_id` 非空且关联台账），属已知取舍。
+- 前端 `api/textCorrection.js`、`views/admin/TextCorrectionView.vue`、`views/ActivityView.vue`、`views/ActivityLedgerView.vue`：校正接口增加 `entityType` 参数（`activity` / `activity-ledger`）；打开校正页时按来源带上 `?type=...`，校正页据 `route.query.type` 调用对应路由，标题同步显示「招商动态」/「台账」。
+
+### 验证（服务器实测）
+- `VoiceKnowledgeEntry.to_dict()` 全量执行 `TODICT_ERRORS = 0`；脏数据 id=5 已重新生成拼音缓存。
+- 活动 35 转写数据确实存在（分段 9035 字 / 清洁版 2286 字 / 摘要版 1472 字），活动校正页可加载真实内容。
+- 后端重启后三个校正接口（列表 / activity summary-data / activity save-corrections）均返回 401（路由已注册、鉴权生效）；`static` 前端 bundle 含 `type:"activity"` 改动。
+
 ## V16.3 (2026-07-20) — 修复「重新总结/重新识别」报 404 + 三 tab 内容高度过长
 
 > 现象：招商动态「选择模型 → 点击重新总结」报 `404 Not Found`（Werkzeug 默认 404 页）；转写/总结三 tab（分段原文/清洁版/摘要版）内容过长、无高度上限。

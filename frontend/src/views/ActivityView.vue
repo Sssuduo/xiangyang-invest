@@ -1132,7 +1132,7 @@ function openTextCorrection() {
     ElMessage.warning('请先保存动态')
     return
   }
-  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value } })
+  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value }, query: { type: 'activity' } })
   window.open(href, '_blank', 'noopener')
 }
 

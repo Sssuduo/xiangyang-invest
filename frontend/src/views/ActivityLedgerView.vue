@@ -661,7 +661,7 @@ function openTextCorrection() {
     return
   }
   // 业务前台→管理后台，命名路由跳转（解耦路径字符串，适配 history 模式），新标签页独立加载
-  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value } })
+  const { href } = router.resolve({ name: 'TextCorrection', params: { id: editingId.value }, query: { type: 'activity-ledger' } })
   window.open(href, '_blank', 'noopener')
 }
 

@@ -45,11 +45,21 @@ class VoiceKnowledgeEntry(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
+        # 容错：pinyin 字段可能存了历史脏数据（非 JSON 字符串，如 "None"），
+        # json.loads 失败时不让整个知识库列表接口崩溃，回退为空列表。
+        pinyin = []
+        if self.pinyin:
+            try:
+                parsed = json.loads(self.pinyin)
+                if isinstance(parsed, list):
+                    pinyin = parsed
+            except (ValueError, TypeError):
+                pinyin = []
         return {
             'id': self.id,
             'original': self.original,
             'replacement': self.replacement,
-            'pinyin': json.loads(self.pinyin) if self.pinyin else [],
+            'pinyin': pinyin,
             'context': self.context or '',
             'usage_count': self.usage_count,
             'confidence': self.confidence,

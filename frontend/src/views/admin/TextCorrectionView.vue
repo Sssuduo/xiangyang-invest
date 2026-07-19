@@ -5,7 +5,7 @@
       <el-button @click="goBack">
         <el-icon><ArrowLeft /></el-icon> 返回
       </el-button>
-      <h2 class="tc-title">文本校正 - 台账 #{{ ledgerId }}</h2>
+      <h2 class="tc-title">文本校正 - {{ entityType === 'activity' ? '招商动态' : '台账' }} #{{ ledgerId }}</h2>
       <div class="tc-header-actions">
         <el-button type="success" @click="handleApplyToLedger" :loading="saving">
           <el-icon><Check /></el-icon> 应用到台账
@@ -128,6 +128,8 @@ const route = useRoute()
 const router = useRouter()
 
 const ledgerId = computed(() => Number(route.params.id))
+// 实体类型：'activity-ledger' (活动台账) | 'activity' (招商动态)，默认台账以兼容旧链接
+const entityType = computed(() => route.query.type || 'activity-ledger')
 
 // 数据
 const data = reactive({
@@ -165,7 +167,7 @@ onMounted(async () => {
 
 async function loadData() {
   try {
-    const res = await getSummaryPageData(ledgerId.value)
+    const res = await getSummaryPageData(entityType.value, ledgerId.value)
     if (res.code === 0) {
       Object.assign(data, res.data)
       corrections.value = res.data.corrections || []
@@ -286,7 +288,7 @@ async function handleSaveAndPersist() {
 async function doSaveCorrections(persist) {
   saving.value = true
   try {
-    const res = await saveCorrections(ledgerId.value, corrections.value, persist)
+    const res = await saveCorrections(entityType.value, ledgerId.value, corrections.value, persist)
     if (res.code === 0) {
       ElMessage.success(persist ? '已保存并沉淀到知识库' : '已保存到台账')
     } else {

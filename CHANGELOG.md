@@ -1,5 +1,24 @@
 # 更新日志
 
+## V15.8 (2026-07-19) — 修复「_update_progress 回调签名不匹配导致转写必败」
+
+> 关联：V15.7 部署后用户重跑 ID 35，ASR 已恢复（health=ok），但转写仍 `asr_failed`。
+> 后端日志暴露真因：`TypeError: run_async_processing.<locals>._update_progress() takes 0 positional arguments but 2 were given`。
+
+### 修复底层回调签名 bug
+
+- `run_async_processing` 内定义的进度回调 `_update_progress()` 声明为 **0 参数**，
+  但 `speech_to_text.transcribe_audio` 按约定 `on_slice_done(slice_index, total_slices)` 以 **2 参数** 调用，
+  导致每一片 ASR 成功返回后、上报进度时即抛 `TypeError`，整文件转写被判失败。
+- 此前该 bug 被「ASR 隧道不可达」更早抛出的网络错误掩盖，从未被执行到；
+  本次 ASR 恢复后才暴露。
+- 修复：`def _update_progress(done=None, total=None):`，与 `on_slice_done` 调用约定对齐，向下兼容。
+
+### 影响范围
+
+- 修复后，ASR 可达时长音频将能正常逐段转写并实时上报进度；不再因回调签名错误而必败。
+- 配合 V15.7：若 ASR 真的不可达，仍会正确判 `asr_failed` 并保留真实错误。
+
 ## V15.7 (2026-07-19) — 修复「转写全失败被误报为转写完成」
 
 > 关联问题：招商动态 ID 35（「标准录音 77.mp3」，72 分钟 / 173MB）转写中途因 ASR 隧道抖动抛异常，

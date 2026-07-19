@@ -1,14 +1,17 @@
 import os
 import sys
+import time as _time
 
-# 将 backend 目录加入 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask
+from flask import Flask, request
 from config import config
 from extensions import db, migrate, login_manager, cors
 from routes import register_routes
 from models import AdminUser
+
+import logging
+_req_logger = logging.getLogger('app.request')
 
 
 def _run_auto_migrations(app):
@@ -120,6 +123,22 @@ def create_app(config_name=None):
 
     # 注册路由
     register_routes(app)
+
+    _SKIP_PATH_PREFIXS = ('/static/', '/favicon.ico')
+
+    @app.before_request
+    def _log_request_start():
+        if request.path.startswith(_SKIP_PATH_PREFIXS):
+            return
+        request._start_time = _time.time()
+
+    @app.after_request
+    def _log_request_end(response):
+        if request.path.startswith(_SKIP_PATH_PREFIXS):
+            return response
+        duration = _time.time() - getattr(request, '_start_time', _time.time())
+        _req_logger.info('%s %s -> %s (%.3fs) from %s', request.method, request.path, response.status_code, duration, request.remote_addr)
+        return response
 
     # 自动创建数据库表（非测试环境才初始化种子数据）
     if not app.config.get('TESTING'):

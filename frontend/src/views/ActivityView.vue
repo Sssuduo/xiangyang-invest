@@ -1264,8 +1264,9 @@ async function handleDelete(row) {
 .audio-meta { font-size: 12px; color: #909399; }
 /* V15.1 多版本 tabs */
 .audio-version-tabs { margin-bottom: 12px; }
-.audio-text-content { min-height: 80px; padding: 8px 0; white-space: pre-wrap; color: #303133; line-height: 1.7; }
-.audio-markdown-content { min-height: 80px; padding: 8px 0; line-height: 1.7; color: #303133; }
+.audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }
+.audio-text-content { min-height: 80px; max-height: 400px; overflow-y: auto; padding: 8px 12px; white-space: pre-wrap; color: #303133; line-height: 1.7; border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa; }
+.audio-markdown-content { min-height: 80px; max-height: 400px; overflow-y: auto; padding: 8px 12px; line-height: 1.7; color: #303133; border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa; }
 .audio-markdown-content :deep(h1), .audio-markdown-content :deep(h2), .audio-markdown-content :deep(h3) { margin: 8px 0; }
 .audio-markdown-content :deep(p) { margin: 4px 0; }
 .audio-markdown-content :deep(ul), .audio-markdown-content :deep(ol) { padding-left: 20px; }

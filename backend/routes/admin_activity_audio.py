@@ -125,13 +125,18 @@ def get_activity_audio_detail(item_id):
 @dual_login_required
 @visitor_block
 def retry_activity_audio(item_id):
-    """重新识别"""
+    """重新识别（V15.1 对齐活动台账：先同步检查 ASR 可用性，不可用立即返回）"""
     item = InvestmentActivity.query.filter_by(id=item_id).first_or_404()
     files = get_audio_files(item)
     if not files:
         return jsonify({'code': 1, 'message': '没有录音文件'}), 400
     if item.audio_status in ('asr_processing', 'summarizing'):
         return jsonify({'code': 1, 'message': '正在处理中'}), 409
+
+    # V15.1 对齐活动台账：重试前同步检查 ASR 服务可用性，不可用立即返回（不启动 worker）
+    from services.speech_to_text import check_asr_health
+    if not check_asr_health():
+        return jsonify({'code': 1, 'message': '录音转写服务未启动，请联系管理员苏铎'}), 503
 
     item.audio_status = 'asr_processing'
     item.progress_message = '转写准备中...'

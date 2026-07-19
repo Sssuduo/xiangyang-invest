@@ -142,7 +142,7 @@ export function useAudioRecording(opts) {
     try {
       const res = await apiRetry(itemId)
       if (res.code === 0) {
-        audioStatus.value = 'processing'
+        audioStatus.value = 'asr_processing'  // 对齐后端状态，确保前端显示'正在识别...'而非'正在总结...'
         audioProcessing.value = true
         startPolling(itemId)
       }

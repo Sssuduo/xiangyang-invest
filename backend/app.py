@@ -12,6 +12,12 @@ from models import AdminUser
 
 import logging
 _req_logger = logging.getLogger('app.request')
+if not _req_logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s'))
+    _req_logger.addHandler(_handler)
+    _req_logger.setLevel(logging.INFO)
+    _req_logger.propagate = False
 
 
 def _run_auto_migrations(app):

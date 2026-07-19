@@ -67,7 +67,11 @@
           <el-table-column label="录音" width="100" align="center">
             <template #default="{ row }">
               <el-icon v-if="row.audio_status === 'processing'" size="16" style="color: #e6a23c;"><Loading /></el-icon>
-              <el-tag v-else-if="row.audio_status === 'completed'" size="small" type="success" effect="plain">已转写</el-tag>
+              <el-tag v-else-if="row.audio_status === 'completed'" size="small" type="success" effect="plain">总结完成</el-tag>
+              <el-tag v-else-if="row.audio_status === 'asr_completed'" size="small" type="primary" effect="plain">转写完成</el-tag>
+              <el-tag v-else-if="row.audio_status === 'summary_failed'" size="small" type="warning" effect="plain">总结失败</el-tag>
+              <el-tag v-else-if="row.audio_status === 'asr_failed'" size="small" type="danger" effect="plain">识别失败</el-tag>
+              <el-tag v-else-if="row.audio_status === 'failed'" size="small" type="danger" effect="plain">处理失败</el-tag>
               <el-tag v-else-if="row.audio_files && row.audio_files.length > 0" size="small" type="info" effect="plain">{{ row.audio_files.length }}个文件</el-tag>
               <span v-else class="no-data">-</span>
             </template>
@@ -175,8 +179,11 @@
                     <a :href="viewItem.audio_archive" :download="'audio_archive.zip'" class="archive-download-link">下载压缩包</a>
                   </el-tag>
                   <el-tag v-if="viewItem.audio_status === 'processing'" size="small" type="warning" effect="plain">转写中...</el-tag>
-                  <el-tag v-else-if="viewItem.audio_status === 'completed'" size="small" type="success" effect="plain">已完成</el-tag>
-                  <el-tag v-else-if="viewItem.audio_status === 'failed'" size="small" type="danger" effect="plain">转写失败</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'completed'" size="small" type="success" effect="plain">总结完成</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'asr_completed'" size="small" type="primary" effect="plain">转写完成</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'summary_failed'" size="small" type="warning" effect="plain">总结失败</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'asr_failed'" size="small" type="danger" effect="plain">识别失败</el-tag>
+                  <el-tag v-else-if="viewItem.audio_status === 'failed'" size="small" type="danger" effect="plain">处理失败</el-tag>
                 </div>
                 <div v-if="viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
                   <div class="audio-section-header">
@@ -348,7 +355,10 @@
               <el-tag v-if="audioProcessing" size="small" type="warning" effect="plain" class="audio-status-tag">
                 <el-icon class="is-loading"><Loading /></el-icon> 转写中...
               </el-tag>
-              <el-tag v-else-if="audioStatus === 'completed'" size="small" type="success" effect="plain" class="audio-status-tag">已完成</el-tag>
+              <el-tag v-else-if="audioStatus === 'completed'" size="small" type="success" effect="plain" class="audio-status-tag">总结完成</el-tag>
+              <el-tag v-else-if="audioStatus === 'asr_completed'" size="small" type="primary" effect="plain" class="audio-status-tag">转写完成</el-tag>
+              <el-tag v-else-if="audioStatus === 'summary_failed'" size="small" type="warning" effect="plain" class="audio-status-tag">总结失败</el-tag>
+              <el-tag v-else-if="audioStatus === 'asr_failed'" size="small" type="danger" effect="plain" class="audio-status-tag">识别失败</el-tag>
               <el-tag v-else-if="audioStatus === 'failed'" size="small" type="danger" effect="plain" class="audio-status-tag">失败</el-tag>
             </div>
             <el-form-item label="录音文件">
@@ -419,7 +429,7 @@
                 </div>
 
                 <!-- 转写和总结结果 (包含所有非-processing 状态的内容展示) -->
-                <template v-if="audioStatus === 'completed' || audioStatus === 'asr_completed'">
+                <template v-if="audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'summary_failed'">
                   <div class="audio-transcript-section">
                     <div class="audio-section-header">
                       <span class="section-label">
@@ -450,7 +460,7 @@
                 </template>
 
                 <!-- 失败/取消状态 -->
-                <div v-if="audioStatus === 'failed' || audioStatus === 'cancelled'" class="audio-failed-card">
+                <div v-if="audioStatus === 'asr_failed' || audioStatus === 'failed' || audioStatus === 'cancelled'" class="audio-failed-card">
                   <div class="audio-failed-info">
                     <el-icon><WarningFilled /></el-icon>
                     <span>{{ audioDetail?.audio_summary || '处理失败' }}</span>
@@ -468,7 +478,7 @@
                 </div>
 
                 <!-- 总结/术语操作行 (已完成状态下，与分段原文垂直对齐) -->
-                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'failed'" class="audio-content-actions">
+                <div v-if="audioStatus === 'completed' || audioStatus === 'asr_completed' || audioStatus === 'summary_failed' || audioStatus === 'failed'" class="audio-content-actions">
                   <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
                     <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
                   </el-select>
@@ -1226,7 +1236,7 @@ function startPolling(id) {
       if (res.code === 0 && res.data) {
         audioDetail.value = res.data
         audioStatus.value = res.data.audio_status
-        if (res.data.audio_status === 'completed') {
+        if (res.data.audio_status === 'completed' || res.data.audio_status === 'asr_completed') {
           stopPolling()
           audioProcessing.value = false
           // V15.0: 拉取结构化总结多版本
@@ -1242,12 +1252,20 @@ function startPolling(id) {
           _originalSummary = res.data.audio_summary || ''
           transcriptModified.value = false
           summaryModified.value = false
-          ElMessage.success('录音转写和总结完成！')
+          if (res.data.audio_status === 'asr_completed') {
+            ElMessage.success('转写完成，请点击“重新总结”生成结构化总结')
+          } else {
+            ElMessage.success('录音转写和总结完成！')
+          }
           fetchData()
-        } else if (res.data.audio_status === 'failed') {
+        } else if (res.data.audio_status === 'asr_failed' || res.data.audio_status === 'failed') {
           stopPolling()
           audioProcessing.value = false
-          ElMessage.error('后台转写失败，可删除后重新上传或点击重试')
+          ElMessage.error('后台转写失败，可删除后重新上传或点击重新识别')
+        } else if (res.data.audio_status === 'summary_failed') {
+          stopPolling()
+          audioProcessing.value = false
+          ElMessage.error('结构化总结失败，请检查大模型服务后点击“重新总结”')
         }
       }
     } catch { }

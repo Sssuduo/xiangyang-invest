@@ -187,6 +187,15 @@ def retry_audio_recognition(item_id):
     if item.audio_status in ('asr_processing', 'summarizing'):
         return jsonify({'code': 1, 'message': '正在处理中，请等待完成后重试'}), 409
 
+    # 预检 ASR 服务是否可达：避免“已开始识别”后又静默失败，
+    # 也规避“识别失败且无切片进度”的困惑（服务不可达时会瞬间失败、不产生任何切片）。
+    from services.speech_to_text import check_asr_health
+    if not check_asr_health():
+        return jsonify({
+            'code': 1,
+            'message': '录音转写服务未连接，请联系管理员苏铎确认其笔记本已联网并启动转写服务（asr_service.sh）'
+        }), 409
+
     item.audio_status = 'asr_processing'
     item.progress_message = '转写准备中...'
     item.progress_pct = 0

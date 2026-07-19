@@ -1346,7 +1346,7 @@ async function handleRetryAudio() {
     const res = await retryAudioRecognition(editingId.value)
     if (res.code === 0) {
       ElMessage.success('已重新开始语音识别')
-      audioStatus.value = 'processing'
+      audioStatus.value = 'asr_processing'
       audioProcessing.value = true
       editTranscript.value = ''
       editSummary.value = ''

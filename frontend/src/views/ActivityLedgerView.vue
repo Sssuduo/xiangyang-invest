@@ -364,7 +364,7 @@
             <el-form-item label="录音文件">
               <div class="audio-section">
                 <!-- 已上传的录音文件列表（多文件）-->
-                <div v-if="audioFile" class="audio-loaded">
+                <div v-if="audioFiles.length > 0" class="audio-loaded">
                   <div v-for="(af, idx) in audioFiles" :key="idx" class="audio-player-card">
                     <div class="audio-info">
                       <el-icon><Headset /></el-icon>
@@ -399,7 +399,7 @@
                   accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
                 >
                   <el-button size="small" type="primary" plain>
-                    <el-icon><Plus /></el-icon> {{ audioFile ? '追加录音文件' : '上传录音文件' }}
+                    <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
                   </el-button>
                 </el-upload>
 
@@ -412,7 +412,7 @@
                 </div>
 
                 <!-- 文件操作按钮行 (位于录音卡片下方、转写内容上方，与分段原文垂直对齐) -->
-                <div v-if="audioFile && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
+                <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
                   <el-button size="small" type="warning" plain @click="handleRetryAudio">
                     <el-icon><RefreshRight /></el-icon> 重新识别
                   </el-button>
@@ -557,15 +557,55 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
+import { useAudioRecording } from '@/composables/useAudioRecording'
 import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels } from '@/api/activityLedger'
 import { getPublicProjects, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
-import MarkdownIt from 'markdown-it'
 
 const businessAuth = useBusinessAuthStore()
 const router = useRouter()
+
+// ---- 录音识别（共享 composable，以台账模块为基准抽取，招商动态复用同一份） ----
+const audio = useAudioRecording({
+  getItemId: () => editingId.value,
+  apiUpload: uploadAudio,
+  apiDetail: getAudioDetail,
+  apiRetry: retryAudioRecognition,
+  apiCancel: cancelAudioProcessing,
+  apiDelete: deleteAudio,
+  apiDeleteFile: deleteAudioFile,
+  apiVersions: getAudioVersions,
+  apiRetrySummary: retryAudioSummary,
+  apiUpdateTranscript: updateAudioTranscript,
+  apiLLMModels: getLLMModels,
+  apiDocxUrl: (id) => `/api/admin/activity-ledger/${id}/audio/docx`,
+  onRefresh: fetchData,
+  saveHint: '请先保存活动台账，再上传录音文件',
+})
+const {
+  audioUploading, audioUploadList, audioLoading, audioProcessing,
+  audioStatus, audioFiles, audioDetail, audioActiveTab,
+  editTranscript, transcriptModified,
+  llmModels, selectedLlmModel,
+  termDrawerVisible, termCorrections, termLoading, termForm,
+  selectAudioFile, loadAudioDetail,
+  startPolling, stopPolling, resetAudio, downloadDocx,
+  formatDuration, formatEstimate, formatFileSize, scopeLabel, renderMd,
+  // 以下以视图既有处理函数名对外暴露（模板绑定保持不变）
+  retryAudio: handleRetryAudio,
+  cancelAudio: handleCancelAudio,
+  retrySummary: handleRetrySummary,
+  saveTranscript: handleSaveTranscript,
+  cancelTranscriptEdit: handleCancelTranscriptEdit,
+  openTermDrawer,
+  saveTerm: handleSaveTerm,
+  deleteTerm: handleDeleteTerm,
+  applyTerms: handleApplyTerms,
+  loadLLMModels,
+  watchTranscriptEdit,
+} = audio
 
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
@@ -610,161 +650,9 @@ const uploadRef = ref(null)
 const saving = ref(false)
 const unlinking = ref(false)
 const fileList = ref([])
-// 录音模块（支持多文件）
-const audioUploading = ref(false)
-const audioUploadList = ref([])  // [{ name, progress }] 每个文件独立进度
-const audioFiles = ref([])
-const audioFile = ref(null)
-const audioDetail = ref(null)
-const audioLoading = ref(false)
-const audioProcessing = ref(false)
-const audioStatus = ref(null)
-const editTranscript = ref('')
-const editSummary = ref('')
-const transcriptModified = ref(false)
-const summaryModified = ref(false)
-// V15.0 结构化总结
-const audioActiveTab = ref('segmented')
-// V15.1 术语校正抽屉
-const termDrawerVisible = ref(false)
-const termCorrections = ref([])
-const termForm = ref({ original: '', replacement: '', scope: 'all' })
-const termLoading = ref(false)
-// V15.1 LLM 模型选择
-const llmModels = ref([])
-const selectedLlmModel = ref(null)
 
-// 预估耗时显示
-function formatEstimate(seconds) {
-  if (!seconds) return ''
-  if (seconds < 60) return `约 ${seconds} 秒`
-  const mins = Math.ceil(seconds / 60)
-  return `约 ${mins} 分钟`
-}
 
-function scopeLabel(scope) {
-  return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
-}
 
-// 取消正在进行的识别/总结
-async function handleCancelAudio() {
-  if (!editingId.value) return
-  try {
-    const res = await cancelAudioProcessing(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success('已取消处理')
-      audioStatus.value = 'cancelled'
-      audioProcessing.value = false
-    } else {
-      ElMessage.error(res.message || '取消失败')
-    }
-  } catch (err) {
-    ElMessage.error('取消失败：' + (err.message || ''))
-  }
-}
-
-// 重新总结（与 ASR 解耦）
-async function handleRetrySummary() {
-  if (!editingId.value) return
-
-  // 双重检查：转写内容字段 或 状态为已完成（兜底）
-  const hasTranscript = (audioDetail.value?.audio_transcript && audioDetail.value.audio_transcript.trim()) ||
-                        (audioDetail.value?.audio_transcript_segmented && audioDetail.value.audio_transcript_segmented.trim())
-  const isCompleted = audioStatus.value === 'completed' || audioStatus.value === 'asr_completed'
-
-  if (!hasTranscript && !isCompleted) {
-    ElMessage.warning('没有转写内容，请先完成识别或手动输入转写文本')
-    return
-  }
-
-  stopPolling()
-  try {
-    const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
-    const res = await retryAudioSummary(editingId.value, payload)
-    if (res.code === 0) {
-      ElMessage.success('正在重新生成总结（与 ASR 服务独立）')
-      audioStatus.value = 'summarizing'
-      audioProcessing.value = true
-      startPolling(editingId.value)
-    } else {
-      ElMessage.error(res.message || '操作失败')
-    }
-  } catch (err) {
-    ElMessage.error('请求失败：' + (err.message || ''))
-  }
-}
-
-// 加载 LLM 模型列表
-async function loadLLMModels() {
-  try {
-    const res = await getLLMModels()
-    if (res.code === 0) llmModels.value = res.data || []
-  } catch { /* ignore */ }
-}
-
-// 加载术语校正列表
-async function loadTermCorrections() {
-  try {
-    const res = await getTermCorrections()
-    if (res.code === 0) termCorrections.value = res.data || []
-  } catch { /* ignore */ }
-}
-
-// 新增/更新术语校正
-async function handleSaveTerm() {
-  const { original, replacement, scope } = termForm.value
-  if (!original || !replacement) {
-    ElMessage.warning('原文和替换词不能为空')
-    return
-  }
-  try {
-    const res = await createTermCorrection({ original, replacement, scope })
-    if (res.code === 0) {
-      ElMessage.success('已保存')
-      termForm.value = { original: '', replacement: '', scope: 'all' }
-      loadTermCorrections()
-    } else {
-      ElMessage.error(res.message || '保存失败')
-    }
-  } catch (err) {
-    ElMessage.error('保存失败：' + (err.message || ''))
-  }
-}
-
-// 删除术语校正
-async function handleDeleteTerm(id) {
-  try {
-    await deleteTermCorrection(id)
-    ElMessage.success('已删除')
-    loadTermCorrections()
-  } catch { /* ignore */ }
-}
-
-// 应用到当前台账
-async function handleApplyTerms() {
-  if (!editingId.value) return
-  try {
-    termLoading.value = true
-    const res = await applyTermCorrections(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success(res.message || '已应用')
-      // 刷新数据
-      await loadAudioDetail(editingId.value)
-    } else {
-      ElMessage.error(res.message || '应用失败')
-    }
-  } catch (err) {
-    ElMessage.error('应用失败：' + (err.message || ''))
-  } finally {
-    termLoading.value = false
-  }
-}
-
-// 打开术语校正抽屉
-function openTermDrawer() {
-  termDrawerVisible.value = true
-  loadTermCorrections()
-}
 
 // 打开 Web 文本校正页 (新标签页)
 function openTextCorrection() {
@@ -777,21 +665,7 @@ function openTextCorrection() {
   window.open(href, '_blank', 'noopener')
 }
 
-// Markdown 渲染器 (lazy init)
-let _md = null
-function getMd() {
-  if (!_md) {
-    _md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: true })
-  }
-  return _md
-}
-function renderMd(text) {
-  if (!text) return ''
-  try { return getMd().render(String(text)) } catch { return String(text).replace(/</g, '&lt;').replace(/>/g, '&gt;') }
-}
-let _originalTranscript = ''
-let _originalSummary = ''
-let _pollTimer = null
+
 const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 
@@ -934,9 +808,6 @@ function openCreate() {
   editingItem.value = {}
   resetForm()
   fileList.value = []
-  audioFile.value = null
-  audioFiles.value = []
-  audioDetail.value = null
   editDrawerVisible.value = true
 }
 
@@ -944,17 +815,7 @@ function openCreate() {
 async function openEdit(row) {
   editMode.value = 'edit'
   editingId.value = row.id
-  audioFile.value = null
-  audioDetail.value = null
-  audioProcessing.value = false
-  audioStatus.value = null
-  editTranscript.value = ''
-  editSummary.value = ''
-  _originalTranscript = ''
-  _originalSummary = ''
-  transcriptModified.value = false
-  summaryModified.value = false
-  stopPolling()
+  resetAudio()
   try {
     const res = await getLedger(row.id)
     if (res.code === 0) {
@@ -966,30 +827,8 @@ async function openEdit(row) {
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form._linkProject = !!d.linked_project_id
       form._linkProjectId = ''
-      // 加载录音详情（多文件）
-      if (d.audio_files && d.audio_files.length > 0) {
-        audioFiles.value = d.audio_files || []
-        audioFile.value = { audio_file: d.audio_files[0].url, audio_duration: d.audio_duration }
-        audioDetail.value = {
-          audio_transcript: d.audio_transcript,
-          audio_summary: d.audio_summary,
-          audio_duration: d.audio_duration,
-          audio_archive: d.audio_archive,
-          audio_archive_size: d.audio_archive_size,
-          compression_ratio: null
-        }
-        audioStatus.value = d.audio_status
-        editTranscript.value = d.audio_transcript || ''
-        editSummary.value = d.audio_summary || ''
-        _originalTranscript = d.audio_transcript || ''
-        _originalSummary = d.audio_summary || ''
-        transcriptModified.value = false
-        summaryModified.value = false
-        if (d.audio_status === 'processing') {
-          audioProcessing.value = true
-          startPolling(editingId.value)
-        }
-      }
+      // 加载录音详情（多文件）—— 由 composable 统一处理状态/多版本/模型回填
+      await loadAudioDetail(row.id)
       try {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
@@ -1001,22 +840,9 @@ async function openEdit(row) {
 function resetForm() {
   Object.assign(form, defaultForm())
   fileList.value = []
-  audioFile.value = null
-  audioFiles.value = []
-  audioDetail.value = null
-  audioUploading.value = false
-  audioUploadList.value = []
-  audioProcessing.value = false
-  audioStatus.value = null
-  editTranscript.value = ''
-  editSummary.value = ''
-  _originalTranscript = ''
-  _originalSummary = ''
-  transcriptModified.value = false
-  summaryModified.value = false
-  stopPolling()
   editingItem.value = {}
   formRef.value?.clearValidate()
+  resetAudio()
 }
 
 // ---- 文件上传 ----
@@ -1105,321 +931,37 @@ function handleThumbRemove(idx) {
   fileList.value.splice(idx, 1)
 }
 
-// ---- 录音上传（串行队列，确保多文件依次追加，每个文件独立进度） ----
-const _uploadQueue = []
-let _uploading = false
-
-async function _processQueue() {
-  if (_uploading) return
-  _uploading = true
-  audioUploading.value = true
-
-  while (_uploadQueue.length > 0) {
-    const file = _uploadQueue.shift()
-    if (!editingId.value) continue
-
-    const uploadItem = { name: file.name, progress: 0 }
-    audioUploadList.value = [...audioUploadList.value, uploadItem]
-
-    try {
-      // 串行：此时 audioFiles.value 已反映之前所有已上传文件
-      const appendMode = audioFiles.value.length > 0
-      const res = await uploadAudio(editingId.value, file, (progressEvent) => {
-        uploadItem.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100)
-        audioUploadList.value = [...audioUploadList.value]
-      }, appendMode)
-      if (res.code === 0) {
-        audioFiles.value = res.data.audio_files || []
-        audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
-        audioDetail.value = { audio_transcript: null, audio_summary: null }
-        audioStatus.value = 'processing'
-        audioProcessing.value = true
-      } else {
-        ElMessage.error(res.message || '录音处理失败')
-      }
-    } catch (err) {
-      ElMessage.error('录音上传失败：' + (err.message || '网络错误'))
-    } finally {
-      audioUploadList.value = audioUploadList.value.filter(item => item.name !== file.name)
-    }
-  }
-
-  audioUploading.value = false
-  _uploading = false
-  if (editingId.value) {
-    startPolling(editingId.value)
-    fetchData()
-  }
-}
-
-async function handleAudioUpload(file) {
-  if (!editingId.value) {
-    ElMessage.warning('请先保存活动台账，再上传录音文件')
-    return
-  }
-  const ext = file.name.split('.').pop().toLowerCase()
-  const audioExts = ['wav', 'mp3', 'm4a', 'ogg', 'flac', 'wma', 'aac', 'amr', 'opus', 'webm', 'weba']
-  if (!audioExts.includes(ext)) {
-    ElMessage.error('不支持的音频格式：.' + ext + '，支持：' + audioExts.join(', '))
-    return
-  }
-  stopPolling()
-  _uploadQueue.push(file)
-  _processQueue()
-}
-
-// 手动选择音频文件
+// ---- 录音识别：以下为 composable(useAudioRecording) 的薄封装，核心逻辑已下沉，避免与招商动态重复维护 ----
+// 选择音频文件（el-upload :on-change 回调）
 function onAudioFileChange(file) {
-  handleAudioUpload(file.raw || file)
+  audio.selectAudioFile(file)
 }
 
-// 加载录音详情（多文件）
-async function loadAudioDetail(id) {
-  audioLoading.value = true
-  try {
-    const res = await getAudioDetail(id)
-    if (res.code === 0 && res.data?.audio_files?.length > 0) {
-      audioDetail.value = res.data
-      audioFiles.value = res.data.audio_files || []
-      audioFile.value = audioFiles.value.length > 0 ? { audio_file: audioFiles.value[0].url, audio_duration: res.data.audio_duration } : null
-      audioStatus.value = res.data.audio_status
-      // V15.1: 回填上次总结使用的模型选择
-      if (!selectedLlmModel.value && res.data.summary_model_id) {
-        const match = llmModels.value.find(m => m.id === res.data.summary_model_id)
-        if (match) selectedLlmModel.value = match.id
-      }
-      editTranscript.value = res.data.audio_transcript || ''
-      editSummary.value = res.data.audio_summary || ''
-      _originalTranscript = res.data.audio_transcript || ''
-      _originalSummary = res.data.audio_summary || ''
-      transcriptModified.value = false
-      summaryModified.value = false
-
-      if (res.data.audio_status === 'processing') {
-        audioProcessing.value = true
-        startPolling(id)
-      } else {
-        audioProcessing.value = false
-        // V15.0: 拉取结构化总结多版本
-        try {
-          const vRes = await getAudioVersions(id)
-          if (vRes.code === 0 && vRes.data) {
-            audioDetail.value = { ...audioDetail.value, ...vRes.data }
-          }
-        } catch { /* ignore */ }
-      }
-    } else {
-      audioDetail.value = null
-      audioFile.value = null
-      audioFiles.value = []
-      audioStatus.value = null
-      audioProcessing.value = false
-    }
-  } catch {
-    audioDetail.value = null
-    audioFile.value = null
-    audioFiles.value = []
-    audioStatus.value = null
-    audioProcessing.value = false
-  } finally {
-    audioLoading.value = false
-  }
-}
-
-function startPolling(id) {
-  // 守卫：避免重复创建并行 interval（旧句柄丢失会导致永远关不掉）
-  if (_pollTimer) return
-  stopPolling()
-  _pollTimer = setInterval(async () => {
-    try {
-      const res = await getAudioDetail(id)
-      if (res.code === 0 && res.data) {
-        audioDetail.value = res.data
-        audioStatus.value = res.data.audio_status
-        if (res.data.audio_status === 'completed' || res.data.audio_status === 'asr_completed') {
-          stopPolling()
-          audioProcessing.value = false
-          // V15.0: 拉取结构化总结多版本
-          try {
-            const vRes = await getAudioVersions(id)
-            if (vRes.code === 0 && vRes.data) {
-              audioDetail.value = { ...audioDetail.value, ...vRes.data }
-            }
-          } catch { /* ignore */ }
-          editTranscript.value = res.data.audio_transcript || ''
-          editSummary.value = res.data.audio_summary || ''
-          _originalTranscript = res.data.audio_transcript || ''
-          _originalSummary = res.data.audio_summary || ''
-          transcriptModified.value = false
-          summaryModified.value = false
-          if (res.data.audio_status === 'asr_completed') {
-            ElMessage.success('转写完成，请点击“重新总结”生成结构化总结')
-          } else {
-            ElMessage.success('录音转写和总结完成！')
-          }
-          fetchData()
-        } else if (res.data.audio_status === 'asr_failed' || res.data.audio_status === 'failed') {
-          stopPolling()
-          audioProcessing.value = false
-          ElMessage.error('后台转写失败，可删除后重新上传或点击重新识别')
-        } else if (res.data.audio_status === 'summary_failed') {
-          stopPolling()
-          audioProcessing.value = false
-          ElMessage.error('结构化总结失败，请检查大模型服务后点击“重新总结”')
-        }
-      }
-    } catch { }
-  }, 3000)
-}
-
-function stopPolling() {
-  if (_pollTimer) {
-    clearInterval(_pollTimer)
-    _pollTimer = null
-  }
-}
-
-function watchTranscriptEdit() { transcriptModified.value = editTranscript.value !== _originalTranscript }
-function watchSummaryEdit() { summaryModified.value = editSummary.value !== _originalSummary }
-
-async function handleSaveTranscript() {
-  if (!editingId.value) return
-  try {
-    await updateAudioTranscript(editingId.value, { transcript: editTranscript.value })
-    ElMessage.success('转写文本已保存')
-    _originalTranscript = editTranscript.value
-    transcriptModified.value = false
-    fetchData()
-  } catch (err) { ElMessage.error('保存失败：' + (err.message || '未知错误')) }
-}
-
-async function handleSaveSummary() {
-  if (!editingId.value) return
-  try {
-    await updateAudioTranscript(editingId.value, { summary: editSummary.value })
-    ElMessage.success('总结内容已保存')
-    _originalSummary = editSummary.value
-    summaryModified.value = false
-    fetchData()
-  } catch (err) { ElMessage.error('保存失败：' + (err.message || '未知错误')) }
-}
-
-function handleCancelTranscriptEdit() { editTranscript.value = _originalTranscript; transcriptModified.value = false }
-function handleCancelSummaryEdit() { editSummary.value = _originalSummary; summaryModified.value = false }
-
-// 删除单个录音文件
+// 删除单个录音文件（仅 1 个时退化为删除全部，带二次确认）
 async function handleDeleteSingleFile(index) {
   if (!editingId.value) return
   if (audioFiles.value.length <= 1) {
-    // 只剩一个文件，删除全部
     await handleDeleteAudio()
     return
   }
-  stopPolling()
-  try {
-    // Call backend to delete single file
-    await deleteAudioFile(editingId.value, index)
-    audioFiles.value.splice(index, 1)
-    if (audioFiles.value.length === 0) {
-      audioFile.value = null
-      audioDetail.value = null
-      audioStatus.value = null
-      audioProcessing.value = false
-    } else {
-      audioFile.value = { audio_file: audioFiles.value[0].url, audio_duration: audioDetail.value?.audio_duration }
-      // Refresh audio detail
-      loadAudioDetail(editingId.value)
-    }
-    ElMessage.success('文件已删除')
-    fetchData()
-  } catch (err) {
-    ElMessage.error('删除失败：' + (err.message || '未知错误'))
-  }
+  await audio.deleteAudioFile(editingId.value, index)
 }
 
+// 删除全部录音（带二次确认）
 async function handleDeleteAudio() {
   if (!editingId.value) return
   try {
     await ElMessageBox.confirm('确定要删除该录音文件及转写/总结数据吗？', '删除确认', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await deleteAudio(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success('录音已删除')
-      audioFile.value = null
-      audioFiles.value = []
-      audioDetail.value = null
-      audioStatus.value = null
-      audioProcessing.value = false
-      stopPolling()
-      fetchData()
-    }
+    await audio.deleteAudio(editingId.value)
   } catch { }
 }
 
-async function handleRetryAudio() {
-  if (!editingId.value) return
-  stopPolling()
-  try {
-    const res = await retryAudioRecognition(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success('已重新开始语音识别')
-      audioStatus.value = 'asr_processing'
-      audioProcessing.value = true
-      editTranscript.value = ''
-      editSummary.value = ''
-      _originalTranscript = ''
-      _originalSummary = ''
-      transcriptModified.value = false
-      summaryModified.value = false
-      startPolling(editingId.value)
-    } else {
-      ElMessage.error(res.message || '重新识别失败')
-    }
-  } catch (err) {
-    ElMessage.error('重新识别失败：' + (err.message || '未知错误'))
-  }
-}
-
-
-
-// 格式化文件大小（保留，文件上传功能仍在使用）
-function formatFileSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024) return bytes + 'B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
-  return (bytes / 1024 / 1024).toFixed(1) + 'MB'
-}
-
-// 下载 Word 文档（用 fetch + blob 避免 <a> 包裹 <el-button> 的点击穿透问题）
+// 下载 Word 总结
 async function downloadAudioDocx() {
   if (!editingId.value) return
-  try {
-    const res = await fetch(`/api/admin/activity-ledger/${editingId.value}/audio/docx`)
-    if (!res.ok) {
-      ElMessage.error('文件下载失败，请重新生成总结')
-      return
-    }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `活动台账_会议总结_${editingId.value}.docx`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } catch (err) {
-    ElMessage.error('下载失败：' + (err.message || ''))
-  }
-}
-
-// 格式化时长
-function formatDuration(seconds) {
-  if (!seconds) return ''
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return m > 0 ? `${m}分${s}秒` : `${s}秒`
+  await audio.downloadDocx(editingId.value, `活动台账_会议总结_${editingId.value}.docx`)
 }
 
 // ---- 保存 ----

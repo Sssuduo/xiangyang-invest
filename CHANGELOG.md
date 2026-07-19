@@ -1,5 +1,22 @@
 # 更新日志
 
+## V16.1 (2026-07-20) — 修复「招商动态识别后界面仍显示失败」(陈旧错误文本残留)
+
+> 现象：活动台账功能正常，但招商动态上传录音后切片识别进度走完却显示“失败”，且总结模型下拉为空。
+> 排查结论：**前端两侧早已统一（V16.0 共享 `useAudioRecording` composable），本次失败与前端路径无关**。
+
+### 根因
+1. 招商动态本次新建识别首次跑在**部署前的陈旧后端进程**上（该进程仍带 V15.8 修复前的 `_update_progress` 0 参签名 bug），远程 ASR 回传 `TypeError: _update_progress() takes 0 positional arguments but 2 were given`，被 `speech_to_text.transcribe_audio` 的兜底 `except` 包装成 `录音转写服务未启动，请联系管理员苏铎（未知错误：...）` 写进了 `audio_summary`。
+2. V16.0 部署（`3e2cd50` 之前的提交）重启了后端，修复版代码使该条识别**实际成功**（`audio_status=asr_completed`、`audio_transcript` 17755 字真实转写），但 `run_async_processing` 的“成功分支”**不会覆盖旧的 `audio_summary`**，于是那条陈旧错误文本一直残留，界面看起来“还是失败”。
+3. “总结模型里没有值”是正常状态：该条尚未生成过总结，`summary_model_id` 为 null，下拉自然无选中项；`llm_models` 表有 2 个可用模型，下拉选项本身不为空。
+
+### 修复
+- `backend/services/audio_service.py`：`run_async_processing` 在识别成功（`asr_completed`）分支显式清空上一轮失败/旧总结残留（`audio_summary` / `segmented` / `clean` / `structured` / `docx_path` / `docx_size`），避免陈旧错误文本误显示成失败。
+- 运维：部署后清理了 `investment_activities.id=35` 的陈旧错误文本与旧结构化总结，保留真实转写，供复验。
+
+### 结论
+前端两侧路径已一致（V16.0）。本类“一侧失败一侧正常”的本质是**后端进程陈旧**或**旧数据残留**，现已消除；后续两端行为应完全对齐。
+
 ## V16.0 (2026-07-19) — 前端录音模块重构：抽取共享 composable，消除两端手抄重复
 
 > 背景：V15.7~V15.9 期间暴露根本问题——前端录音能力在 `ActivityView.vue`（招商动态）与 `ActivityLedgerView.vue`（活动台账）是**两份独立手抄代码**（各约 1400 行）。任何一边修好、另一边仍可能带旧 bug（如 V15.9 只在招商动态补了 `loadLLMModels`，台账那份原本就写了）。后端 service 层本来就是共享的，前端不是。

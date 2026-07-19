@@ -1,5 +1,24 @@
 # 更新日志
 
+## V16.3 (2026-07-20) — 修复「重新总结/重新识别」报 404 + 三 tab 内容高度过长
+
+> 现象：招商动态「选择模型 → 点击重新总结」报 `404 Not Found`（Werkzeug 默认 404 页）；转写/总结三 tab（分段原文/清洁版/摘要版）内容过长、无高度上限。
+> 排查结论：后端路由 `/api/admin/activity/<id>/audio/retry-summary` 正常存在（无认证 curl 返回 401，路由已注册），真正的 404 来自**前端请求 URL 里的 itemId 非法**。
+
+### 根因
+`useAudioRecording` composable 的 `retrySummary` / `retryAudio` / `cancelAudio` / `deleteAudio` / `saveTranscript` / `applyTerms` / `downloadDocx` 等处理函数都以 `itemId` 为第一参数，并直接用该参数拼接到请求 URL。但两个视图的模板均以 `@click="handleXxx"` 形式调用，**没有传 id**，于是 `itemId` 收到的是点击事件对象（MouseEvent）；composable 把它原样塞进 URL → `/api/admin/activity/[object MouseEvent]/audio/retry-summary`，与 Flask 的 `<int:item_id>` 路由不匹配 → 404。
+此外 `deleteAudioFile` 模板传的是**文件索引**（`handleDeleteAudioFile(idx)`），同样错把索引当 itemId，早已无法正常删除。
+三 tab 高度问题：台账视图有 `.audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }`，而招商动态视图漏了这条规则，导致内容随原文长度无限撑开。
+
+### 修复
+- composable 新增 `_resolveId(passed)`：当传入参数不是有效数字 id（如事件对象/undefined）时，自动回退到 opts 中的 `getItemId()`（即 `editingId`），保证请求 URL 始终带正确数值 id。所有上述处理函数改用 `_resolveId` 解析 id。
+- `deleteAudioFile` 改为以「文件索引」为唯一参数，item id 统一取自 `getItemId()`。
+- 招商动态 `ActivityView.vue` 补上 `.audio-version-tabs .el-tab-pane { max-height: 400px; overflow-y: auto; }`，并为 `.audio-text-content` / `.audio-markdown-content` 加边框、内边距与滚动，与台账行为对齐。
+- 已重新构建前端并同步到 nginx 服务的 `static` 目录（保留 `uploads`/`meetings`）。
+
+### 验证
+强刷（Ctrl+Shift+R）后：招商动态选择模型点「重新总结」不再 404，开始生成结构化总结；三 tab 内容区域固定在 400px 高、超出滚动。
+
 ## V16.2 (2026-07-20) — 修复「招商动态总结模型下拉为空」：前端未同步到 nginx 服务目录
 
 > 现象：活动台账转写/总结正常，但招商动态「总结模型」下拉没有可选值（分段原文能显示）。

@@ -1,6 +1,6 @@
 """
 活动台账 - 录音路由层（薄包装）
-所有核心逻辑已迁移至 services/audio_service.py + services/audio_processing.py
+所有核心逻辑已迁移至 services/audio_service.py（共享 service 层）
 此文件仅保留路由装饰器与模型绑定。
 """
 import os
@@ -398,7 +398,7 @@ def get_audio_versions(item_id):
     }})
 
 
-@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/docx', methods=['GET])
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/docx', methods=['GET'])
 @dual_login_required
 def download_audio_docx(item_id):
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()

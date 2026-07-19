@@ -583,7 +583,6 @@
 import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import MarkdownIt from 'markdown-it'
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, InfoFilled, PriceTag, Close, Picture, Headset, RefreshRight } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
@@ -652,8 +651,9 @@ const uploadUrl = '/api/upload'
 const uploadHeaders = {}
 const projectDemands = ref([])
 
-// ---- 录音识别（V15.1，复用 composable + 手写 Ledger 多版本逻辑）----
+// ---- 录音识别（复用共享 composable，与活动台账同一份实现） ----
 import { useAudioRecording } from '@/composables/useAudioRecording'
+const router = useRouter()
 const audio = useAudioRecording({
   getItemId: () => editingId.value,
   apiUpload: uploadActivityAudio,
@@ -662,29 +662,37 @@ const audio = useAudioRecording({
   apiCancel: cancelActivityAudioProcessing,
   apiDelete: deleteActivityAudio,
   apiDeleteFile: deleteActivityAudioFile,
+  apiVersions: getActivityAudioVersions,
+  apiRetrySummary: retryActivityAudioSummary,
+  apiUpdateTranscript: updateActivityAudioTranscript,
+  apiLLMModels: getLLMModels,
+  apiDocxUrl: getActivityAudioDocxUrl,
+  onRefresh: fetchData,
+  saveHint: '请先保存动态，再上传录音文件',
 })
 const {
   audioUploading, audioUploadList, audioLoading, audioProcessing,
-  audioStatus, audioFiles, audioDetail,
-  enqueueUpload, loadAudioDetail, retryAudio, cancelAudio,
-  deleteAudio, deleteAudioFile, startPolling, stopPolling, resetAudio,
+  audioStatus, audioFiles, audioDetail, audioActiveTab,
+  editTranscript, transcriptModified,
+  llmModels, selectedLlmModel,
+  termDrawerVisible, termCorrections, termLoading, termForm,
+  selectAudioFile, loadAudioDetail,
+  startPolling, stopPolling, resetAudio, downloadDocx,
+  formatDuration, formatEstimate, formatFileSize, scopeLabel, renderMd,
+  // 以下以视图既有处理函数名对外暴露（模板绑定保持不变）
+  retryAudio: handleRetryAudio,
+  cancelAudio: handleCancelAudio,
+  deleteAudioFile: handleDeleteAudioFile,
+  retrySummary: handleRetrySummary,
+  saveTranscript: handleSaveTranscript,
+  cancelTranscriptEdit: handleCancelTranscriptEdit,
+  openTermDrawer,
+  saveTerm: handleSaveTerm,
+  deleteTerm: handleDeleteTerm,
+  applyTerms: handleApplyTerms,
+  loadLLMModels,
+  watchTranscriptEdit,
 } = audio
-
-// V15.1 多版本 Tabs / LLM / 术语 / 编辑脏标记（对齐活动台账 L604-625）
-const router = useRouter()
-const audioActiveTab = ref('segmented')
-const editTranscript = ref('')
-const editSummary = ref('')
-const _originalTranscript = ref('')
-const _originalSummary = ref('')
-const transcriptModified = ref(false)
-const summaryModified = ref(false)
-const llmModels = ref([])
-const selectedLlmModel = ref(null)
-const termDrawerVisible = ref(false)
-const termCorrections = ref([])
-const termLoading = ref(false)
-const termForm = ref({ original: '', replacement: '', scope: 'all' })
 
 // ---- 下载导入模板对话框 ----
 const templateDialogVisible = ref(false)
@@ -1005,7 +1013,7 @@ async function openEdit(row) {
         fileList.value = Array.isArray(d.files) ? d.files.map((url, i) => ({ name: url.split('/').pop() || `文件${i+1}`, url })) : []
       } catch { fileList.value = [] }
       // 加载录音详情
-      await loadAudioOnOpen()
+      await loadAudioDetail(editingId.value)
       if (form.project_id) await loadProjectDemands()
     }
     editDrawerVisible.value = true
@@ -1112,137 +1120,13 @@ function handleThumbRemove(idx) {
 
 // ---- 录音识别处理 ----
 
-// 预估耗时显示（对齐活动台账 L628-633）
-function formatEstimate(seconds) {
-  if (!seconds) return ''
-  if (seconds < 60) return `约 ${seconds} 秒`
-  const mins = Math.ceil(seconds / 60)
-  return `约 ${mins} 分钟`
-}
-
-// 文件大小显示（用于压缩包标签）
-function formatFileSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-}
-
-// Markdown 渲染器（对齐活动台账 L770-781）
-let _md = null
-function getMd() {
-  if (!_md) {
-    _md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: true })
-  }
-  return _md
-}
-function renderMd(text) {
-  if (!text) return ''
-  try { return getMd().render(String(text)) } catch { return String(text).replace(/</g, '&lt;').replace(/>/g, '&gt;') }
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return ''
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return m > 0 ? `${m}分${s}秒` : `${s}秒`
-}
-
-function scopeLabel(scope) {
-  return { all: '全部', summary: '摘要版', clean: '清洁版', segmented: '分段原文' }[scope] || scope
-}
-
+// ---- 录音识别：以下为 composable(useAudioRecording) 的薄封装，核心逻辑已下沉，与活动台账共用同一份 ----
+// 选择音频文件（el-upload :on-change 回调）
 function onAudioFileChange(file) {
-  if (!editingId.value) {
-    ElMessage.warning('请先保存动态，再上传录音')
-    return
-  }
-  const f = file.raw || file
-  if (!f.name) return
-  const ext = f.name.split('.').pop().toLowerCase()
-  const audioExts = ['wav', 'mp3', 'm4a', 'ogg', 'flac', 'wma', 'aac', 'amr', 'opus', 'webm', 'weba']
-  if (!audioExts.includes(ext)) {
-    ElMessage.error('不支持的音频格式：.' + ext)
-    return
-  }
-  stopPolling()
-  enqueueUpload(f)
+  audio.selectAudioFile(file)
 }
 
-// 取消正在进行的识别/总结（对齐活动台账 L640-654）
-async function handleCancelAudio() {
-  if (!editingId.value) return
-  try {
-    const res = await cancelActivityAudioProcessing(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success('已取消处理')
-      audioStatus.value = 'cancelled'
-      audioProcessing.value = false
-    } else {
-      ElMessage.error(res.message || '取消失败')
-    }
-  } catch (err) {
-    ElMessage.error('取消失败：' + (err.message || ''))
-  }
-}
-
-async function handleRetryAudio() {
-  if (!editingId.value) return
-  stopPolling()
-  try {
-    await retryAudio(editingId.value)
-  } catch (err) {
-    // 捕获后端业务错误（如 503 ASR 不可用：'录音转写服务未启动，请联系管理员苏铎'）
-    ElMessage.error('重新识别失败：' + (err.message || '未知错误'))
-  }
-}
-
-async function handleDeleteAudio() {
-  if (!editingId.value) return
-  await deleteAudio(editingId.value)
-}
-
-async function handleDeleteAudioFile(idx) {
-  if (!editingId.value) return
-  await deleteAudioFile(editingId.value, idx)
-}
-
-// 重新总结（与 ASR 解耦，对齐活动台账 L657-685）
-async function handleRetrySummary() {
-  if (!editingId.value) return
-  const hasTranscript = (audioDetail.value?.audio_transcript && audioDetail.value.audio_transcript.strip()) ||
-                        (audioDetail.value?.audio_transcript_segmented && audioDetail.value.audio_transcript_segmented.strip())
-  const isCompleted = audioStatus.value === 'completed' || audioStatus.value === 'asr_completed'
-  if (!hasTranscript && !isCompleted) {
-    ElMessage.warning('没有转写内容，请先完成识别或手动输入转写文本')
-    return
-  }
-  stopPolling()
-  try {
-    const payload = selectedLlmModel.value ? { model_id: selectedLlmModel.value } : null
-    const res = await retryActivityAudioSummary(editingId.value, payload)
-    if (res.code === 0) {
-      ElMessage.success('正在重新生成总结（与 ASR 服务独立）')
-      audioStatus.value = 'summarizing'
-      audioProcessing.value = true
-      startPolling(editingId.value)
-    } else {
-      ElMessage.error(res.message || '操作失败')
-    }
-  } catch (err) {
-    ElMessage.error('请求失败：' + (err.message || ''))
-  }
-}
-
-// 加载 LLM 模型列表（对齐活动台账 L688-693）
-async function loadLLMModels() {
-  try {
-    const res = await getLLMModels()
-    if (res.code === 0) llmModels.value = res.data || []
-  } catch { /* ignore */ }
-}
-
-// 打开 Web 文本校正页（对齐活动台账 L760-768）
+// 打开 Web 文本校正页
 function openTextCorrection() {
   if (!editingId.value) {
     ElMessage.warning('请先保存动态')
@@ -1252,116 +1136,10 @@ function openTextCorrection() {
   window.open(href, '_blank', 'noopener')
 }
 
-// 下载 docx（对齐活动台账 L1377-1397）
+// 下载 Word 总结
 async function downloadAudioDocx() {
   if (!editingId.value) return
-  try {
-    const res = await fetch(getActivityAudioDocxUrl(editingId.value))
-    if (!res.ok) {
-      ElMessage.error('文件下载失败，请重新生成总结')
-      return
-    }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `招商动态_会议总结_${editingId.value}.docx`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } catch (err) {
-    ElMessage.error('下载失败：' + (err.message || ''))
-  }
-}
-
-// 转写编辑脏标记 + 保存（对齐活动台账 L1264-1287）
-function watchTranscriptEdit() { transcriptModified.value = editTranscript.value !== _originalTranscript.value }
-async function handleSaveTranscript() {
-  if (!editingId.value) return
-  try {
-    await updateActivityAudioTranscript(editingId.value, { transcript: editTranscript.value })
-    ElMessage.success('转写文本已保存')
-    _originalTranscript.value = editTranscript.value
-    transcriptModified.value = false
-    fetchData()
-  } catch (err) { ElMessage.error('保存失败：' + (err.message || '未知错误')) }
-}
-function handleCancelTranscriptEdit() { editTranscript.value = _originalTranscript.value; transcriptModified.value = false }
-
-// 术语校正抽屉（对齐活动台账 L696-751）
-async function loadTermCorrections() {
-  try {
-    const res = await getTermCorrections()
-    if (res.code === 0) termCorrections.value = res.data || []
-  } catch { /* ignore */ }
-}
-function openTermDrawer() { termDrawerVisible.value = true; loadTermCorrections() }
-async function handleSaveTerm() {
-  const { original, replacement, scope } = termForm.value
-  if (!original || !replacement) {
-    ElMessage.warning('原文和替换词不能为空')
-    return
-  }
-  try {
-    const res = await createTermCorrection({ original, replacement, scope })
-    if (res.code === 0) {
-      ElMessage.success('已保存')
-      termForm.value = { original: '', replacement: '', scope: 'all' }
-      loadTermCorrections()
-    } else {
-      ElMessage.error(res.message || '保存失败')
-    }
-  } catch (err) {
-    ElMessage.error('保存失败：' + (err.message || ''))
-  }
-}
-async function handleDeleteTerm(id) {
-  try {
-    await deleteTermCorrection(id)
-    ElMessage.success('已删除')
-    loadTermCorrections()
-  } catch { /* ignore */ }
-}
-async function handleApplyTerms() {
-  if (!editingId.value) return
-  try {
-    termLoading.value = true
-    const res = await applyTermCorrections(editingId.value)
-    if (res.code === 0) {
-      ElMessage.success(res.message || '已应用')
-      await loadAudioDetail(editingId.value)
-    } else {
-      ElMessage.error(res.message || '应用失败')
-    }
-  } catch (err) {
-    ElMessage.error('应用失败：' + (err.message || ''))
-  } finally {
-    termLoading.value = false
-  }
-}
-
-// 打开编辑时加载录音详情（V15.1 对齐活动台账 L1167-1217：加载后回填 segmented + 合并 versions + 模型回填）
-async function loadAudioOnOpen() {
-  if (!editingId.value) return
-  await loadAudioDetail(editingId.value)
-  if (audioDetail.value) {
-    // 拉取结构化多版本
-    try {
-      const vRes = await getActivityAudioVersions(editingId.value)
-      if (vRes.code === 0 && vRes.data) {
-        audioDetail.value = { ...audioDetail.value, ...vRes.data }
-      }
-    } catch { /* ignore */ }
-    editTranscript.value = audioDetail.value.audio_transcript_segmented || audioDetail.value.audio_transcript || ''
-    editSummary.value = audioDetail.value.audio_summary_structured || audioDetail.value.audio_summary || ''
-    _originalTranscript.value = editTranscript.value
-    _originalSummary.value = editSummary.value
-    transcriptModified.value = false
-    summaryModified.value = false
-    // V15.1 LLM 模型回填
-    if (audioDetail.value.summary_model_id) selectedLlmModel.value = audioDetail.value.summary_model_id
-  }
+  await audio.downloadDocx(editingId.value, `招商动态_会议总结_${editingId.value}.docx`)
 }
 
 // ---- 保存 ----

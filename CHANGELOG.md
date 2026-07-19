@@ -1,5 +1,22 @@
 # 更新日志
 
+## V16.0 (2026-07-19) — 前端录音模块重构：抽取共享 composable，消除两端手抄重复
+
+> 背景：V15.7~V15.9 期间暴露根本问题——前端录音能力在 `ActivityView.vue`（招商动态）与 `ActivityLedgerView.vue`（活动台账）是**两份独立手抄代码**（各约 1400 行）。任何一边修好、另一边仍可能带旧 bug（如 V15.9 只在招商动态补了 `loadLLMModels`，台账那份原本就写了）。后端 service 层本来就是共享的，前端不是。
+
+### 重构内容
+
+- **新增共享 composable `frontend/src/composables/useAudioRecording.js`**：以活动台账的录音模块为基准，把录音上传（串行队列 + 每文件独立进度）、转写状态轮询、重新识别/取消/删除、转写文本编辑与脏标记、重新总结（与 ASR 解耦）、LLM 模型列表加载与回填、术语校正、Word 下载、以及 `formatDuration/formatEstimate/formatFileSize/scopeLabel/renderMd` 等纯格式工具，**全部下沉为单一实现**。
+- 所有与具体业务相关的接口通过 `opts` 注入（`apiUpload/apiDetail/apiRetry/apiCancel/apiDelete/apiDeleteFile/apiVersions/apiRetrySummary/apiUpdateTranscript/apiLLMModels/apiDocxUrl/onRefresh/getEditTranscript…`），composable 本身**不耦合任何 api 模块**（术语校正接口为两端共用的 `/api/admin/term-corrections`，直接在 composable 内 import）。
+- **`ActivityLedgerView.vue` 改写**：删除约 600 行手抄音频状态与函数，改为 `useAudioRecording({...})` + 解构同名状态/处理函数，模板绑定保持不变；仅保留 `onAudioFileChange`/`handleDeleteAudio`/`handleDeleteSingleFile`/`downloadAudioDocx` 等少量薄封装（处理文件名、二次确认等视图差异）。
+- **`ActivityView.vue` 改写**：原本已用旧版 composable，现补全所有注入回调（多版本、总结、保存转写、模型、docx），删除其手抄的重复函数，与台账共用同一份实现。
+- 模板中台账原 `audioFile` 局部变量改为 `audioFiles.length > 0`（composable 以数组为准）。
+
+### 收益
+
+- 录音/转写/总结逻辑现在**唯一实现**，修一处即两端一致，不会再出现「台账能用、招商动态不行」的漂移。
+- 两个 View 的脚本体量显著降低，后续维护只读一个 composable。
+
 ## V15.9 (2026-07-19) — 修复「招商动态总结选模型下拉为空」
 
 > 现象：录音 77（ID 35）转写成功后，点「重新总结」前的「选择模型」下拉无选项可选。

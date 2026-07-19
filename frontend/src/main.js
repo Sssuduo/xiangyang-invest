@@ -1,3 +1,4 @@
+// 生产环境已移除全局错误捕获 IIFE（避免 ResizeObserver 误报红色监控条）
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'

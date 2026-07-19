@@ -217,9 +217,11 @@ def run_async_processing(app, model_class: type, item_id: int):
                 except Exception as e:
                     af['status'] = 'error'
                     af['error'] = str(e)[:300]
+                    logger.error(f'单文件转写失败：{af["name"]} ({file_path})，错误：{e}', exc_info=True)
                     total_err += 1
                     slices_completed += file_slice_counts[i]
                     all_texts.append(f'[识别失败：{af["name"]}]')
+                    set_audio_files(item, files)
 
             # 拼接全文
             full_text_parts = []
@@ -230,10 +232,24 @@ def run_async_processing(app, model_class: type, item_id: int):
             full_text = '\n\n---\n\n'.join(full_text_parts)
 
             setattr(item, f["transcript"], full_text)
-            setattr(item, f["status"], 'asr_completed')
-            setattr(item, f["pct"], 100)
-            setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
             db.session.commit()
+
+            # 全部文件转写失败：归为 asr_failed（而非被占位符误报为 asr_completed）。
+            # 仅当 total_ok == 0 时判定失败；部分成功仍走 asr_completed。
+            if total_ok == 0:
+                first_err = ''
+                for af in files:
+                    if af.get('status') == 'error' and af.get('error'):
+                        first_err = af['error']
+                        break
+                err_msg = first_err or '录音转写失败（所有文件均未识别成功）'
+                setattr(item, f["status"], 'asr_failed')
+                setattr(item, f["pct"], 0)
+                setattr(item, f["message"], f'识别失败 ({total_ok}/{total_files} 文件)')
+                setattr(item, f["summary"],
+                        err_msg if '请联系管理员苏铎' in err_msg else f'识别失败：{err_msg[:300]}')
+                db.session.commit()
+                return
 
             # 解耦：转写完成即结束，总结交由前端“重新总结”按钮独立触发。
             # 状态停在 asr_completed，不再自动串联总结，
@@ -241,6 +257,7 @@ def run_async_processing(app, model_class: type, item_id: int):
             # 转写失败 = asr_failed，总结失败 = summary_failed）。
             if full_text.strip():
                 setattr(item, f["status"], 'asr_completed')
+                setattr(item, f["pct"], 100)
                 setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
             else:
                 setattr(item, f["status"], 'completed')

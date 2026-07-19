@@ -259,6 +259,13 @@ def run_async_processing(app, model_class: type, item_id: int):
                 setattr(item, f["status"], 'asr_completed')
                 setattr(item, f["pct"], 100)
                 setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
+                # V16.0 修复：清除上一轮失败/旧总结残留，避免界面把旧错误文本误显示成“失败”
+                setattr(item, f["summary"], '')
+                setattr(item, f["segmented"], '')
+                setattr(item, f["clean"], '')
+                setattr(item, f["structured"], '')
+                setattr(item, f["docx_path"], '')
+                setattr(item, f["docx_size"], 0)
             else:
                 setattr(item, f["status"], 'completed')
                 setattr(item, f["pct"], 100)

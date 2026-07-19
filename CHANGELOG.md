@@ -1,5 +1,23 @@
 # 更新日志
 
+## V15.9 (2026-07-19) — 修复「招商动态总结选模型下拉为空」
+
+> 现象：录音 77（ID 35）转写成功后，点「重新总结」前的「选择模型」下拉无选项可选。
+> 活动台账（ActivityLedgerView）能正常选模型，招商动态（ActivityView）不能。
+
+### 根因
+
+- 后端 `/api/llm-models` 路由正常（返回 2 个 active 模型：DeepSeek V4 Pro / 智谱GLM-4-Flash），`LLMModel` 表数据齐全。
+- `ActivityView.vue` 中 `loadLLMModels()` 已定义（请求 `/api/llm-models` 并填充 `llmModels`），
+  但 **`onMounted` 漏调用它**（仅调了 `loadProjects/loadDicts/fetchData`），导致 `llmModels` 始终为 `[]`，
+  下拉 `el-option` 无数据 → 表现为「没有模型可选」。
+- 对照：活动台账 `ActivityLedgerView.vue:814` 的 `onMounted` 已正确 `await loadLLMModels()`，故台账正常。
+
+### 修复
+
+- `ActivityView.vue` 的 `onMounted` 改为 `await Promise.all([loadProjects(), loadDicts(), loadLLMModels()])`，
+  与活动台账对齐；模型列表加载完成后再 `fetchData()`，确保 `summary_model_id` 回填时列表已就绪。
+
 ## V15.8 (2026-07-19) — 修复「_update_progress 回调签名不匹配导致转写必败」
 
 > 关联：V15.7 部署后用户重跑 ID 35，ASR 已恢复（health=ok），但转写仍 `asr_failed`。

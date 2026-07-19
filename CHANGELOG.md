@@ -1,5 +1,18 @@
 # 更新日志
 
+## V16.2 (2026-07-20) — 修复「招商动态总结模型下拉为空」：前端未同步到 nginx 服务目录
+
+> 现象：活动台账转写/总结正常，但招商动态「总结模型」下拉没有可选值（分段原文能显示）。
+> 排查结论：前后端代码两侧早已统一（V16.0 共享 `useAudioRecording` composable），后端 `/api/llm-models` 返回 2 个可用模型且台账可正常调用。真正根因在**部署链路**，而非前端路径不一致。
+
+### 根因
+`deploy.sh` 在服务器本地 `npm run build` 将前端构建产物写到 `frontend/dist`（最新版，含招商动态模型下拉逻辑：`ActivityView-BxLNE92D.js` → 引用含 `/llm-models` 的 activity chunk），但 nginx 的 `root` 指向 `/www/wwwroot/invest-app/static`，而部署脚本**从不把 `frontend/dist` 同步到 `static`**。因此用户实际访问的是 7-19 的旧前端（`static` 仍为 16:29 构建，旧 `ActivityView-D1JdUPpY.js`），该旧版招商动态的模型下拉未正确接线 → 下拉为空；台账因更早版本即支持该下拉而表现正常。
+
+### 修复
+- 运维：已将最新 `frontend/dist` 同步到 `static`（`cp -rf frontend/dist/. static/`，保留运行时目录 `static/uploads`、`static/meetings`）。刷新（Ctrl+Shift+R）后招商动态下拉即出现 2 个模型。
+- `deploy.sh`：构建后新增 `cp -rf frontend/dist/. static/` 步骤，今后部署自动同步，杜绝此问题复发（根目录与 `scripts/deploy.sh` 副本均已更新）。
+- 注：V16.1 修复的「陈旧错误文本残留」仍有效；本次「下拉为空」是另一独立问题（前端部署脱节），并非同一根因。
+
 ## V16.1 (2026-07-20) — 修复「招商动态识别后界面仍显示失败」(陈旧错误文本残留)
 
 > 现象：活动台账功能正常，但招商动态上传录音后切片识别进度走完却显示“失败”，且总结模型下拉为空。

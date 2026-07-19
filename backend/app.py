@@ -163,6 +163,14 @@ def create_app(config_name=None):
             import logging
             logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
 
+        # 启动消息提醒定时任务（每天 08:00 评估规则 + 生成消息）
+        try:
+            from services.message_scheduler import start_message_scheduler
+            start_message_scheduler(app)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f'消息提醒定时任务启动失败：{e}')
+
     return app
 
 

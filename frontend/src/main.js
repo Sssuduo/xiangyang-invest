@@ -15,4 +15,6 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 
+window.__APP__ = app
+
 app.mount('#app')

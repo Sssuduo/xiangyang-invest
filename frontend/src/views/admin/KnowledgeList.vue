@@ -237,6 +237,7 @@ const editMode = ref('create')
 const editingId = ref(null)
 const embedLoadingId = ref(null)
 const batchEmbedLoading = ref(false)
+const loading = ref(false)  // v-loading 状态
 const formRef = ref(null)
 const uploadRef = ref(null)
 const tagInputRef = ref(null)

@@ -11,3 +11,4 @@ gunicorn==23.0.0
 openpyxl==3.1.5
 python-docx==1.1.2
 tencentcloud-sdk-python==3.0.1312
+apscheduler==3.10.4

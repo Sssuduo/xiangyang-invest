@@ -257,6 +257,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/message-rules',
+    name: 'AdminMessageRules',
+    component: () => import('@/views/admin/MessageRuleConfig.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/activity-export-config',
     name: 'AdminActivityExportConfig',
     component: () => import('@/views/admin/ActivityExportConfig.vue'),
@@ -330,7 +336,7 @@ function _checkAdminAuth() {
   }
   // 并发去重：多个守卫同时触发时复用同一个 promise
   if (_adminAuthCache.promise) return _adminAuthCache.promise
-  _adminAuthCache.promise = fetch('/api/admin/check')
+  _adminAuthCache.promise = fetch('/api/admin/check', { credentials: 'include' })
     .then(r => r.json())
     .then(d => {
       _adminAuthCache.valid = d.code === 0
@@ -351,7 +357,7 @@ function _checkBusinessAuth() {
     return Promise.resolve(_businessAuthCache.valid)
   }
   if (_businessAuthCache.promise) return _businessAuthCache.promise
-  _businessAuthCache.promise = fetch('/api/auth/check')
+  _businessAuthCache.promise = fetch('/api/auth/check', { credentials: 'include' })
     .then(r => r.json())
     .then(d => {
       _businessAuthCache.valid = d.code === 0

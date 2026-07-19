@@ -101,6 +101,11 @@
       <span>字典配置</span>
     </el-menu-item>
 
+    <el-menu-item index="/admin/message-rules">
+      <el-icon><Bell /></el-icon>
+      <span>消息提醒规则</span>
+    </el-menu-item>
+
     <!-- 知识库管理 -->
     <el-menu-item index="/admin/knowledge">
       <el-icon><Reading /></el-icon>
@@ -147,7 +152,7 @@ import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { clearAuthCache } from '@/router'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading, Bell } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

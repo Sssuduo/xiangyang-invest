@@ -168,6 +168,78 @@ systemctl restart invest-app
 
 ---
 
+## ⚠️ 静态文件 404 修复记录（2026-07-16）
+
+### 现象
+
+- 招商动态(activity)、活动台账(ledger) 列表中的图片加载失败(缩略图破图)
+- 点击图片查看详情报错 404
+- 典型受影响 activity id=157(「6 月 27 日下午,农高区创建工作专班带领浙江台州市客商金叶灵一行…」)的两张考察现场图
+
+### 根因
+
+**不是文件物理丢失**,是 nginx 配置 block 优先级撞车。
+
+`/etc/nginx/conf.d/invest-app.conf` 中同时存在:
+```nginx
+# 正则 location,优先级 HIGHER — 拦截一切带扩展名的 URL
+location ~* \.(js|css|svg|png|jpe?g|gif|ico|woff2?|ttf|eot)$ {
+    try_files $uri =404;              # 基于 root /www/wwwroot/invest-app/static
+}
+# 前缀 location,优先级 LOWER — 被正则吃掉,永远进不来
+location /static {
+    alias /www/wwwroot/invest-app/static;
+}
+```
+
+URL `/static/uploads/20260627_09b76c10.jpg` 进入正则 block nginx → 用 `root` + 完整 URI →
+路径被拼成 `/www/wwwroot/invest-app/static`**`/static/`**`uploads/20260627_09b76c10.jpg`(路径重复一层 `/static/`) → 文件不存在 → 404。
+
+**同一 bug 顺便导致** `/assets/index-XXX.js` 等 Vite 前端 JS/CSS 也 404(但 UI 被 `location /` SPA fallback 掩盖)。
+
+### 修复(线上已生效,2026-07-16)
+
+```nginx
+# /etc/nginx/conf.d/invest-app.conf
+location ^~ /static/ {
+    alias /www/wwwroot/invest-app/static/;
+    expires 7d;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+两处关键改动:
+1. `location /static` → `location ^~ /static/` — 加 `^~` 跳过正则 match,直接进本 block;加尾部 `/` 对齐 alias 尾部 slash
+2. `alias /www/wwwroot/invest-app/static` → `alias /www/wwwroot/invest-app/static/` — 尾部 slash 必须一致,否则 nginx 路径拼接出错
+
+操作流水:
+```bash
+# 1. 备份(保留,不要删)
+cp -p /etc/nginx/conf.d/invest-app.conf \
+      /etc/nginx/conf.d/invest-app.conf.bak.$(date +%Y%m%d_%H%M%S)
+
+# 2. 改
+sed -i 's|^    location /static {|    location ^~ /static/ {|
+            s|^        alias /www/wwwroot/invest-app/static;|        alias /www/wwwroot/invest-app/static/;|' \
+      /etc/nginx/conf.d/invest-app.conf
+
+# 3. 验证配置
+nginx -t
+
+# 4. reload(不要 restart,避免断流)
+nginx -s reload
+
+# 5. 验收
+curl -s -o /dev/null -w "%{http_code}\n" http://123.56.9.243/static/uploads/20260627_09b76c10.jpg
+# 期望输出: 200
+```
+
+备份保留在:`/etc/nginx/conf.d/invest-app.conf.bak.20260716_102856`
+
+> ⚠️ nginx 配置是运行时改动,不在 git 中。未来重装服务器/重建 nginx 配置时,必须按上面的 block 填入,否则 404 复发。
+
+---
+
 ## 依赖清单
 
 ```
@@ -191,5 +263,12 @@ openpyxl==3.1.5
 |---|---|
 | 网站打不开 | `systemctl status nginx invest-app` |
 | API 500 错误 | `journalctl -u invest-app -f` 查看错误日志 |
-| 静态文件 404 | 检查 `/www/wwwroot/invest-app/static/` 目录权限 |
-| 数据库锁定 | SQLite 单写，高并发时可能锁表，考虑升级 MySQL |
+| **静态文件 404(图片/上传文件)** ① | **先检查 nginx location 配置优先级**,见「⚠️ 静态文件 404 修复记录」节 |
+| 静态文件 404(权限) | 检查 `/www/wwwroot/invest-app/static/` 目录权限 |
+| 数据库锁定 | SQLite 单写,高并发时可能锁表,考虑升级 MySQL |
+
+① **静态文件 404 诊断流程**(按顺序):
+1. `curl -I http://123.56.9.243/static/uploads/某文件名.jpg` — 看响应码
+2. 若 404,测 `nginx -T | grep -A3 "location /static\|location ~* \.("` — 看正则是否吃掉 static
+3. 检查 `location /static` 是否加了 `^~`,alias 尾部是否有 `/`
+4. 文件是否真实存在:`ls -la /www/wwwroot/invest-app/static/uploads/文件名`

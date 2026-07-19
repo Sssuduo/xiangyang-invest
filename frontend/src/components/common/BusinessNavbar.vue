@@ -69,6 +69,18 @@
     </div>
   </header>
 
+  <!-- 消息中心抽屉 -->
+  <el-drawer
+    v-model="showMessageCenter"
+    title="消息提醒"
+    direction="rtl"
+    size="420px"
+    :close-on-click-modal="true"
+    append-to-body
+  >
+    <MessageCenter ref="messageCenterRef" />
+  </el-drawer>
+
   <!-- 登录弹窗 -->
   <el-dialog
     v-model="showLoginDialog"
@@ -136,7 +148,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, UserFilled, User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -152,6 +164,7 @@ const route = useRoute()
 const router = useRouter()
 const businessAuth = useBusinessAuthStore()
 
+// 消息中心
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge'))
@@ -329,6 +342,11 @@ async function handleChangePassword() {
 .nav-login { cursor: pointer; }
 .nav-user { display: inline-flex; align-items: center; gap: 4px; cursor: default; }
 .nav-logout { cursor: pointer; }
+
+/* 消息提醒 */
+.nav-message-badge { margin: 0 12px; cursor: pointer; }
+.nav-message-btn { border-color: transparent; background: transparent; }
+.nav-message-btn:hover { background: rgba(0,0,0,0.04); }
 
 .login-error { color: #f56c6c; font-size: 13px; text-align: center; margin: 0; }
 .profile-success { color: #67c23a; font-size: 13px; text-align: center; margin: 0; }

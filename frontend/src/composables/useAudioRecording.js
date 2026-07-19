@@ -145,8 +145,14 @@ export function useAudioRecording(opts) {
         audioStatus.value = 'asr_processing'  // 对齐后端状态，确保前端显示'正在识别...'而非'正在总结...'
         audioProcessing.value = true
         startPolling(itemId)
+      } else {
+        // 后端返回业务错误（如 503 ASR 不可用）→ 抛出给调用方显示友好提示
+        throw new Error(res.message || '操作失败')
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      // 网络错误或业务错误都向上抛出，由调用方（ActivityView.handleRetryAudio）捕获并 ElMessage 提示
+      throw e
+    }
   }
 
   async function cancelAudio(itemId) {

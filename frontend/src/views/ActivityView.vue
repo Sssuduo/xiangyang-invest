@@ -1186,7 +1186,12 @@ async function handleCancelAudio() {
 async function handleRetryAudio() {
   if (!editingId.value) return
   stopPolling()
-  await retryAudio(editingId.value)
+  try {
+    await retryAudio(editingId.value)
+  } catch (err) {
+    // 捕获后端业务错误（如 503 ASR 不可用：'录音转写服务未启动，请联系管理员苏铎'）
+    ElMessage.error('重新识别失败：' + (err.message || '未知错误'))
+  }
 }
 
 async function handleDeleteAudio() {

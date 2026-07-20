@@ -1069,6 +1069,7 @@ const defaultForm = () => ({
   project_type_code: '',
   dispatch_status_code: 'dispatching',
   construction_content: '',
+  total_investment: 0,
   work_roadmap_items: [],
   construction_unit: '',
   construction_location: '',
@@ -1218,6 +1219,7 @@ async function openEdit(row) {
       form.project_type_code = d.project_type_code || ''
       form.dispatch_status_code = d.dispatch_status_code || 'dispatching'
       form.construction_content = d.construction_content || ''
+      form.total_investment = d.total_investment ?? 0
       form.work_roadmap_items = (d.work_roadmap_items || []).map(item => ({
         sort_order: item.sort_order ?? 0,
         content: item.content || '',

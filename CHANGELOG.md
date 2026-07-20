@@ -1,5 +1,43 @@
 # 更新日志
 
+## V16.5.1 (2026-07-20) — 修复「在建项目」总投资字段被覆盖 + 保存时序号重排优化
+
+> 现象 1：编辑在建项目时，只要清空「总投资」输入框再保存，原值就会被覆盖为 0。
+> 现象 2：每次保存都触发全表序号重排（38 条无意义 UPDATE）。
+
+### 根因
+1. **总投资覆盖**：前端 `el-input-number` 清空后传 `null`，后端 `float(data.get('total_investment') or 0)` 把 `null` 当 0 处理，覆盖了原值。生产数据印证：抽样 5 条项目 `total_investment` 全部为 `0.0`。
+2. **无意义重排**：`update_project` 末尾无条件调用 `_renumber_projects()`，即使 `order_no` 未变更也会全表刷新。
+
+### 修复（`backend/routes/admin_construction.py`）
+- 总投资：区分"key 不存在"与"key 存在但为 null"，`val is None` 时保持原值。
+- 序号重排：加守卫 `if data.get('force_reorder') or str(new_order_no) != old_values.get('order_no')`，仅序号变更或强制重排时才调用。
+
+### 部署方式
+单文件热部署（`scp` 覆盖 `admin_construction.py` + `systemctl restart invest-app`），未触发 `git pull`（生产端有本地修改阻塞）。
+
+## V16.5 (2026-07-20) — 修复「关联员工账号」报 500（staff.user_id 外键指错表）
+
+> 现象：在「专班工作人员管理」给员工关联账号时，后端报 `sqlite3.IntegrityError: FOREIGN KEY constraint failed [SQL: UPDATE staff SET user_id=? WHERE staff.id = ?]`，HTTP 500。
+
+### 根因
+生产库 `staff` 表的 `user_id` 外键**实际指向 `admin_users(id)`**（旧版本遗留），而代码三处早已统一为「员工关联业务用户」语义：
+- 模型 `models/auth.py`：`user_id = db.Column(..., db.ForeignKey('business_users.id'))`
+- 后端路由 `/admin/staff/admins`（`list_admins`）：下拉返回的是 `BusinessUser` 列表
+- 前端 `StaffList.vue` 关联下拉：选项值为 `business_users.id`
+
+当用户在前端选了 `business_users.id`（如 15，合法），写库时 SQLite 按错误外键去 `admin_users` 找该 id，找不到 → 外键约束失败。**模型/前端/路由的意图都是 business_users，唯独库里外键从未迁移过。**
+
+### 修复
+- 生产库执行 `scripts/fix_staff_fk.py`：以 SQLite 表重建法（`CREATE TABLE ... AS ...` + `DROP` + `RENAME`）将 `staff.user_id` 外键改为指向 `business_users(id)`，**完整保留现有 12 条已关联数据**（均已校验在 business_users 中存在）。
+- 该脚本幂等：若外键已指向 `business_users` 则跳过；迁移前会校验无指向不存在业务用户的脏数据。
+- 模型本身已正确（`business_users.id`），无需改代码；全新部署会因 `db.create_all()` 直接建出正确外键。
+
+### 验证（服务器实测）
+- 迁移后 `PRAGMA foreign_key_list(staff)` 目标变为 `business_users`。
+- 实测 `UPDATE staff SET user_id=7 WHERE id=1` 成功，外键生效且不再抛 500。
+- 外键由 SQLite 在 DB 层强制，运行中的服务无需重启即生效。
+
 ## V16.4 (2026-07-20) — 修复「校正文本」报 500（语音知识库列表崩溃 + 活动无校正路由）
 
 > 现象：招商动态生成总结后点「校正文本」，新标签页加载失败，控制台报 `500 (INTERNAL SERVER ERROR)`，URL 为 `/api/admin/voice-knowledge`（及其 `/activity-ledger/35/summary-data`）。

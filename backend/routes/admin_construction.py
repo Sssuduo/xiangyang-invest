@@ -484,11 +484,16 @@ def update_project(project_id):
     project.responsible_person = (data.get('responsible_person') or '').strip()
     project.responsible_person_phone = (data.get('responsible_person_phone') or '').strip()
     project.construction_location = (data.get('construction_location') or '').strip()
+    # 总投资：仅在传入非 null 值时更新，避免前端清空输入框传 null 覆盖原值
     if 'total_investment' in data:
-        try:
-            project.total_investment = float(data.get('total_investment') or 0)
-        except (ValueError, TypeError):
-            project.total_investment = 0.0
+        val = data.get('total_investment')
+        if val is None:
+            pass  # 不传 / 传 null → 保持原值
+        else:
+            try:
+                project.total_investment = float(val or 0)
+            except (ValueError, TypeError):
+                project.total_investment = 0.0
     # start_date/end_date 存储为 YYYY-MM-DD 字符串（列类型 String(10)），非必填
     if 'start_date' in data:
         val = (data.get('start_date') or '').strip()
@@ -579,7 +584,9 @@ def update_project(project_id):
         if changes:
             log_changes('construction_projects', project.id, changes, 'update', user_info)
 
-    _renumber_projects()
+    # 仅当序号变更或强制重排时才重新编号，避免每次保存都全表刷新
+    if data.get('force_reorder') or str(new_order_no) != old_values.get('order_no'):
+        _renumber_projects()
     db.session.commit()
 
     _resolve_project_names([project])

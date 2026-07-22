@@ -31,13 +31,13 @@
 
 ## 4. SSH 推送通道
 
-本机 OpenSSH `known_hosts` 权限问题曾导致推送失败，已临时配置：
+本机有多把 SSH key，GitHub 实际信任的是默认 key `id_ed25519`（其公钥已加入 GitHub 账户 `Sssuduo`）。需用显式锁定避免 key 协商被干扰：
 
 ```
-git config core.sshCommand "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+git config --global core.sshCommand "ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 ```
 
-如遇推送报 `Permission denied (publickey)` 或 `known_hosts` 相关错误，先确认该配置存在。建议将其写入本机用户级 `~/.gitconfig` 而非仅仓库级，避免每次重配。
+> 注意：`id_ed25519_github` 命名虽意为 GitHub，但其公钥**未**被 GitHub 信任，勿用。Windows 上绝对路径的反斜杠会被 git config 吞掉，务必用 `~/.ssh/id_ed25519`。
 
 ## 5. 部署保护约定
 
@@ -46,3 +46,34 @@ git config core.sshCommand "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKey
 - 针对地图 404 的修复 `--exclude='data'` 必须随代码入库（经 review），否则下次部署会被 `git reset --hard origin/master` 还原而复发。
 - 任何对 `deploy.sh` 的修改都需同步进入 `master`（经 `dev` 合并），不能只改生产磁盘。
 - nginx `/static/uploads/` 别名属"带外修改"，应纳入仓库管理，避免服务器重置即丢失。
+
+## 6. 分布式 Git Hooks（强制执行流程）
+
+仓库内置 hooks 于 `.githooks/`，随 git 分发，让任何 clone 并启用的 agent / 协作者都自动遵守上述流程。
+
+启用（clone 后一次性）：
+
+```bash
+bash scripts/setup-hooks.sh
+```
+
+该脚本将 `core.hooksPath` 指向仓库内 `.githooks/`。
+
+包含钩子：
+
+- `pre-commit`：
+  - 禁止在 `master` 直接提交（`master` 受保护，只接受 `dev` 的 `--no-ff` merge）。
+  - 禁止向废弃分支 `worktree-*` 提交。
+  - 安全网：阻止 `backend/.env`、`*.db`、`backend/sensevoice/`、`instance/` 等受保护/敏感文件被误暂存入库。
+- `pre-push`：
+  - 禁止直接 `push` 到 `master`（顶端必须是来自 `dev` 的 merge commit）。
+  - 禁止推送废弃分支 `worktree-*` 到远程。
+
+紧急绕过（需自知风险）：
+
+```bash
+ALLOW_PROTECTED_COMMIT=1 git commit ...   # 绕过 pre-commit
+ALLOW_PROTECTED_PUSH=1   git push ...      # 绕过 pre-push
+```
+
+> 部署脚本 `scripts/deploy.sh` 另含受保护资产断言（§5）：同步 `dist` 前为 `static/data` 兜底备份，同步后校验 `static/data`、`static/uploads` 未被 `rsync --delete` 误删，缺失则自动从兜底备份恢复。

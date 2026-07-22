@@ -1,0 +1,57 @@
+#!/bin/sh
+# pre-push: 强制执行简化 GitFlow 推送规则（详见仓库 AGENTS.md）
+# 规则:
+#   - 禁止直接推送 master（master 只接受来自 dev 的 --no-ff merge 结果）
+#   - 禁止推送废弃分支 worktree-* 到远程
+# 绕过: ALLOW_PROTECTED_PUSH=1 git push ...
+#
+# stdin 每行: <local-ref> <local-sha> <remote-ref> <remote-sha>
+
+set -e
+
+ZERO="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  remote_branch=${remote_ref#refs/heads/}
+
+  # 废弃分支禁止推送
+  case "$remote_branch" in
+    worktree-*|worktree-audio-service-refactor)
+      echo "✗ [pre-push] 废弃分支 '$remote_branch' 禁止推送到远程。" >&2
+      exit 1
+      ;;
+  esac
+
+  # master 推送校验
+  if [ "$remote_branch" = "master" ]; then
+    if [ "$local_sha" = "$ZERO" ]; then
+      echo "✗ [pre-push] 禁止删除远程 master 分支。" >&2
+      exit 1
+    fi
+    if [ -n "$ALLOW_PROTECTED_PUSH" ]; then
+      echo "⚠ [pre-push] 已通过 ALLOW_PROTECTED_PUSH 绕过 master 保护。" >&2
+      continue
+    fi
+    # 顶端必须是 merge commit（来自 dev 的 --no-ff merge）
+    parent_count=$(git rev-list --parents -n 1 "$local_sha" | wc -w)
+    if [ "$parent_count" -lt 3 ]; then
+      echo "✗ [pre-push] 禁止直接推送 master。" >&2
+      echo "  master 只接受来自 dev 的 'git merge --no-ff dev' 结果（merge commit）。" >&2
+      echo "  当前推送顶端不是 merge commit。正确流程:" >&2
+      echo "    1) 在 dev 完成工作并 commit" >&2
+      echo "    2) git checkout master && git merge --no-ff dev" >&2
+      echo "    3) git push origin master" >&2
+      echo "  紧急绕过: ALLOW_PROTECTED_PUSH=1 git push ..." >&2
+      exit 1
+    fi
+    # 该 merge 必须包含 dev 历史
+    if ! git merge-base --is-ancestor dev "$local_sha" 2>/dev/null; then
+      echo "✗ [pre-push] 推送到 master 的 merge 必须包含 dev 历史。" >&2
+      echo "  请确保 merge 来自 dev 分支。" >&2
+      exit 1
+    fi
+    echo "✓ [pre-push] master 推送校验通过（来自 dev 的 --no-ff merge）。"
+  fi
+done
+
+exit 0

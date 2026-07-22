@@ -79,6 +79,10 @@ echo "  ✓ 前端构建完成"
 
 # ── 5.1 同步 dist 到 static（保留 uploads 目录）──
 echo "  → 同步 dist 到 static ..."
+# 受保护资产兜底备份：即便 rsync 已 --exclude，仍防回归误删（详见 AGENTS.md §3/§5）
+if [ -d "$APP_DIR/static/data" ]; then
+    cp -r "$APP_DIR/static/data" "$BACKUP_DIR/static_data_deploy_${TIMESTAMP}" 2>/dev/null || true
+fi
 if [ -d "$APP_DIR/static/uploads" ]; then
     mv "$APP_DIR/static/uploads" "/tmp/uploads_deploy_backup"
 fi
@@ -86,6 +90,7 @@ fi
 if command -v rsync &>/dev/null; then
     # 排除 data：static/data/*.json 是地图省份/城市数据，由 git 跟踪但不在 frontend/dist 中，
     # 若被 --delete 清空会导致 ChinaMap.vue 的 fetch 全部 404。故同步时保留该目录。
+    # （--exclude 已由 5.2 受保护资产断言兜底校验，避免被误改回 --delete 全清）
     rsync -a --delete --exclude='uploads' --exclude='data' "$APP_DIR/frontend/dist/" "$APP_DIR/static/"
 else
     # 清空 static 后整体复制（保留目录本身与 data 地图数据）
@@ -96,6 +101,22 @@ if [ -d "/tmp/uploads_deploy_backup" ]; then
     mv "/tmp/uploads_deploy_backup" "$APP_DIR/static/uploads"
 fi
 echo "  ✓ dist 已同步到 static"
+
+# ── 5.2 受保护资产断言：确认 static/data、static/uploads 未被 rsync --delete 误删 ──
+for critical in "static/data" "static/uploads"; do
+    if [ ! -e "$APP_DIR/$critical" ]; then
+        echo "✗ [断言] 受保护资产缺失: $APP_DIR/$critical（可能被 rsync --delete 误删）"
+        backup_src="$BACKUP_DIR/${critical##*/}_deploy_${TIMESTAMP}"
+        if [ -e "$backup_src" ]; then
+            cp -r "$backup_src" "$APP_DIR/$critical"
+            echo "  → 已从部署前兜底备份恢复 $critical"
+        else
+            echo "  ⚠ 无兜底备份可恢复，请人工核查！部署继续但地图/上传功能可能受损。" >&2
+        fi
+    else
+        echo "  ✓ 受保护资产完好: $critical"
+    fi
+done
 
 # ── 6. 重启服务 ──
 echo "[6/6] 重启服务..."

@@ -1,0 +1,45 @@
+#!/bin/sh
+# pre-commit: 强制执行简化 GitFlow 分支规则（详见仓库 AGENTS.md）
+# 规则:
+#   - 禁止在 master 上直接提交（master 受保护，只接受 dev 的 --no-ff merge）
+#   - 禁止向废弃分支 worktree-* 写入新代码
+#   - 安全网: 阻止 .env / *.db / sensevoice / instance 等受保护/敏感文件被误暂存入库
+# 绕过: ALLOW_PROTECTED_COMMIT=1 git commit ...
+
+set -e
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# 废弃分支禁止写入
+case "$BRANCH" in
+  worktree-*|worktree-audio-service-refactor)
+    echo "✗ [pre-commit] 分支 '$BRANCH' 已废弃，禁止写入新代码。" >&2
+    echo "  如需新功能，请从 dev 切 feature/* 分支开发。" >&2
+    exit 1
+    ;;
+esac
+
+# master 受保护: 禁止直接提交（但允许来自 dev 的 --no-ff merge commit）
+if [ "$BRANCH" = "master" ]; then
+  if [ -e "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    # 正处于 merge 过程（如 git merge --no-ff dev），这是合法流程，放行
+    echo "✓ [pre-commit] 检测到 merge 操作，放行（仅限来自 dev 的 --no-ff merge）。"
+  elif [ -n "$ALLOW_PROTECTED_COMMIT" ]; then
+    echo "⚠ [pre-commit] 已通过 ALLOW_PROTECTED_COMMIT 绕过 master 保护（不推荐）。" >&2
+  else
+    echo "✗ [pre-commit] master 为受保护分支，禁止直接提交。" >&2
+    echo "  请切到 dev 或 feature/* 分支提交，稳定后经 'git merge --no-ff dev master' 合入。" >&2
+    echo "  紧急绕过: ALLOW_PROTECTED_COMMIT=1 git commit ..." >&2
+    exit 1
+  fi
+fi
+
+# 安全网: 防止受保护/敏感文件被误暂存入库（即便 .gitignore 失效）
+if git diff --cached --name-only | grep -qE '(^|/)\.env|/instance/|sensevoice/|\.db$'; then
+  echo "✗ [pre-commit] 检测到受保护/敏感文件被暂存:" >&2
+  git diff --cached --name-only | grep -E '(^|/)\.env|/instance/|sensevoice/|\.db$' >&2
+  echo "  这些路径被 .gitignore 忽略，不应入库。请 'git restore --staged <file>'。" >&2
+  exit 1
+fi
+
+exit 0

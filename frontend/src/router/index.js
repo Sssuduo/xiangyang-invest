@@ -275,6 +275,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/admin/issue',
+    name: 'AdminIssue',
+    component: () => import('@/views/admin/IssueList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/print-templates',
     name: 'AdminPrintTemplates',
     component: () => import('@/views/admin/PrintTemplateManage.vue'),

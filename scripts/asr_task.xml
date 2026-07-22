@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>ASR 语音识别 API 隧道 - 开机/登录/休眠唤醒时自动启动</Description>
+    <Description>ASR 语音识别 API 看门狗 - 登录/休眠唤醒时启动，每 30 分钟巡检，断线重启服务并重建反代隧道</Description>
     <Author>suduo7</Author>
     <Date>2026-07-14</Date>
   </RegistrationInfo>
@@ -38,7 +38,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>powershell.exe</Command>
-      <Arguments>-WindowStyle Hidden -ExecutionPolicy Bypass -File "h:\项目1\scripts\asr_monitor.ps1"</Arguments>
+      <Arguments>-WindowStyle Hidden -ExecutionPolicy Bypass -File "h:\项目1\scripts\asr_watchdog.ps1"</Arguments>
     </Exec>
   </Actions>
 </Task>

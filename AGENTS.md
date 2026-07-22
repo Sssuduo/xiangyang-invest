@@ -77,3 +77,35 @@ ALLOW_PROTECTED_PUSH=1   git push ...      # 绕过 pre-push
 ```
 
 > 部署脚本 `scripts/deploy.sh` 另含受保护资产断言（§5）：同步 `dist` 前为 `static/data` 兜底备份，同步后校验 `static/data`、`static/uploads` 未被 `rsync --delete` 误删，缺失则自动从兜底备份恢复。
+
+## 7. ASR 本地服务看门狗（运行时 hook）
+
+`scripts/asr_watchdog.ps1` 是 ASR 语音识别链路的**运行时看门狗**，与上面 git 流程无关，但同样需随仓库分发、供其他 agent 启用。
+
+行为：当 agent 在线时，每隔 30 分钟检查一次 ASR 本地服务（`localhost:5002/health`）与 SSH 反代隧道；若本地服务断线则重启 `asr_api.py`，若隧道断线则重建 `root@123.56.9.243:15002` 反向隧道。检测到断线会**立即**重建（无需再等一个周期）。
+
+关键参数：
+
+```powershell
+-IntervalMinutes <int>   # 巡检周期，默认 30
+-NoLoop                  # 只检查一次后退出（适合 git hook / 手动触发）
+-RequireAgentOnline      # 仅当 scripts/agent_online.flag 存在时才工作（agent 离线则空转）
+```
+
+说明：
+
+- **agent 在线判定**：默认进程在跑即视为在线；加 `-RequireAgentOnline` 后，仅在 `scripts/agent_online.flag` 文件存在时才执行检查（该 flag 由 agent/IDE 会话启动/退出时创建/删除）。
+- 看门狗每轮写入 `scripts/asr_watchdog.online` 心跳时间戳，供外部判断其在线状态。
+- 路径全部由 `$PSScriptRoot` 运行时派生（仓库根含中文），源码不含中文字面量，规避 Windows GBK/ANSI 误解析。
+- 它**取代**原 `asr_monitor.ps1` 的 30 秒轮询；两者不可同时运行（会争抢同一远端端口 15002）。
+
+启用（登录/解锁自动启动，需管理员 PowerShell）：
+
+```powershell
+# 重新注册计划任务指向新看门狗（覆盖旧 asr_monitor 任务）
+Register-ScheduledTask -Xml (Get-Content "h:\项目1\scripts\asr_task.xml" | Out-String) -TaskName "ASR Tunnel Monitor" -Force
+# 手动单次检查（不常驻）
+powershell -ExecutionPolicy Bypass -File "h:\项目1\scripts\asr_watchdog.ps1" -NoLoop
+```
+
+> `scripts/asr_task.xml` 的 `Arguments` 已指向 `asr_watchdog.ps1`。若旧 `asr_monitor.ps1` 仍在运行，请先 `Unregister-ScheduledTask -TaskName "ASR Tunnel Monitor" -Confirm:$false` 再重新注册，避免双管理。

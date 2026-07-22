@@ -68,3 +68,21 @@ deploy_temp_key*
 start_asr_api.bat
 scripts/asr_service.sh
 scripts/asr_tunnel_robust.sh
+
+# Capacitor / mobile build output (standalone project, not tracked in this repo)
+frontend-app/
+
+# Temporary diagnostic / probe artifacts (should never be committed)
+carousel_*
+plan*
+sec_test.txt
+*_diag*.py
+diag_*.py
+diagnose_*.py
+scripts/_*
+scripts/check_visibility.py
+scripts/menu_click_test.py
+scripts/screenshot_check.py
+scripts/user_screenshot.py
+scripts/fix_staff_fk.py
+scripts/test_create_rule.py

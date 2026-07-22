@@ -49,6 +49,12 @@
       <span>招商动态管理</span>
     </el-menu-item>
 
+    <!-- 调度问题 / Issue 管理 -->
+    <el-menu-item index="/admin/issue">
+      <el-icon><Warning /></el-icon>
+      <span>问题管理</span>
+    </el-menu-item>
+
     <!-- 导出配置子菜单 -->
     <el-sub-menu index="sub-export">
       <template #title>
@@ -152,7 +158,7 @@ import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { clearAuthCache } from '@/router'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading, Bell } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading, Bell, Warning } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

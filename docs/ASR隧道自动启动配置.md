@@ -5,8 +5,9 @@
 | 文件 | 作用 |
 |------|------|
 | `scripts/asr_start.bat` | 首次启动（检查 ASR API + 建立隧道） |
-| `scripts/asr_monitor.ps1` | 监控脚本（每 30 秒检查隧道，断线自动重连） |
-| `scripts/asr_task.xml` | Windows 任务计划程序配置（登录/解锁触发） |
+| `scripts/asr_watchdog.ps1` | **看门狗 hook（推荐）**：每 30 分钟巡检，断线重启服务并重建隧道，支持 agent 在线门控 |
+| `scripts/asr_monitor.ps1` | 旧版监控脚本（每 30 秒轮询），已被 `asr_watchdog.ps1` 取代，**勿与看门狗同时运行** |
+| `scripts/asr_task.xml` | Windows 任务计划程序配置（登录/解锁触发），已指向 `asr_watchdog.ps1` |
 
 ## 安装步骤
 

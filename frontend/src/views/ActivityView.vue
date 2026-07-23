@@ -256,19 +256,6 @@
                 </a>
               </div>
 
-              <!-- 上传入口 -->
-              <el-upload
-                v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'"
-                :show-file-list="false"
-                :auto-upload="false"
-                :on-change="onAudioFileChange"
-                accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-              >
-                <el-button size="small" type="primary" plain>
-                  <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
-                </el-button>
-              </el-upload>
-
               <!-- 上传进度条（每个文件独立）-->
               <div v-if="audioUploading && audioUploadList.length > 0" class="audio-upload-progress">
                 <div v-for="(item, idx) in audioUploadList" :key="idx" class="audio-upload-item">
@@ -284,12 +271,22 @@
                 <el-button size="small" type="danger" plain @click="handleCancelAudio">取消</el-button>
               </div>
 
-              <!-- 操作按钮 -->
-              <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
-                <el-button size="small" type="warning" plain @click="handleRetryAudio">
+              <!-- 操作按钮：追加录音 / 重新识别 / 删除全部录音 同一行 -->
+              <div v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
+                <el-upload
+                  :show-file-list="false"
+                  :auto-upload="false"
+                  :on-change="onAudioFileChange"
+                  accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+                >
+                  <el-button size="small" type="primary" plain>
+                    <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
+                  </el-button>
+                </el-upload>
+                <el-button v-if="audioFiles.length > 0" size="small" type="warning" plain @click="handleRetryAudio">
                   <el-icon><RefreshRight /></el-icon> 重新识别
                 </el-button>
-                <el-popconfirm title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                <el-popconfirm v-if="audioFiles.length > 0" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
                   <template #reference>
                     <el-button size="small" type="danger" plain>删除全部录音</el-button>
                   </template>
@@ -305,7 +302,6 @@
                 <div class="audio-section-header">
                   <span class="section-label">总结结果</span>
                   <span v-if="audioDetail.audio_transcript" class="audio-meta">{{ audioDetail.audio_transcript.length }} 字</span>
-                  <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
                 </div>
                 <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
                   <el-tab-pane label="分段原文" name="segmented">
@@ -1458,7 +1454,7 @@ async function handleDelete(row) {
 .audio-size { color: #909399; font-size: 12px; }
 .audio-actions { display: flex; align-items: center; gap: 10px; }
 .mini-audio-player { height: 32px; max-width: 220px; }
-.audio-file-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 6px 0; }
+.audio-file-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
 .audio-progress-bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 8px 12px; background: #f5f7fa; border-radius: 6px; }
 .audio-progress-msg { font-size: 13px; color: #606266; white-space: nowrap; }
 .audio-upload-progress { margin-top: 12px; padding: 8px 12px; background: #f5f7fa; border-radius: 6px; border: 1px solid #e4e7ed; }

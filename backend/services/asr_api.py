@@ -100,14 +100,22 @@ os.environ.setdefault('TMP', r'C:\temp_sensevoice')
 
 
 def get_model():
-    """懒加载 SenseVoiceSmall ONNX 模型（笔记本端有 GPU/大内存）"""
+    """懒加载 SenseVoiceSmall ONNX 模型（笔记本端有 GPU/大内存）。
+
+    device_id 透传给 funasr_onnx：
+      - 默认 '-1' 走 CPU（兼容现状）；
+      - 设为 '0' 等 GPU id 时，funasr_onnx 内部在 CUDAExecutionProvider
+        可用时自动用 GPU，否则回退 CPU 并打印 RuntimeWarning。
+    由环境变量 ASR_DEVICE_ID 控制，部署 GPU 时置 '0'。
+    """
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
                 from funasr_onnx import SenseVoiceSmall
-                _model = SenseVoiceSmall(_model_dir, batch_size=1, quantize=False)
-                logger.info('SenseVoiceSmall ONNX 模型已加载')
+                device_id = os.environ.get('ASR_DEVICE_ID', '-1')
+                _model = SenseVoiceSmall(_model_dir, batch_size=1, quantize=False, device_id=device_id)
+                logger.info('SenseVoiceSmall ONNX 模型已加载 device_id=%s', device_id)
     return _model
 
 

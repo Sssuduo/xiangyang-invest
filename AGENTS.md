@@ -109,3 +109,36 @@ powershell -ExecutionPolicy Bypass -File "h:\项目1\scripts\asr_watchdog.ps1" -
 ```
 
 > `scripts/asr_task.xml` 的 `Arguments` 已指向 `asr_watchdog.ps1`。若旧 `asr_monitor.ps1` 仍在运行，请先 `Unregister-ScheduledTask -TaskName "ASR Tunnel Monitor" -Confirm:$false` 再重新注册，避免双管理。
+
+### 7.1 转写期细粒度监控（`asr_transcribe_monitor.ps1` + `boot_transcribe.ps1`）
+
+看门狗（30min 周期）只判断 ssh 进程是否退出，**检测不到隧道僵死**（ssh 进程活着但远端 `15002` 实际不通），也无法收紧转写期的资源。为此新增两个脚本，专供**长时间批量转写**（如数百切片）期间使用，与看门狗形成「粗兜底 + 细粒度自愈」双保险：
+
+- `scripts/boot_transcribe.ps1`：一键启动脚本（ASCII 文件名、用 `$PSScriptRoot` 推导 `backend` 目录，命令行本身不含 `asr_api`/`asr_transcribe_monitor` 等子串，避免 `Get-CimInstance ... LIKE` 自匹配杀到自身）。它：① 持久化 `ASR_INFER_WORKERS=1`（`[Environment]::SetEnvironmentVariable(...,'User')`，降低 funasr 加载模型的峰值内存，临睡/转写机器空闲内存紧张时必备）；② 杀掉旧的转写监控并重启 `asr_api`（`services/asr_api.py --port 5002`，单 worker）；③ 以后台独立进程拉起监控。启动后打印 `BOOT_DONE`。
+- `scripts/asr_transcribe_monitor.ps1`：循环巡检脚本（每 60s 一轮），`while($true)` 整体包在 `try/catch` 中，**永不静默退出**。每一轮：
+  1. 看门狗存活检测（仅 **ALERT**，不接管其管理）；
+  2. 本地 `asr_api :5002` 进程存活 + `/health` 正常，**连续 2 次失败则杀进程并自愈重启（1 worker）**；
+  3. 反代隧道**真连通探测**：`ssh` 到服务器 `curl localhost:15002/health`（只有这能抓到「ssh 进程存活但 15002 不通」的僵死），**连续 2 次不可达则重建隧道**；
+  4. 活动快照（`SNAP` 行）：`api_pid`、CPU、`ws` 内存、`funasr_workers` 数（>0 即正在推理）、机器空闲内存（<1.5GB 标 `WARN`）。
+
+日志写入 `scripts/asr_transcribe_monitor.log`（UTF8、全英文路径），异常行打 `[ALERT]`。监控进程独立后台运行，**不随 IDE 会话结束而退出**；转写结束需手动 `Stop-Process` 对应 powershell 进程收尾。
+
+启用（转写开始前运行一次即可）：
+
+```powershell
+powershell -NoProfile -File "h:\项目1\scripts\boot_transcribe.ps1"
+```
+
+> 注意：监控与看门狗**可同时运行**（职责互补，不争抢 15002）；监控的隧道重建逻辑会先 `fuser -k 15002/tcp` 清掉服务器侧端口残留，再起新 ssh，因此看门狗旧隧道若僵死会被自然接管，无需手动清理。转写期间笔记本**保持唤醒、勿注销/睡眠**，否则隧道与监控进程会断。
+
+### 7.2 ASR 本地服务启用 GPU 转写（RTX 3050 Ti）
+
+本机 GPU（RTX 3050 Ti Laptop GPU，4GB）闲置，已将 SenseVoice 推理从 CPU 搬到 GPU，速度提升数倍到数十倍（已验证上线）。
+
+**运行时（已装）**：CUDA 12.6 toolkit + cuDNN 9.x（通过 PyPI 官方 wheel `nvidia-cudnn-cu12` 安装，等价于 GitHub `NVIDIA/cudnn` releases 的 zip 内容）+ `onnxruntime-gpu` 1.19.2（替换原 CPU 版 `onnxruntime`）。`funasr_onnx` 的 `SenseVoiceSmall` 原生支持 `device_id`：非 `-1` 且 CUDA EP 可用时自动用 `CUDAExecutionProvider`，否则回退 CPU 并打印 `RuntimeWarning`（代码侧零改动，仅 `backend/services/asr_api.py` 的 `get_model` 把环境变量 `ASR_DEVICE_ID` 透传给 `device_id`）。
+
+**启用方式**：环境变量 `ASR_DEVICE_ID`（默认 `-1`=CPU；置 `0`=GPU 0）。`scripts/boot_transcribe.ps1` 已固化：持久化 `ASR_DEVICE_ID=0`、把 `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin` 与 `G:\123\lib\site-packages\nvidia\cudnn\bin` **注入进程 PATH**（onnxruntime 加载 CUDA EP 必须能搜到 `cudart64_12` / `cudnn64_9` 等 DLL；用户级 PATH 修改需重启 IDE/电脑才对所有进程生效，故 boot 在进程内显式注入并由此传递给 `asr_api` 及其子进程与监控自愈），并以 `INFER_WORKERS=2` 启动（每 worker 各加载一份模型到 GPU，约 1.1GB/worker，4GB 显存可提到 3）。
+
+**性能（实测）**：稳态 GPU 推理约 120ms / 10s 音频（asr_api HTTP 端到端约 600ms，含切片/HTTP/进程池开销），比 CPU 快约 5–40 倍。**注意每段、每个 worker 的首次推理有约 28s 的 cuDNN 算法 autotune 一次性开销**，之后才进入稳态；240 段批量转写时仅前 1–2 段显著偏慢。
+
+**排错**：若 `asr_api` 启动后 GPU 显存为 0 且推理慢，通常是 CUDA/cuDNN DLL 未进入进程 PATH——查 `scripts/asr_api_mon_err.log` 有无 `CUDAExecutionProvider is not avaiable` 回退警告，确认 boot 注入是否生效。用 `nvidia-smi` 看 `asr_api` 进程显存占用即可确认是否真在 GPU 上跑。`onnxruntime-gpu` 1.19.2 要求 cuDNN 9.* + CUDA 12.*，且 cuDNN 8/9 不兼容，升级/重装时需保证三者版本匹配。

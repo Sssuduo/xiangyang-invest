@@ -250,4 +250,6 @@ def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_te
     doc.save(file_path)
 
     static_url = f'/static/meetings/{file_name}'
-    return static_url, file_name
+    # 返回绝对路径（基于 current_app.static_folder，即 Flask 实际提供 /static 的真实目录），
+    # 供调用方直接取文件大小，避免从 backend 目录错误推导路径。
+    return static_url, file_path

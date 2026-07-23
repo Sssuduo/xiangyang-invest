@@ -330,18 +330,16 @@ def apply_summary_to_item(item, full_text: str, model_id: int = None):
         setattr(item, f["clean"], summary_result.get('clean', ''))
         setattr(item, f["structured"], summary_result.get('summary', ''))
         try:
-            docx_url, _ = generate_meeting_docx(
+            docx_url, docx_abs = generate_meeting_docx(
                 activity=item,
                 segmented_text=summary_result.get('segmented', ''),
                 clean_text=summary_result.get('clean', ''),
                 summary_text=summary_result.get('summary', '')
             )
             setattr(item, f["docx_path"], docx_url)
-            docx_abs = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                'static', docx_url.replace('/static/', '')
-            )
-            if os.path.exists(docx_abs):
+            # docx_abs 已由 generate_meeting_docx 返回（基于 current_app.static_folder，
+            # 即 Flask 实际提供 /static 的目录，避免从 backend 目录推导导致的路径偏差）
+            if docx_abs and os.path.exists(docx_abs):
                 setattr(item, f["docx_size"], os.path.getsize(docx_abs))
         except Exception as docx_err:
             logger.error(f'docx generation failed: {docx_err}', exc_info=True)

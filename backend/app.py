@@ -155,13 +155,15 @@ def create_app(config_name=None):
             from seed_data import init_database
             init_database(app)
 
-        # 启动夜间压缩调度器（每天凌晨 2:00-3:00 自动压缩音频文件）
-        try:
-            from services.night_scheduler import start_night_scheduler
-            start_night_scheduler(app)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
+        # 夜间压缩调度器 [V15.5 已屏蔽]
+        # 录音方式已更新，不再需要夜间压缩音频文件大小。原 services/night_scheduler
+        # 模块已不存在，start_night_scheduler 调用会直接 ImportError，这里一并注释关闭。
+        # try:
+        #     from services.night_scheduler import start_night_scheduler
+        #     start_night_scheduler(app)
+        # except Exception as e:
+        #     import logging
+        #     logging.getLogger(__name__).warning(f'夜间压缩调度器启动失败：{e}')
 
         # 启动消息提醒定时任务（每天 08:00 评估规则 + 生成消息）
         try:

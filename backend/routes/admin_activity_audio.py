@@ -173,7 +173,7 @@ def retry_activity_audio(item_id):
     """重新调用语音识别（ASR 可用性检查由共享 worker 负责）"""
     item = InvestmentActivity.query.filter_by(id=item_id).first_or_404()
 
-    from services.audio_service import get_audio_files, run_async_processing
+    from services.audio_service import get_audio_files, run_async_processing, clear_cancel
 
     files = get_audio_files(item)
     if not files:
@@ -194,6 +194,10 @@ def retry_activity_audio(item_id):
     item.progress_message = '转写准备中...'
     item.progress_pct = 0
     db.session.commit()
+
+    # 清除上一次可能残留的取消标志（内存事件 + DB 状态），否则后台线程会在
+    # is_task_cancelled() 处立即判定为“已取消”而退出，导致“重新识别”无效。
+    clear_cancel(InvestmentActivity, item_id)
 
     app_obj = current_app._get_current_object()
     threading.Thread(target=run_async_processing, args=(app_obj, InvestmentActivity, item_id), daemon=True).start()
@@ -237,7 +241,9 @@ def retry_activity_audio_summary(item_id):
     db.session.commit()
 
     app_obj = current_app._get_current_object()
-    from services.audio_service import run_summary_only
+    from services.audio_service import run_summary_only, clear_cancel
+    # 同样清除可能的取消标志，避免重新总结被立即取消
+    clear_cancel(InvestmentActivity, item_id)
     threading.Thread(
         target=run_summary_only,
         args=(app_obj, InvestmentActivity, item_id, model_id),

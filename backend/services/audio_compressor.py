@@ -249,12 +249,18 @@ def run_night_compression(threshold_bytes=0):
     """
     夜间批量压缩：扫描所有录音文件，压缩所有文件为 zip
 
+    [V15.5 已废弃/屏蔽] 录音方式已更新，不再需要夜间压缩音频文件大小。
+    调度入口 services/night_scheduler.start_night_scheduler 已移除，app.py 中启动
+    代码已注释关闭，此函数不会被调用。保留实现以备查。
+
     Args:
         threshold_bytes: 文件大小阈值（字节），默认 0 = 压缩所有文件
 
     Returns:
         dict: { 'processed': int, 'compressed': int, 'skipped': int, 'errors': int }
     """
+    # 屏蔽：录音方式更新后不再执行实际压缩
+    return {'processed': 0, 'compressed': 0, 'skipped': 0, 'errors': 0, 'disabled': True}
     import json
     from models import ActivityLedger
     from extensions import db

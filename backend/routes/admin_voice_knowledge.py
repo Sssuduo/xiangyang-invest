@@ -17,6 +17,7 @@ from models.investment import InvestmentActivity
 from routes import admin_voice_knowledge_bp
 from routes.business_auth import dual_login_required, visitor_block
 from services.voice_knowledge import VoiceKnowledgeService
+from extensions import db  # 修复 NameError: 多处 db.session.commit() 需要 db
 
 logger = logging.getLogger(__name__)
 

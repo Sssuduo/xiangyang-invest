@@ -1,0 +1,5 @@
+# 约束换行符，避免 Windows CRLF 在 Linux 服务器 / 钩子里解析失败
+*.sh text eol=lf
+*.githooks/* text eol=lf
+.githooks/* text eol=lf
+*.ps1 text eol=crlf

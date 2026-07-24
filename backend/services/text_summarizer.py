@@ -229,8 +229,8 @@ CHUNK_SIZE = 50000  # 单段 LLM 输入上限（字符）；超出则分段总�
 
 # 发言分段 / 清洁版 阶段：必须 100% 回写原文（仅加发言人标记），故按小块回写，
 # 避免 max_tokens 上限导致模型无法完整输出原文而丢内容。
-ECHO_CHUNK_SIZE = 1500  # 回写阶段单块字符上限（需保证模型能把整块原文完整输出）
-ECHO_MAX_TOKENS = 4096  # 回写阶段单块输出上限（需 >= 单块字符数对应的 token 数）
+ECHO_CHUNK_SIZE = 2000  # 回写阶段单块字符上限（需保证模型能把整块原文完整输出）
+ECHO_MAX_TOKENS = 6000  # 回写阶段单块输出上限（需 >= 单块字符数对应的 token 数）
 
 
 def _chunk_text(text, size=CHUNK_SIZE):

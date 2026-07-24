@@ -303,11 +303,25 @@ def run_summary_only(app, model_class: type, item_id: int, model_id: int = None)
             db.session.commit()
             return
         f = _fields(item)
+
+        # 进度回调：将分块处理进度与预估剩余时间写入 DB，供前端进度条实时展示
+        def _on_progress(p):
+            try:
+                eta = p.get('eta_sec', 0)
+                eta_str = f'预估剩余约 {eta // 60} 分 {eta % 60} 秒' if eta >= 60 else f'预估剩余约 {eta} 秒'
+                setattr(item, f["message"],
+                        f"{p['stage']}：第 {p['block']}/{p['block_total']} 块 | 总进度 {p['pct']}% | {eta_str}")
+                setattr(item, f["pct"], p['pct'])
+                db.session.commit()
+            except Exception:
+                pass
+
         setattr(item, f["status"], 'summarizing')
-        setattr(item, f["message"], '正在总结...')
+        setattr(item, f["message"], '准备中：正在分析文本结构...')
+        setattr(item, f["pct"], 0)
         db.session.commit()
         try:
-            apply_summary_to_item(item, getattr(item, f["transcript"]) or '', model_id=model_id)
+            apply_summary_to_item(item, getattr(item, f["transcript"]) or '', model_id=model_id, progress_callback=_on_progress)
             setattr(item, f["status"], 'completed')
             setattr(item, f["pct"], 100)
             setattr(item, f["message"], '处理完成')
@@ -318,7 +332,7 @@ def run_summary_only(app, model_class: type, item_id: int, model_id: int = None)
             db.session.commit()
 
 
-def apply_summary_to_item(item, full_text: str, model_id: int = None):
+def apply_summary_to_item(item, full_text: str, model_id: int = None, progress_callback=None):
     """对 item 生成结构化总结 (segmented + clean + summary + docx)"""
     from services.text_summarizer import summarize_meeting
     from services.meeting_document import generate_meeting_docx
@@ -327,7 +341,7 @@ def apply_summary_to_item(item, full_text: str, model_id: int = None):
 
     logger.info(f'后台结构化总结开始：{type(item).__name__} id={item.id}，{len(full_text)} 字，model_id={model_id}')
     try:
-        summary_result = summarize_meeting(full_text, model_id=model_id)
+        summary_result = summarize_meeting(full_text, model_id=model_id, progress_callback=progress_callback)
         setattr(item, f["segmented"], summary_result.get('segmented', ''))
         setattr(item, f["clean"], summary_result.get('clean', ''))
         setattr(item, f["structured"], summary_result.get('summary', ''))

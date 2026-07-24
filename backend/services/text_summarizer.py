@@ -17,10 +17,7 @@ V15.3 变更:
 """
 import logging
 import re
-
-logger = logging.getLogger(__name__)
-import logging
-import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +90,12 @@ SUMMARY_USER_PROMPT = """请基于以下会议文本生成结构化摘要。
 
 # ===================== V15.2 三阶段总结函数 =====================
 
-def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
+def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, progress_callback=None) -> str:
     """阶段1: 发言分段 — 仅识别发言人并插入 [发言N]: 标记, 100% 保留原文内容, 不增不减。
 
     按小块 (ECHO_CHUNK_SIZE) 逐块回写, 确保模型能把整块原文完整输出 (避免 max_tokens 截断丢内容);
     若某块回写内容明显短于原文 (被截断), 退回该块原文以保证不丢内容; 最后全局重排发言人编号。
+    progress_callback(block, total): 每完成一块回调一次, 用于上报进度。
     """
     if not transcript or not transcript.strip():
         return ''
@@ -110,7 +108,8 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -
 
     pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
     out_parts = []
-    for piece in pieces:
+    total = len(pieces)
+    for idx, piece in enumerate(pieces, 1):
         # === Phase 4: 注入语音知识库提示 ===
         system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
@@ -132,14 +131,20 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -
         if len(result) < len(piece) * 0.7:
             result = piece
         out_parts.append(result)
+        if progress_callback:
+            try:
+                progress_callback(idx, total)
+            except Exception:
+                pass
 
     return _renumber_speakers('\n\n'.join(out_parts))
 
 
-def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
+def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, progress_callback=None) -> str:
     """阶段2: 清洁版（输入：带标记的分段文本）— 仅整理措辞/剔除语气词, 保留全部实质性内容。
 
     同样按小块 (ECHO_CHUNK_SIZE) 回写, 避免 max_tokens 截断丢内容; 回写明显短于原文时退回原文。
+    progress_callback(block, total): 每完成一块回调一次, 用于上报进度。
     """
     if not transcript or not transcript.strip():
         return ''
@@ -152,7 +157,8 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> 
 
     pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
     out_parts = []
-    for piece in pieces:
+    total = len(pieces)
+    for idx, piece in enumerate(pieces, 1):
         # === Phase 4: 注入语音知识库提示 ===
         system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
@@ -174,6 +180,11 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> 
         if len(result) < len(piece) * 0.6:
             result = piece
         out_parts.append(result)
+        if progress_callback:
+            try:
+                progress_callback(idx, total)
+            except Exception:
+                pass
 
     return '\n\n'.join(out_parts)
 
@@ -306,11 +317,16 @@ def _merge_summaries(parts, knowledge_block, model_id=None):
     return final
 
 
-def summarize_meeting(transcript: str, model_id=None) -> dict:
-    """三版总结 (串行调用 3 次 LLM, 避免截断)
+def summarize_meeting(transcript: str, model_id=None, progress_callback=None) -> dict:
+    """三版总结 (串行调用, 避免截断)
 
     超长录音（> CHUNK_SIZE）按块分段处理各阶段，最后将多段局部总结合并为统一总结，
     避免任一阶段因输入超长被截断而丢失内容。
+
+    进度上报: 若提供 progress_callback, 将以 dict 形式回调:
+        {'stage': 阶段名, 'stage_index': 1-3, 'stage_total': 3,
+         'block': 当前块序号, 'block_total': 本阶段总块数,
+         'pct': 总体百分比(0-99), 'eta_sec': 预估剩余秒数}
 
     Returns:
         dict: {'segmented': str, 'clean': str, 'summary': str}
@@ -320,26 +336,65 @@ def summarize_meeting(transcript: str, model_id=None) -> dict:
 
     knowledge_block = build_meeting_knowledge(transcript[:2000])
 
+    # ----- 进度统计 -----
+    phase1_blocks = max(1, len(_chunk_text(transcript, ECHO_CHUNK_SIZE)))
+    phase2_blocks = phase1_blocks  # segmented 长度≈原文, 块数相近
+    phase3_blocks = 1  # 阶段2完成后基于 clean 精确修正
+    total_blocks = [phase1_blocks + phase2_blocks + phase3_blocks]
+    done_blocks = [0]
+    start_time = [time.time()]
+
+    def _report(stage_label, stage_index, block, block_total):
+        done_blocks[0] += 1
+        pct = int(done_blocks[0] / max(total_blocks[0], 1) * 100)
+        elapsed = time.time() - start_time[0]
+        per_block = elapsed / max(done_blocks[0], 1)
+        remain = max(total_blocks[0] - done_blocks[0], 0)
+        eta_sec = int(per_block * remain)
+        if progress_callback:
+            try:
+                progress_callback({
+                    'stage': stage_label,
+                    'stage_index': stage_index,
+                    'stage_total': 3,
+                    'block': block,
+                    'block_total': block_total,
+                    'pct': min(pct, 99),
+                    'eta_sec': eta_sec,
+                })
+            except Exception:
+                pass
+
     # 阶段1：发言分段（内部按小块回写，保证 100% 保留原文；全局重排发言人编号）
     logger.info(f'阶段1/3: 发言分段 ({len(transcript)} 字输入)')
-    segmented = segment_meeting(transcript, knowledge_block, model_id)
+    segmented = segment_meeting(
+        transcript, knowledge_block, model_id,
+        progress_callback=lambda b, t: _report('发言分段', 1, b, t),
+    )
 
     # 阶段2：清洁版（基于分段输出，内部同样按小块回写，避免截断丢内容）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')
-    clean = clean_meeting(segmented, knowledge_block, model_id)
-
-    # 阶段3：摘要版（clean 分块各自生成局部总结，再合并为统一总结）
-    logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字输入)')
-    summary = _merge_summaries(
-        [summarize_meeting_inner(chunk, chunk, knowledge_block, model_id) for chunk in _chunk_text(clean)],
-        knowledge_block,
-        model_id,
+    clean = clean_meeting(
+        segmented, knowledge_block, model_id,
+        progress_callback=lambda b, t: _report('清洁整理', 2, b, t),
     )
+
+    # 阶段3：摘要版（clean 分块各自生成局部总结，再合并；精确修正块数）
+    clean_chunks = _chunk_text(clean)
+    phase3_blocks = max(1, len(clean_chunks)) + 1  # +1 代表最终合并
+    total_blocks[0] = phase1_blocks + phase2_blocks + phase3_blocks
+    logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字, {len(clean_chunks)} 块)')
+    summary_parts = []
+    for ci, chunk in enumerate(clean_chunks, 1):
+        summary_parts.append(summarize_meeting_inner(chunk, chunk, knowledge_block, model_id))
+        _report('智能摘要', 3, ci, phase3_blocks)
+    summary = _merge_summaries(summary_parts, knowledge_block, model_id)
+    _report('智能摘要', 3, phase3_blocks, phase3_blocks)  # 合并完成
 
     return {
         'segmented': segmented,
         'clean': clean,
-        'summary': summary
+        'summary': summary,
     }
 
 

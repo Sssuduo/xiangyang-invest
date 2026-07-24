@@ -196,13 +196,16 @@ def retry_audio_recognition(item_id):
             'message': '录音转写服务未连接，请联系管理员苏铎确认其笔记本已联网并启动转写服务（asr_service.sh）'
         }), 409
 
+    # 清除可能残留的取消标记，确保新任务不会被误判为已取消
+    from services.audio_service import run_async_processing, clear_cancel
+    clear_cancel(ActivityLedger, item_id)
+
     item.audio_status = 'asr_processing'
     item.progress_message = '转写准备中...'
     item.progress_pct = 0
     db.session.commit()
 
     app = current_app._get_current_object()
-    from services.audio_service import run_async_processing
     threading.Thread(target=run_async_processing, args=(app, ActivityLedger, item_id), daemon=True).start()
 
     return jsonify({
@@ -240,13 +243,17 @@ def retry_audio_summary(item_id):
         except (TypeError, ValueError):
             return jsonify({'code': 1, 'message': '模型 ID 格式无效'}), 400
 
+    # 清除该条目上可能残留的"取消"标记（register_cancel 设置的内存 Event 持久不自动清除，
+    # 若不清除，新启动的总结线程会在 run_summary_only 开头被 is_task_cancelled 误判为已取消而立即退出）
+    from services.audio_service import run_summary_only, clear_cancel
+    clear_cancel(ActivityLedger, item_id)
+
     item.audio_status = 'summarizing'
     item.progress_message = '正在总结...'
     item.summary_model_id = model_id if model_id else None
     db.session.commit()
 
     app_obj = current_app._get_current_object()
-    from services.audio_service import run_summary_only
     threading.Thread(target=run_summary_only, args=(app_obj, ActivityLedger, item_id, model_id), daemon=True).start()
     return jsonify({'code': 0, 'message': '正在开始生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
 

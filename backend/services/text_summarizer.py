@@ -93,12 +93,12 @@ SUMMARY_USER_PROMPT = """请基于以下会议文本生成结构化摘要。
 
 # ===================== V15.2 三阶段总结函数 =====================
 
-def segment_meeting(transcript: str, knowledge_block: str = '') -> str:
+def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
     """阶段1: 发言分段"""
     if not transcript or not transcript.strip():
         return ''
 
-    config = _get_llm_config()
+    config = _get_llm_config(model_id)
     if not config:
         return transcript  # 降级：返回原文
 
@@ -129,12 +129,12 @@ def segment_meeting(transcript: str, knowledge_block: str = '') -> str:
         return transcript  # 降级：返回原文
 
 
-def clean_meeting(transcript: str, knowledge_block: str = '') -> str:
+def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
     """阶段2: 清洁版（输入：带标记的分段文本）"""
     if not transcript or not transcript.strip():
         return ''
 
-    config = _get_llm_config()
+    config = _get_llm_config(model_id)
     if not config:
         return transcript  # 降级
 
@@ -165,12 +165,12 @@ def clean_meeting(transcript: str, knowledge_block: str = '') -> str:
         return transcript  # 降级
 
 
-def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_block: str = '') -> str:
+def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_block: str = '', model_id=None) -> str:
     """阶段3: 摘要版（基于清洁版 + 发言分段，确保信息不丢失）"""
     if not transcript or not transcript.strip():
         return '无有效内容，无法生成摘要。'
 
-    config = _get_llm_config()
+    config = _get_llm_config(model_id)
     if not config:
         return '（未配置 AI 模型，请先配置 LLM 模型后使用此功能）'
 
@@ -239,8 +239,8 @@ SUMMARY_MERGE_INSTRUCTION = """你正在将同一场会议的多段局部总结�
 保持关键实体（人名、机构、金额、时间、地点）不变。不要新增原文没有的信息。"""
 
 
-def _do_merge(text, knowledge_block):
-    config = _get_llm_config()
+def _do_merge(text, knowledge_block, model_id=None):
+    config = _get_llm_config(model_id)
     if not config:
         return text  # 无模型配置时退化为拼接，避免丢失内容
     from services.llm_service import call_llm
@@ -260,7 +260,7 @@ def _do_merge(text, knowledge_block):
         return text
 
 
-def _merge_summaries(parts, knowledge_block):
+def _merge_summaries(parts, knowledge_block, model_id=None):
     """将多段局部总结合并为一份统一总结；过长时分块合并，最终合并若仍超长则退化为拼接，避免死循环。"""
     parts = [p for p in parts if p and p.strip()]
     if not parts:
@@ -269,11 +269,11 @@ def _merge_summaries(parts, knowledge_block):
         return parts[0]
     combined = '\n\n'.join(f'【第 {i + 1} 部分】\n{p}' for i, p in enumerate(parts))
     if len(combined) <= CHUNK_SIZE:
-        return _do_merge(combined, knowledge_block)
-    sub = [_do_merge(c, knowledge_block) for c in _chunk_text(combined)]
+        return _do_merge(combined, knowledge_block, model_id)
+    sub = [_do_merge(c, knowledge_block, model_id) for c in _chunk_text(combined)]
     final = '\n\n'.join(sub)
     if len(final) <= CHUNK_SIZE:
-        return _do_merge(final, knowledge_block)
+        return _do_merge(final, knowledge_block, model_id)
     return final
 
 
@@ -294,20 +294,21 @@ def summarize_meeting(transcript: str, model_id=None) -> dict:
     # 阶段1：发言分段（按块处理，避免超长截断丢内容）
     logger.info(f'阶段1/3: 发言分段 ({len(transcript)} 字输入)')
     segmented = '\n\n'.join(
-        p for p in (segment_meeting(chunk, knowledge_block) for chunk in _chunk_text(transcript)) if p and p.strip()
+        p for p in (segment_meeting(chunk, knowledge_block, model_id) for chunk in _chunk_text(transcript)) if p and p.strip()
     )
 
     # 阶段2：清洁版（基于分段输出按块处理）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')
     clean = '\n\n'.join(
-        p for p in (clean_meeting(chunk, knowledge_block) for chunk in _chunk_text(segmented)) if p and p.strip()
+        p for p in (clean_meeting(chunk, knowledge_block, model_id) for chunk in _chunk_text(segmented)) if p and p.strip()
     )
 
     # 阶段3：摘要版（clean 分块各自生成局部总结，再合并为统一总结）
     logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字输入)')
     summary = _merge_summaries(
-        [summarize_meeting_inner(chunk, chunk, knowledge_block) for chunk in _chunk_text(clean)],
+        [summarize_meeting_inner(chunk, chunk, knowledge_block, model_id) for chunk in _chunk_text(clean)],
         knowledge_block,
+        model_id,
     )
 
     return {

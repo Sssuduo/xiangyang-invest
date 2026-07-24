@@ -249,7 +249,7 @@ def retry_activity_audio_summary(item_id):
         args=(app_obj, InvestmentActivity, item_id, model_id),
         daemon=True
     ).start()
-    return jsonify({'code': 0, 'message': '正在重新生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
+    return jsonify({'code': 0, 'message': '正在开始生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
 
 
 # ---------------------------------------------------------------------------

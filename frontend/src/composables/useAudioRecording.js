@@ -6,19 +6,19 @@
  *
  * 所有与具体业务相关的接口都通过 opts 注入，composable 本身不耦合任何 api 模块：
  *  - 上传 / 详情 / 重试识别 / 取消 / 删除 / 删单文件
- *  - 多版本拉取 / 重新总结(与 ASR 解耦) / 保存转写 / LLM 模型列表 / docx 下载地址
+ *  - 多版本拉取 / 开始总结(与 ASR 解耦) / 保存转写 / LLM 模型列表 / docx 下载地址
  *  - 术语校正（接口为两端共用的 /api/admin/term-corrections，直接在此 import）
  *
  * @param {Object} opts
  * @param {Function} opts.getItemId            - () => 当前编辑项 id（ref.value）
  * @param {Function} opts.apiUpload            - (itemId, file, onProgress, appendMode) => Promise
  * @param {Function} opts.apiDetail            - (itemId) => Promise  (返回 {code, data:{audio_files, audio_status, ...}})
- * @param {Function} opts.apiRetry             - (itemId) => Promise  (重新识别)
+ * @param {Function} opts.apiRetry             - (itemId) => Promise  (开始识别)
  * @param {Function} opts.apiCancel            - (itemId) => Promise  (取消处理)
  * @param {Function} opts.apiDelete            - (itemId) => Promise  (删除全部录音)
  * @param {Function} opts.apiDeleteFile        - (itemId, fileIndex) => Promise  (删除单个录音文件)
  * @param {Function} [opts.apiVersions]        - (itemId) => Promise  (拉取结构化多版本：segmented/clean/structured)
- * @param {Function} [opts.apiRetrySummary]    - (itemId, payload|null) => Promise  (仅重新总结)
+ * @param {Function} [opts.apiRetrySummary]    - (itemId, payload|null) => Promise  (仅开始总结)
  * @param {Function} [opts.apiUpdateTranscript]- (itemId, {transcript}) => Promise  (保存转写文本)
  * @param {Function} [opts.apiLLMModels]       - () => Promise  (返回 {code, data:[{id,name}...]})
  * @param {Function} [opts.apiDocxUrl]         - (itemId) => string  (docx 下载地址)
@@ -133,14 +133,14 @@ export function useAudioRecording(opts) {
       }
       _backfillEdit(audioDetail.value)
       if (detail.audio_status === 'asr_completed') {
-        ElMessage.success('转写完成，请点击“重新总结”生成结构化总结')
+        ElMessage.success('转写完成，请点击“开始总结”生成结构化总结')
       } else if (detail.audio_status === 'completed') {
         ElMessage.success('录音转写和总结完成！')
       } else if (detail.audio_status === 'summary_failed') {
-        ElMessage.error('结构化总结失败，请检查大模型服务后点击“重新总结”')
+        ElMessage.error('结构化总结失败，请检查大模型服务后点击“开始总结”')
       }
     } else if (['asr_failed', 'failed'].includes(detail.audio_status)) {
-      ElMessage.error('后台转写失败，可删除后重新上传或点击重新识别')
+      ElMessage.error('后台转写失败，可删除后重新上传或点击开始识别')
     }
     onRefresh?.()
   }
@@ -184,8 +184,8 @@ export function useAudioRecording(opts) {
         if (res.code === 0) {
           audioFiles.value = res.data.audio_files || []
           audioDetail.value = { audio_transcript: null, audio_summary: null }
-          audioStatus.value = 'processing'
-          audioProcessing.value = true
+          audioStatus.value = 'uploaded'
+          audioProcessing.value = false
         } else {
           ElMessage.error(res.message || '录音处理失败')
         }
@@ -288,10 +288,10 @@ export function useAudioRecording(opts) {
         summaryModified.value = false
         startPolling(id)
       } else {
-        ElMessage.error(res.message || '重新识别失败')
+        ElMessage.error(res.message || '开始识别失败')
       }
     } catch (err) {
-      ElMessage.error('重新识别失败：' + (err.message || '未知错误'))
+      ElMessage.error('开始识别失败：' + (err.message || '未知错误'))
     }
   }
 
@@ -353,7 +353,7 @@ export function useAudioRecording(opts) {
     }
   }
 
-  // 重新总结（与 ASR 解耦）
+  // 开始总结（与 ASR 解耦）
   async function retrySummary(itemId) {
     const id = _resolveId(itemId)
     if (!id) return

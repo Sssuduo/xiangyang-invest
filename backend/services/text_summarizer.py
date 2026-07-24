@@ -104,7 +104,7 @@ def segment_meeting(transcript: str, knowledge_block: str = '') -> str:
 
     from services.llm_service import call_llm
 
-    max_input_chars = 30000
+    max_input_chars = 50000
     truncated = transcript[:max_input_chars]
 
     # === Phase 4: 注入语音知识库提示 ===
@@ -140,7 +140,7 @@ def clean_meeting(transcript: str, knowledge_block: str = '') -> str:
 
     from services.llm_service import call_llm
 
-    max_input_chars = 30000
+    max_input_chars = 50000
     truncated = transcript[:max_input_chars]
 
     # === Phase 4: 注入语音知识库提示 ===
@@ -176,7 +176,7 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
 
     from services.llm_service import call_llm
 
-    max_input_chars = 15000
+    max_input_chars = 50000
     truncated_clean = transcript[:max_input_chars]
     truncated_seg = segmented_text[:max_input_chars]
 
@@ -201,12 +201,87 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
         return f'摘要生成失败: {str(e)[:200]}'
 
 
+CHUNK_SIZE = 50000  # 单段 LLM 输入上限（字符）；超出则分段总结后合并
+
+
+def _chunk_text(text, size=CHUNK_SIZE):
+    """按段落/句子边界将长文本切成不超过 size 字符的块，尽量避免在句中断开。"""
+    if not text:
+        return []
+    if len(text) <= size:
+        return [text]
+    chunks = []
+    cur = ''
+    for para in re.split(r'\n\s*\n', text):
+        if len(cur) + len(para) + 2 <= size:
+            cur = (cur + '\n\n' + para) if cur else para
+            continue
+        if cur:
+            chunks.append(cur)
+            cur = ''
+        if len(para) <= size:
+            cur = para
+        else:
+            for sent in re.split(r'(?<=[。！？!?；;\n])', para):
+                if len(cur) + len(sent) <= size:
+                    cur = (cur + sent) if cur else sent
+                else:
+                    if cur:
+                        chunks.append(cur)
+                    cur = sent
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+SUMMARY_MERGE_INSTRUCTION = """你正在将同一场会议的多段局部总结合并为一份统一的结构化总结。
+请保留原有四个维度（核心结论 / 关键议题 / 待办事项 / 风险提示），去重并合并相似条目，
+保持关键实体（人名、机构、金额、时间、地点）不变。不要新增原文没有的信息。"""
+
+
+def _do_merge(text, knowledge_block):
+    config = _get_llm_config()
+    if not config:
+        return text  # 无模型配置时退化为拼接，避免丢失内容
+    from services.llm_service import call_llm
+    system = SUMMARY_MERGE_INSTRUCTION
+    if knowledge_block:
+        system += '\n\n# 术语与专有名词参考\n' + knowledge_block
+    user = f'请将以下多段局部总结合并为一份统一的结构化总结：\n\n{text}'
+    try:
+        return call_llm(
+            config,
+            [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+            temperature=0.3,
+            max_tokens=6000,
+        ).strip()
+    except Exception as e:
+        logger.warning(f'合并总结失败：{e}')
+        return text
+
+
+def _merge_summaries(parts, knowledge_block):
+    """将多段局部总结合并为一份统一总结；过长时分块合并，最终合并若仍超长则退化为拼接，避免死循环。"""
+    parts = [p for p in parts if p and p.strip()]
+    if not parts:
+        return ''
+    if len(parts) == 1:
+        return parts[0]
+    combined = '\n\n'.join(f'【第 {i + 1} 部分】\n{p}' for i, p in enumerate(parts))
+    if len(combined) <= CHUNK_SIZE:
+        return _do_merge(combined, knowledge_block)
+    sub = [_do_merge(c, knowledge_block) for c in _chunk_text(combined)]
+    final = '\n\n'.join(sub)
+    if len(final) <= CHUNK_SIZE:
+        return _do_merge(final, knowledge_block)
+    return final
+
+
 def summarize_meeting(transcript: str, model_id=None) -> dict:
     """三版总结 (串行调用 3 次 LLM, 避免截断)
 
-    Args:
-        transcript: 原始 ASR 转写文本
-        model_id: 用户选择的 LLM 模型 ID (可选, None 使用默认激活模型)
+    超长录音（> CHUNK_SIZE）按块分段处理各阶段，最后将多段局部总结合并为统一总结，
+    避免任一阶段因输入超长被截断而丢失内容。
 
     Returns:
         dict: {'segmented': str, 'clean': str, 'summary': str}
@@ -214,20 +289,26 @@ def summarize_meeting(transcript: str, model_id=None) -> dict:
     if not transcript or not transcript.strip():
         return {'segmented': '', 'clean': '', 'summary': '无录音内容，无法生成总结。'}
 
-    # 构建知识块 (3 次调用复用)
     knowledge_block = build_meeting_knowledge(transcript[:2000])
 
-    # 阶段 1: 发言分段
+    # 阶段1：发言分段（按块处理，避免超长截断丢内容）
     logger.info(f'阶段1/3: 发言分段 ({len(transcript)} 字输入)')
-    segmented = segment_meeting(transcript, knowledge_block)
+    segmented = '\n\n'.join(
+        p for p in (segment_meeting(chunk, knowledge_block) for chunk in _chunk_text(transcript)) if p and p.strip()
+    )
 
-    # 阶段 2: 清洁版 (基于分段输出)
+    # 阶段2：清洁版（基于分段输出按块处理）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')
-    clean = clean_meeting(segmented, knowledge_block)
+    clean = '\n\n'.join(
+        p for p in (clean_meeting(chunk, knowledge_block) for chunk in _chunk_text(segmented)) if p and p.strip()
+    )
 
-    # 阶段 3: 摘要版 (基于发言分段 + 清洁版，确保信息不丢失)
-    logger.info(f'阶段3/3: 摘要版 (segmented={len(segmented)} clean={len(clean)} 字输入)')
-    summary = summarize_meeting_inner(clean, segmented, knowledge_block)
+    # 阶段3：摘要版（clean 分块各自生成局部总结，再合并为统一总结）
+    logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字输入)')
+    summary = _merge_summaries(
+        [summarize_meeting_inner(chunk, chunk, knowledge_block) for chunk in _chunk_text(clean)],
+        knowledge_block,
+    )
 
     return {
         'segmented': segmented,

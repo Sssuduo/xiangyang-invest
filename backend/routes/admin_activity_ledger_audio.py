@@ -248,7 +248,7 @@ def retry_audio_summary(item_id):
     app_obj = current_app._get_current_object()
     from services.audio_service import run_summary_only
     threading.Thread(target=run_summary_only, args=(app_obj, ActivityLedger, item_id, model_id), daemon=True).start()
-    return jsonify({'code': 0, 'message': '正在重新生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
+    return jsonify({'code': 0, 'message': '正在开始生成总结（与 ASR 服务独立）...', 'data': {'audio_status': 'summarizing'}})
 
 
 # ---------------------------------------------------------------------------

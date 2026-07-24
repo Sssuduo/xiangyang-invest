@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 logger = logging.getLogger(__name__)
 
 
-def call_llm(model_config, messages, temperature=None, max_tokens=None):
+def call_llm(model_config, messages, temperature=None, max_tokens=None, enable_web_search=True):
     """
     统一调用 OpenAI 兼容 / 国产大模型 API
 
@@ -32,7 +32,7 @@ def call_llm(model_config, messages, temperature=None, max_tokens=None):
     elif provider == 'qwen':
         return _call_qwen(model_config, messages, temperature, max_tokens)
     elif provider == 'glm':
-        return _call_glm(model_config, messages, temperature, max_tokens)
+        return _call_glm(model_config, messages, temperature, max_tokens, enable_web_search=enable_web_search)
     else:
         # custom / deepseek / 其他 OpenAI 兼容
         return _call_openai_compatible(model_config, messages, temperature, max_tokens)
@@ -95,7 +95,7 @@ def _call_qwen(model_config, messages, temperature=None, max_tokens=None):
     return data['choices'][0]['message']['content']
 
 
-def _call_glm(model_config, messages, temperature=None, max_tokens=None):
+def _call_glm(model_config, messages, temperature=None, max_tokens=None, enable_web_search=True):
     """智谱 GLM — 注入独立 Web Search API 结果到 prompt
 
     智谱的 tools 模式 web_search 需要 model 返回 tool_calls 后才能获取结果，
@@ -120,8 +120,12 @@ def _call_glm(model_config, messages, temperature=None, max_tokens=None):
     if not search_query:
         search_query = '招商引资 企业信息'
 
-    # Step 2: 调用独立的 Web Search API
-    search_results = _glm_web_search(api_key, search_query, count=5)
+    # Step 2: 调用独立的 Web Search API（仅当启用联网搜索时；
+    # 会议录音的总结/分段/清洁属本地文本处理，关闭可避免无关搜索结果污染 prompt 且显著提速）
+    if enable_web_search:
+        search_results = _glm_web_search(api_key, search_query, count=5)
+    else:
+        search_results = []
 
     # Step 3: 将搜索结果注入到 messages 中
     enriched_messages = list(messages)

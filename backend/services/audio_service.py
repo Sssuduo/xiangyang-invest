@@ -154,7 +154,6 @@ def run_async_processing(app, model_class: type, item_id: int):
             all_texts = []
             total_ok = 0
             total_err = 0
-            _transcript_cache = {}
             total_files = len(files)
 
             # 预计算切片数
@@ -192,9 +191,13 @@ def run_async_processing(app, model_class: type, item_id: int):
                     _set_status(item, 'cancelled', None, '处理已取消')
                     return
 
-                if af.get('status') == 'ok' and i in _transcript_cache:
+                # 续传优化：已识别成功且转写内容已落盘（本地 audio_files）的录音，
+                # 直接复用其已保存文本，不再重复调用 ASR。
+                # 因此「重新识别」只会重跑失败/未完成的录音，已成功的录音内容从本地读取。
+                if af.get('status') == 'ok' and af.get('transcript'):
                     slices_completed += file_slice_counts[i]
-                    all_texts.append(_transcript_cache[i])
+                    all_texts.append(af['transcript'])
+                    total_ok += 1
                     continue
 
                 file_path = resolve_audio_path_by_url(af['url'])
@@ -211,7 +214,7 @@ def run_async_processing(app, model_class: type, item_id: int):
                     text = asr_result['text']
                     af['status'] = 'ok'
                     af['error'] = ''
-                    _transcript_cache[i] = text
+                    af['transcript'] = text  # 本地落盘，供后续「重新识别」续传复用
                     all_texts.append(text)
                     total_ok += 1
                     set_audio_files(item, files)

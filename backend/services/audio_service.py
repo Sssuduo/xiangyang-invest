@@ -175,9 +175,7 @@ def run_async_processing(app, model_class: type, item_id: int):
                 setattr(item, pw["pct"], min(pct, 99))
                 elapsed = _time.time() - start_time
                 if slices_completed > 0 and elapsed > 1:
-                    avg = elapsed / slices_completed
-                    remaining = max(1, int(avg * (total_slices - slices_completed)) // 60)
-                    msg = f'正在识别 ({slices_completed}/{total_slices} 段) · 约 {remaining} 分钟'
+                    msg = f'正在识别 ({slices_completed}/{total_slices} 段)'
                 else:
                     msg = f'正在识别 ({slices_completed}/{total_slices} 段)...'
                 setattr(item, pw["message"], msg)
@@ -262,7 +260,7 @@ def run_async_processing(app, model_class: type, item_id: int):
             if full_text.strip():
                 setattr(item, f["status"], 'asr_completed')
                 setattr(item, f["pct"], 100)
-                setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“重新总结”')
+                setattr(item, f["message"], f'转写完成 ({total_ok}/{total_files} 文件)，请点击“开始总结”')
                 # V16.0 修复：清除上一轮失败/旧总结残留，避免界面把旧错误文本误显示成“失败”
                 setattr(item, f["summary"], '')
                 setattr(item, f["segmented"], '')

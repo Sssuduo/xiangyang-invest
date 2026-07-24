@@ -271,7 +271,7 @@
                 <el-button size="small" type="danger" plain @click="handleCancelAudio">取消</el-button>
               </div>
 
-              <!-- 操作按钮：追加录音 / 重新识别 / 删除全部录音 同一行 -->
+              <!-- 操作按钮：追加录音 / 开始识别 / 删除全部录音 同一行 -->
               <div v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
                 <el-upload
                   :show-file-list="false"
@@ -284,7 +284,7 @@
                   </el-button>
                 </el-upload>
                 <el-button v-if="audioFiles.length > 0" size="small" type="warning" plain @click="handleRetryAudio">
-                  <el-icon><RefreshRight /></el-icon> 重新识别
+                  <el-icon><RefreshRight /></el-icon> 开始识别
                 </el-button>
                 <el-popconfirm v-if="audioFiles.length > 0" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
                   <template #reference>
@@ -325,7 +325,7 @@
                   <el-select v-model="selectedLlmModel" placeholder="选择模型" size="small" clearable style="width: 140px;" :loading="false">
                     <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
                   </el-select>
-                  <el-button size="small" type="primary" plain @click="handleRetrySummary">重新总结</el-button>
+                  <el-button size="small" type="primary" plain @click="handleRetrySummary">开始总结</el-button>
                   <el-button size="small" plain @click="openTextCorrection">文本校正</el-button>
                   <el-button size="small" plain @click="openTermDrawer">术语管理</el-button>
                   <el-button v-if="audioDetail?.audio_docx_path" size="small" plain @click="downloadAudioDocx">
@@ -368,7 +368,7 @@
                 </el-table-column>
               </el-table>
               <div class="term-drawer-footer">
-                <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并重新总结</el-button>
+                <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并开始总结</el-button>
                 <el-button @click="termDrawerVisible = false">关闭</el-button>
               </div>
             </div>

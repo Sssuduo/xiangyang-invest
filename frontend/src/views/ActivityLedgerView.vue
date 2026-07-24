@@ -255,7 +255,7 @@
         </el-table>
 
         <div class="term-drawer-footer">
-          <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并重新总结</el-button>
+          <el-button type="primary" :loading="termLoading" @click="handleApplyTerms">应用并开始总结</el-button>
           <el-button @click="termDrawerVisible = false">关闭</el-button>
         </div>
       </div>
@@ -390,19 +390,6 @@
                   </el-tag>
                 </div>
 
-                <!-- 上传入口：独立于文件有无，非处理中时始终可用（单个组件同时支持首文件/追加） -->
-                <el-upload
-                  v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'"
-                  :show-file-list="false"
-                  :auto-upload="false"
-                  :on-change="onAudioFileChange"
-                  accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
-                >
-                  <el-button size="small" type="primary" plain>
-                    <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
-                  </el-button>
-                </el-upload>
-
                 <!-- 上传进度条（每个文件独立显示） -->
                 <div v-if="audioUploading && audioUploadList.length > 0" class="audio-upload-progress">
                   <div v-for="(item, idx) in audioUploadList" :key="idx" class="audio-upload-item">
@@ -411,17 +398,27 @@
                   </div>
                 </div>
 
-                <!-- 文件操作按钮行 (位于录音卡片下方、转写内容上方，与分段原文垂直对齐) -->
-                <div v-if="audioFiles.length > 0 && audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
-                  <el-button size="small" type="warning" plain @click="handleRetryAudio">
-                    <el-icon><RefreshRight /></el-icon> 重新识别
+                <!-- 操作按钮行：追加 / 开始识别 / 删除全部录音 同一行 -->
+                <div v-if="audioStatus !== 'asr_processing' && audioStatus !== 'summarizing'" class="audio-file-actions">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="false"
+                    :on-change="onAudioFileChange"
+                    accept=".wav,.mp3,.m4a,.ogg,.flac,.wma,.aac,.amr,.opus,.webm,.weba"
+                  >
+                    <el-button size="small" type="primary" plain>
+                      <el-icon><Plus /></el-icon> {{ audioFiles.length > 0 ? '追加录音文件' : '上传录音文件' }}
+                    </el-button>
+                  </el-upload>
+                  <el-button v-if="audioFiles.length > 0" size="small" type="warning" plain @click="handleRetryAudio">
+                    <el-icon><RefreshRight /></el-icon> 开始识别
                   </el-button>
                   <el-popconfirm v-if="audioFiles.length > 1" title="确定删除所有录音文件吗？" confirm-button-text="全部删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
                     <template #reference>
                       <el-button size="small" type="danger" plain>删除全部录音</el-button>
                     </template>
                   </el-popconfirm>
-                  <el-popconfirm v-else title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
+                  <el-popconfirm v-else-if="audioFiles.length === 1" title="确定删除该录音文件及转写/总结数据吗？" confirm-button-text="删除" cancel-button-text="取消" @confirm="handleDeleteAudio">
                     <template #reference>
                       <el-button size="small" type="danger" plain>删除录音</el-button>
                     </template>
@@ -435,7 +432,6 @@
                       <span class="section-label">
                         <el-icon><Document /></el-icon> 录音识别内容
                         <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ (audioDetail.audio_transcript || '').length }} 字</el-tag>
-                        <el-tag v-if="audioDetail?.estimated_summary_seconds" size="small" info effect="plain">{{ formatEstimate(audioDetail.estimated_summary_seconds) }}</el-tag>
                       </span>
                     </div>
                     <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
@@ -483,7 +479,7 @@
                     <el-option v-for="m in llmModels" :key="m.id" :label="m.name" :value="m.id" />
                   </el-select>
                   <el-button size="small" type="primary" plain @click="handleRetrySummary">
-                    <el-icon><Star /></el-icon> 重新总结
+                    <el-icon><Star /></el-icon> 开始总结
                   </el-button>
                   <el-button size="small" plain @click="openTextCorrection">
                     <el-icon><Document /></el-icon> 文本校正
@@ -592,7 +588,7 @@ const {
   termDrawerVisible, termCorrections, termLoading, termForm,
   selectAudioFile, loadAudioDetail,
   startPolling, stopPolling, resetAudio, downloadDocx,
-  formatDuration, formatEstimate, formatFileSize, scopeLabel, renderMd,
+  formatDuration, formatFileSize, scopeLabel, renderMd,
   // 以下以视图既有处理函数名对外暴露（模板绑定保持不变）
   retryAudio: handleRetryAudio,
   cancelAudio: handleCancelAudio,

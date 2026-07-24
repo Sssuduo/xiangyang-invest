@@ -124,6 +124,7 @@ def run_async_processing(app, model_class: type, item_id: int):
     """
     with app.app_context():
         try:
+            logger.info(f'后台转写线程启动：{model_class.__name__} {item_id}')
             from extensions import db
             item = db.session.get(model_class, item_id)
             if not item:
@@ -273,8 +274,8 @@ def run_async_processing(app, model_class: type, item_id: int):
                 setattr(item, f["summary"], '转写内容为空，无法生成总结')
             db.session.commit()
 
-        except Exception as e:
-            logger.error(f'后台处理失败：{model_class.__name__} {item_id}, 错误：{e}', exc_info=True)
+        except BaseException as e:
+            logger.error(f'后台处理失败（含 BaseException）：{model_class.__name__} {item_id}, 错误：{e}', exc_info=True)
             try:
                 from extensions import db
                 item = db.session.get(model_class, item_id)

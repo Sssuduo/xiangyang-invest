@@ -49,6 +49,37 @@ SEGMENT_DURATION = 30
 _UNREACHABLE_HINT = '录音转写服务未启动，请联系管理员苏铎'
 
 
+def _run_subprocess(cmd, timeout, capture=True):
+    """健壮执行子进程：独立会话 + 超时整体杀进程组。
+
+    避免 ffprobe/ffmpeg 产生的孙进程仍占用 stdout 管道，
+    导致 subprocess.run(timeout=...) 超时杀掉直接子进程后 run() 永不返回（管道悬挂）。
+
+    返回 (stdout_bytes, stderr_bytes, returncode)。
+    """
+    import signal
+    p = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+        stderr=subprocess.PIPE if capture else subprocess.DEVNULL,
+        start_new_session=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+    )
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # 超时：杀掉整个进程组（含孙进程），确保管道关闭、run() 必定返回
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        except Exception:
+            p.kill()
+        try:
+            out, err = p.communicate(timeout=5)
+        except Exception:
+            out, err = b'', b''
+    return out, err, p.returncode
+
+
 def check_asr_health(base_url=None):
     """检查 ASR 服务是否可用。
 
@@ -97,12 +128,9 @@ def _get_audio_duration(filepath):
         '-of', 'default=noprint_wrappers=1:nokey=1', filepath,
     ]
     try:
-        r = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return float(r.stdout.strip())
+        out, err, rc = _run_subprocess(cmd, 15)
+        if rc == 0 and out:
+            return float(out.decode('utf-8', 'ignore').strip())
     except Exception:
         pass
     return 0.0
@@ -124,11 +152,9 @@ def _split_audio_ffmpeg(input_path, output_dir, segment_duration=SEGMENT_DURATIO
            '-f', 'segment', '-segment_time', str(segment_duration),
            '-reset_timestamps', '1', out_pat]
     try:
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                           creationflags=creationflags)
-        if r.returncode != 0:
-            logger.error(f'切片失败：{r.stderr[-300:] if r.stderr else ""}')
+        out, err, rc = _run_subprocess(cmd, 600)
+        if rc != 0:
+            logger.error(f'切片失败：{err.decode("utf-8", "ignore")[-300:]}')
             return []
         segs = sorted(glob.glob(os.path.join(output_dir, f'_seg_{prefix}_*.wav')))
         logger.info(f'切分完成：{len(segs)} 段，每段 {segment_duration}s')

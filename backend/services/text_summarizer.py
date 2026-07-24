@@ -35,8 +35,8 @@ SEGMENT_SYSTEM_PROMPT = """您是专业的政务招商会议文本整理专员, 
 
 规则:
 - 当话题切换、发言人改变、或出现明显停顿(如"好的""接下来""另外一个事")时切段
-- 保留原文所有信息, 不增不减
-- 每段以 [发言N]: 开头(N从1递增)
+- 保留原文所有信息, 不增不减; 逐字保留每一句话, 严禁省略、缩写或概括任何原文句子
+- 每段以 [发言N]: 开头(N从1递增); 输出篇幅应与原文基本一致
 
 输出: 仅输出分段后的完整文本, 不加任何标题或说明"""
 
@@ -94,7 +94,11 @@ SUMMARY_USER_PROMPT = """请基于以下会议文本生成结构化摘要。
 # ===================== V15.2 三阶段总结函数 =====================
 
 def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
-    """阶段1: 发言分段"""
+    """阶段1: 发言分段 — 仅识别发言人并插入 [发言N]: 标记, 100% 保留原文内容, 不增不减。
+
+    按小块 (ECHO_CHUNK_SIZE) 逐块回写, 确保模型能把整块原文完整输出 (避免 max_tokens 截断丢内容);
+    若某块回写内容明显短于原文 (被截断), 退回该块原文以保证不丢内容; 最后全局重排发言人编号。
+    """
     if not transcript or not transcript.strip():
         return ''
 
@@ -104,33 +108,39 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -
 
     from services.llm_service import call_llm
 
-    max_input_chars = 50000
-    truncated = transcript[:max_input_chars]
+    pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
+    out_parts = []
+    for piece in pieces:
+        # === Phase 4: 注入语音知识库提示 ===
+        system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+        knowledge_fragment = _build_knowledge_fragment(piece[:2000])
+        if knowledge_fragment:
+            system += '\n\n' + knowledge_fragment
+        # === 注入结束 ===
+        user = SEGMENT_USER_PROMPT.replace('{transcript}', piece)
+        try:
+            result = call_llm(
+                config,
+                [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+                temperature=0.2,
+                max_tokens=ECHO_MAX_TOKENS,
+            ).strip()
+        except Exception as e:
+            logger.warning(f'segment_meeting failed: {e}')
+            result = piece  # 降级：保留原文
+        # 安全网：回写内容明显短于原文 (被截断) → 退回原文, 保证不丢内容
+        if len(result) < len(piece) * 0.7:
+            result = piece
+        out_parts.append(result)
 
-    # === Phase 4: 注入语音知识库提示 ===
-    system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
-    knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
-    if knowledge_fragment:
-        system += '\n\n' + knowledge_fragment
-    # === 注入结束 ===
-
-    user = SEGMENT_USER_PROMPT.replace('{transcript}', truncated)
-
-    try:
-        result = call_llm(
-            config,
-            [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-            temperature=0.2,
-            max_tokens=5000
-        )
-        return result.strip()
-    except Exception as e:
-        logger.warning(f'segment_meeting failed: {e}')
-        return transcript  # 降级：返回原文
+    return _renumber_speakers('\n\n'.join(out_parts))
 
 
 def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> str:
-    """阶段2: 清洁版（输入：带标记的分段文本）"""
+    """阶段2: 清洁版（输入：带标记的分段文本）— 仅整理措辞/剔除语气词, 保留全部实质性内容。
+
+    同样按小块 (ECHO_CHUNK_SIZE) 回写, 避免 max_tokens 截断丢内容; 回写明显短于原文时退回原文。
+    """
     if not transcript or not transcript.strip():
         return ''
 
@@ -140,29 +150,32 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> 
 
     from services.llm_service import call_llm
 
-    max_input_chars = 50000
-    truncated = transcript[:max_input_chars]
+    pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
+    out_parts = []
+    for piece in pieces:
+        # === Phase 4: 注入语音知识库提示 ===
+        system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+        knowledge_fragment = _build_knowledge_fragment(piece[:2000])
+        if knowledge_fragment:
+            system += '\n\n' + knowledge_fragment
+        # === 注入结束 ===
+        user = CLEAN_USER_PROMPT.replace('{transcript}', piece)
+        try:
+            result = call_llm(
+                config,
+                [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+                temperature=0.3,
+                max_tokens=ECHO_MAX_TOKENS,
+            ).strip()
+        except Exception as e:
+            logger.warning(f'clean_meeting failed: {e}')
+            result = piece  # 降级：保留原文
+        # 安全网：回写明显短于原文 (被截断) → 退回原文, 保证不丢内容
+        if len(result) < len(piece) * 0.6:
+            result = piece
+        out_parts.append(result)
 
-    # === Phase 4: 注入语音知识库提示 ===
-    system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
-    knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
-    if knowledge_fragment:
-        system += '\n\n' + knowledge_fragment
-    # === 注入结束 ===
-
-    user = CLEAN_USER_PROMPT.replace('{transcript}', truncated)
-
-    try:
-        result = call_llm(
-            config,
-            [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-            temperature=0.3,
-            max_tokens=5000
-        )
-        return result.strip()
-    except Exception as e:
-        logger.warning(f'clean_meeting failed: {e}')
-        return transcript  # 降级
+    return '\n\n'.join(out_parts)
 
 
 def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_block: str = '', model_id=None) -> str:
@@ -203,6 +216,11 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
 
 CHUNK_SIZE = 50000  # 单段 LLM 输入上限（字符）；超出则分段总结后合并
 
+# 发言分段 / 清洁版 阶段：必须 100% 回写原文（仅加发言人标记），故按小块回写，
+# 避免 max_tokens 上限导致模型无法完整输出原文而丢内容。
+ECHO_CHUNK_SIZE = 1500  # 回写阶段单块字符上限（需保证模型能把整块原文完整输出）
+ECHO_MAX_TOKENS = 4096  # 回写阶段单块输出上限（需 >= 单块字符数对应的 token 数）
+
 
 def _chunk_text(text, size=CHUNK_SIZE):
     """按段落/句子边界将长文本切成不超过 size 字符的块，尽量避免在句中断开。"""
@@ -232,6 +250,17 @@ def _chunk_text(text, size=CHUNK_SIZE):
     if cur:
         chunks.append(cur)
     return chunks
+
+
+def _renumber_speakers(text: str) -> str:
+    """将全文中的 [发言N]: 标记按出现顺序全局重排为 [发言1]:、[发言2]: ……（跨分块拼接后保持连续编号）。"""
+    counter = [0]
+
+    def _repl(_m):
+        counter[0] += 1
+        return f'[发言{counter[0]}]:'
+
+    return re.sub(r'\[发言\d+\]:', _repl, text)
 
 
 SUMMARY_MERGE_INSTRUCTION = """你正在将同一场会议的多段局部总结合并为一份统一的结构化总结。
@@ -291,17 +320,13 @@ def summarize_meeting(transcript: str, model_id=None) -> dict:
 
     knowledge_block = build_meeting_knowledge(transcript[:2000])
 
-    # 阶段1：发言分段（按块处理，避免超长截断丢内容）
+    # 阶段1：发言分段（内部按小块回写，保证 100% 保留原文；全局重排发言人编号）
     logger.info(f'阶段1/3: 发言分段 ({len(transcript)} 字输入)')
-    segmented = '\n\n'.join(
-        p for p in (segment_meeting(chunk, knowledge_block, model_id) for chunk in _chunk_text(transcript)) if p and p.strip()
-    )
+    segmented = segment_meeting(transcript, knowledge_block, model_id)
 
-    # 阶段2：清洁版（基于分段输出按块处理）
+    # 阶段2：清洁版（基于分段输出，内部同样按小块回写，避免截断丢内容）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')
-    clean = '\n\n'.join(
-        p for p in (clean_meeting(chunk, knowledge_block, model_id) for chunk in _chunk_text(segmented)) if p and p.strip()
-    )
+    clean = clean_meeting(segmented, knowledge_block, model_id)
 
     # 阶段3：摘要版（clean 分块各自生成局部总结，再合并为统一总结）
     logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字输入)')

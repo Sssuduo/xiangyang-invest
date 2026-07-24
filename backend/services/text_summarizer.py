@@ -123,7 +123,7 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None) -
                 config,
                 [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                 temperature=0.2,
-                max_tokens=ECHO_MAX_TOKENS,
+                max_tokens=ECHO_MAX_TOKENS, enable_web_search=False,
             ).strip()
         except Exception as e:
             logger.warning(f'segment_meeting failed: {e}')
@@ -165,7 +165,7 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None) -> 
                 config,
                 [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                 temperature=0.3,
-                max_tokens=ECHO_MAX_TOKENS,
+                max_tokens=ECHO_MAX_TOKENS, enable_web_search=False,
             ).strip()
         except Exception as e:
             logger.warning(f'clean_meeting failed: {e}')
@@ -206,7 +206,7 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
             config,
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             temperature=0.3,
-            max_tokens=5000
+            max_tokens=5000, enable_web_search=False
         )
         return result.strip()
     except Exception as e:
@@ -282,7 +282,7 @@ def _do_merge(text, knowledge_block, model_id=None):
             config,
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             temperature=0.3,
-            max_tokens=6000,
+            max_tokens=6000, enable_web_search=False,
         ).strip()
     except Exception as e:
         logger.warning(f'合并总结失败：{e}')

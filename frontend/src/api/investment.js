@@ -5,6 +5,11 @@ export function getPublicProjects(params = {}) {
   return api.get('/investment/projects', { params })
 }
 
+// 公文写作「项目导入」使用：返回原始响应（含 code/data，data 为项目数组，含嵌套 activities/demands）
+export function getInvestmentProjects(params = {}) {
+  return api.get('/investment/projects', { params })
+}
+
 // 获取公开字典（含动态标签、项目标签）
 export function getPublicDemandDicts() {
   return api.get('/investment/demand-dicts')

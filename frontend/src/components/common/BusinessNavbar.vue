@@ -48,12 +48,14 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="/toolbox">通用工具箱</el-dropdown-item>
               <el-dropdown-item command="/lead">招商线索研判</el-dropdown-item>
               <el-dropdown-item command="/knowledge">本地招商知识库</el-dropdown-item>
               <el-dropdown-item command="/knowledge/drafts">知识沉淀审核</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <router-link v-if="businessAuth.isLoggedIn" to="/official-doc" class="nav-item" active-class="active-item">公文写作</router-link>
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">

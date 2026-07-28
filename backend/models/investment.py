@@ -65,6 +65,7 @@ class InvestmentProject(db.Model):
             'first_contact_date': self.first_contact_date.isoformat() if self.first_contact_date else None,
             'is_deleted': self.is_deleted,
             'demands': [d.to_dict() for d in self.demands.all()],
+            'activities': [a.to_dict() for a in self.activities.all()],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

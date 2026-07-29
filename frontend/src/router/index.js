@@ -200,6 +200,13 @@ const routes = [
     component: () => import('@/views/KnowledgeDrafts.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  // ---- 公文写作 ----
+  {
+    path: '/official-doc',
+    name: 'OfficialDoc',
+    component: () => import('@/views/OfficialDocView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
   // ---- 管理后台 ----
   {
     path: '/admin/investment',

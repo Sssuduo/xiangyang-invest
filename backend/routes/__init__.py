@@ -110,6 +110,7 @@ def register_routes(app):
     from routes import admin_knowledge as _admin_knowledge
     from routes import admin_message as _admin_message
     from routes import user_messages as _user_messages
+    from routes import official_doc
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)

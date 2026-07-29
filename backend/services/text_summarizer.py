@@ -106,7 +106,8 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
 
     from services.llm_service import call_llm
 
-    pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
+    echo_chunk, echo_max = _echo_chunk_params(config)
+    pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
     out_parts = []
     total = len(pieces)
     for idx, piece in enumerate(pieces, 1):
@@ -122,7 +123,7 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
                 config,
                 [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                 temperature=0.2,
-                max_tokens=ECHO_MAX_TOKENS, enable_web_search=False,
+                max_tokens=echo_max, enable_web_search=False,
             ).strip()
         except Exception as e:
             logger.warning(f'segment_meeting failed: {e}')
@@ -155,7 +156,8 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
 
     from services.llm_service import call_llm
 
-    pieces = _chunk_text(transcript, ECHO_CHUNK_SIZE)
+    echo_chunk, echo_max = _echo_chunk_params(config)
+    pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
     out_parts = []
     total = len(pieces)
     for idx, piece in enumerate(pieces, 1):
@@ -171,7 +173,7 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
                 config,
                 [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                 temperature=0.3,
-                max_tokens=ECHO_MAX_TOKENS, enable_web_search=False,
+                max_tokens=echo_max, enable_web_search=False,
             ).strip()
         except Exception as e:
             logger.warning(f'clean_meeting failed: {e}')
@@ -229,12 +231,95 @@ CHUNK_SIZE = 50000  # 单段 LLM 输入上限（字符）；超出则分段总�
 
 # 发言分段 / 清洁版 阶段：必须 100% 回写原文（仅加发言人标记），故按小块回写，
 # 避免 max_tokens 上限导致模型无法完整输出原文而丢内容。
-ECHO_CHUNK_SIZE = 2000  # 回写阶段单块字符上限（需保证模型能把整块原文完整输出）
-ECHO_MAX_TOKENS = 6000  # 回写阶段单块输出上限（需 >= 单块字符数对应的 token 数）
+# 关键约束：回写型任务的块大小受"模型输出 token 上限"约束（需把整块原文重新输出），
+# 因此块大小不能盲目增大；以下为保守默认值，实际块大小由 _echo_chunk_params 按模型
+# 上下文窗口 + 输出能力动态计算（见 V16.0 设计文档）。
+ECHO_CHUNK_SIZE = 2000        # 回写阶段单块字符基线（动态计算时的下限参考）
+ECHO_MAX_TOKENS = 6000        # 回写阶段单块输出上限基线
+ECHO_CHUNK_SIZE_MAX = 3000    # 回写阶段单块字符硬上限（受输出 token ~8K 限制，2*3000=6000≤常见上限）
+ECHO_OVERLAP_CHARS = 0        # 回写阶段不加重叠：各块独立回写会致内容重复，重叠仅用于摘要阶段
+
+# 摘要阶段：理解/总结类任务，输出短，块可较大；块间重叠提升跨块连贯
+SUMMARY_CHUNK_CHARS = 30000
+SUMMARY_OVERLAP_CHARS = 1000
 
 
-def _chunk_text(text, size=CHUNK_SIZE):
-    """按段落/句子边界将长文本切成不超过 size 字符的块，尽量避免在句中断开。"""
+def _tail_chars(text, n):
+    """取文本最后 n 字符，并向前对齐到句末标点，作为重叠区（避免从句子中间开始）。"""
+    if len(text) <= n:
+        return text
+    truncated = text[-n:]
+    last_punct = max(
+        truncated.rfind('。'), truncated.rfind('！'), truncated.rfind('？'),
+        truncated.rfind('；'), truncated.rfind(';'), truncated.rfind('\n')
+    )
+    if last_punct > 0:
+        return truncated[last_punct + 1:]
+    return truncated
+
+
+def _model_context_window(config):
+    """粗略估计模型上下文窗口(token)，未知返回保守值 8000。
+
+    仅依据 model_name / provider 关键字做启发式判断；无法精确时取保守下限，
+    避免分块超过模型上下文导致 API 报错或截断。
+    """
+    if not config:
+        return 8000
+    name = (config.get('model_name') or '').lower()
+    provider = (config.get('provider') or '').lower()
+    for kw, win in (('128k', 128000), ('64k', 64000), ('32k', 32000),
+                    ('16k', 16000), ('8k', 8000)):
+        if kw in name:
+            return win
+    if any(k in name for k in ('long', 'max', 'pro', 'turbo', 'plus')):
+        return 128000
+    defaults = {
+        'openai': 8000, 'azure': 8000, 'qwen': 8000, 'dashscope': 8000,
+        'glm': 8000, 'zhipu': 8000, 'ernie': 8000, 'baidu': 8000,
+        'deepseek': 64000, 'moonshot': 32000, 'kimi': 128000,
+        'doubao': 32000, 'volc': 32000, 'claude': 200000,
+        'anthropic': 200000, 'gemini': 1000000, 'google': 1000000,
+    }
+    return defaults.get(provider, 8000)
+
+
+def _echo_chunk_params(config):
+    """回写阶段 (阶段1/2) 的动态块大小与输出上限。
+
+    回写型任务必须把整块原文重新输出，故块大小受"输出 token 上限"约束：
+    块字符数 C 对应输出约 2*C token；输入约 1.5*C token；合计需 <= 模型上下文安全比例。
+    同时输出上限硬控在 8192（常见模型输出上限），因此回写块实际天花板约 3000 字符。
+
+    Returns:
+        (chunk_chars, max_tokens)
+    """
+    if not config:
+        return ECHO_CHUNK_SIZE, ECHO_MAX_TOKENS
+    ctx = _model_context_window(config)
+    safe_total = ctx * 0.75                      # 输入输出合计安全预算
+    c = safe_total / 3.5                         # 3.5 ≈ 1.5(输入)+2(输出) tok/字符
+    chunk_chars = int(min(ECHO_CHUNK_SIZE_MAX, max(1000, c)))
+    max_tokens = int(min(chunk_chars * 2.2, 8192))
+    return chunk_chars, max_tokens
+
+
+def _summary_chunk_chars(config):
+    """摘要阶段 (阶段3) 的动态块大小：输出短，主要受输入上下文约束。"""
+    if not config:
+        return SUMMARY_CHUNK_CHARS
+    ctx = _model_context_window(config)
+    c = ctx * 0.7 / 1.5                          # 输入~1.5 tok/字符，输出可忽略
+    return int(min(SUMMARY_CHUNK_CHARS, max(2000, c)))
+
+
+def _chunk_text(text, size=CHUNK_SIZE, overlap=0):
+    """按段落/句子边界将长文本切成不超过 size 字符的块，尽量避免在句中断开。
+
+    overlap > 0 时，除首块外每块前置上一块尾部 overlap 字符（句边界对齐），
+    为下游任务提供跨块上下文。适用于摘要等理解型任务；回写型任务请勿使用，
+    否则各块独立回写会导致内容重复。
+    """
     if not text:
         return []
     if len(text) <= size:
@@ -257,9 +342,24 @@ def _chunk_text(text, size=CHUNK_SIZE):
                 else:
                     if cur:
                         chunks.append(cur)
-                    cur = sent
+                        cur = ''
+                    # 单句超长（如缺少句末标点的连续转写）：强制按字符截断兜底
+                    if len(sent) > size:
+                        for j in range(0, len(sent), size):
+                            piece = sent[j:j + size]
+                            if cur:
+                                chunks.append(cur)
+                            cur = piece
+                    else:
+                        cur = sent
     if cur:
         chunks.append(cur)
+    if overlap > 0 and len(chunks) > 1:
+        overlapped = [chunks[0]]
+        for i in range(1, len(chunks)):
+            tail = _tail_chars(chunks[i - 1], overlap)
+            overlapped.append(tail + chunks[i])
+        chunks = overlapped
     return chunks
 
 
@@ -334,10 +434,13 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
     if not transcript or not transcript.strip():
         return {'segmented': '', 'clean': '', 'summary': '无录音内容，无法生成总结。'}
 
+    config = _get_llm_config(model_id)
     knowledge_block = build_meeting_knowledge(transcript[:2000])
+    echo_chunk, _ = _echo_chunk_params(config)
+    summary_chunk = _summary_chunk_chars(config)
 
     # ----- 进度统计 -----
-    phase1_blocks = max(1, len(_chunk_text(transcript, ECHO_CHUNK_SIZE)))
+    phase1_blocks = max(1, len(_chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)))
     phase2_blocks = phase1_blocks  # segmented 长度≈原文, 块数相近
     phase3_blocks = 1  # 阶段2完成后基于 clean 精确修正
     total_blocks = [phase1_blocks + phase2_blocks + phase3_blocks]
@@ -380,7 +483,7 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
     )
 
     # 阶段3：摘要版（clean 分块各自生成局部总结，再合并；精确修正块数）
-    clean_chunks = _chunk_text(clean)
+    clean_chunks = _chunk_text(clean, summary_chunk, overlap=SUMMARY_OVERLAP_CHARS)
     phase3_blocks = max(1, len(clean_chunks)) + 1  # +1 代表最终合并
     total_blocks[0] = phase1_blocks + phase2_blocks + phase3_blocks
     logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字, {len(clean_chunks)} 块)')

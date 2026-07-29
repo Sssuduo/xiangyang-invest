@@ -19,3 +19,4 @@ from models.audit import ChangeHistory
 from models.term_correction import TermCorrection
 from models.message import MessageRule, UserMessage, MessageRuleLog
 from models.voice_knowledge import VoiceKnowledgeEntry, TextCorrectionRecord
+from models.official_doc import OfficialDocTemplate

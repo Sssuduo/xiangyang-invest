@@ -47,19 +47,18 @@ CLEAN_SYSTEM_PROMPT = """您是专业的政务招商会议文本整理专员, �
 【本次会议关联的项目名称 (供消歧参考, 请勿凭空引入)】
 {meeting_knowledge}
 
-任务: 将带发言标记的会议文本, 在不删减任何实质内容的前提下, 重新组织为结构清晰、便于阅读的正式会议记录。
+任务: 对带发言标记的会议文本做"去噪清洁"——仅剔除无信息量的口语杂音, 保留 100% 的实质性内容, 并完整保留原始 [发言N]: 标记。本阶段不做任何"按议题重新组织/加标题"的结构化改写(结构化由后续摘要阶段完成)。
 
-【与原稿的关系】
-- 保持"接近原文的长度": 仅删除无信息量的语气词(嗯/啊/这个/那个/口头重复/自我打断纠正); 严禁压缩、概括或省略任何实质性句子、数据、观点。
-- 逐条保留所有: 决议、工作任务、责任主体、时间节点、金额、数量、地名、机构名、人名。
+【允许的操作】
+- 删除无信息量的语气词与口头重复: 嗯/啊/那个/这个/就是说/自我打断后的重复纠正片段。
+- 仅当某片段确为重复或无效(如结巴、吞音造成的半句话)时, 在不改变语义前提下删除该片段。
 
-【结构要求】(保留全部内容, 仅重新编排)
-- 按"议题/板块"(而非按发言顺序)重新组织, 每个议题用二级标题(##)概括。
-- 同一议题下的要点用项目符号(-)列出, 每条保留完整表述, 不简化。
-- "工作部署与待办"单独成节(##), 每条含: 事项 + 责任方 + 时限 + 交付物(原文有的才写)。
-- 保留原文时间顺序与因果, 不颠倒。
+【严禁的操作】
+- 严禁概括、压缩、省略任何实质性句子、数据、观点、决议、任务、人名、机构名、地名、金额、数量、时间。
+- 严禁增删或改动 [发言N]: 标记, 严禁调换发言顺序。
+- 严禁自行新增 ## 标题或将内容按议题重组。
 
-输出: 仅输出 Markdown 文本, 不加任何说明。"""
+输出: 仅输出清洁后的文本(保留 [发言N]: 标记), 不加任何说明。"""
 
 CLEAN_USER_PROMPT = """请对以下带发言标记的会议文本进行清洁整理:
 
@@ -77,6 +76,9 @@ SUMMARY_SYSTEM_PROMPT = """您是专业的政务招商会议总结专家, 熟悉
 4. 关键数据与时点: 所有出现的金额、数量、比例、日期、阶段目标, 原样保留。
 5. 风险提示与需协调事项: 堵点、风险、需上级/外部协调的事项。
 6. 后续推进: 下一步安排、时间窗口、负责人。
+
+【分块处理说明】
+- 本纪要可能仅基于会议的一个片段(分块)生成; 若本块信息不足以形成完整议题, 严禁编造缺失内容, 仅在相关处标注"待续/见前后块"并保留本块真实信息。最终合并阶段会跨块统一去重。
 
 【格式】
 - 使用多级标题与项目符号, 结构清晰; 节数按内容需要灵活设定, 不限于固定四段。
@@ -120,7 +122,7 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
     total = len(pieces)
     for idx, piece in enumerate(pieces, 1):
         # === Phase 4: 注入语音知识库提示 ===
-        system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+        system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
         if knowledge_fragment:
             system += '\n\n' + knowledge_fragment
@@ -170,7 +172,7 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
     total = len(pieces)
     for idx, piece in enumerate(pieces, 1):
         # === Phase 4: 注入语音知识库提示 ===
-        system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+        system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
         if knowledge_fragment:
             system += '\n\n' + knowledge_fragment
@@ -187,7 +189,8 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
             logger.warning(f'clean_meeting failed: {e}')
             result = piece  # 降级：保留原文
         # 安全网：回写明显短于原文 (被截断) → 退回原文, 保证不丢内容
-        if len(result) < len(piece) * 0.5:
+        # 阈值与 segment 阶段保持一致(0.7): 避免被截断到 50%~70% 时静默接受半块而丢内容
+        if len(result) < len(piece) * 0.7:
             result = piece
         out_parts.append(result)
         if progress_callback:
@@ -211,11 +214,17 @@ def summarize_meeting_inner(transcript: str, segmented_text: str, knowledge_bloc
     from services.llm_service import call_llm
 
     max_input_chars = 50000
-    truncated_clean = transcript[:max_input_chars]
-    truncated_seg = segmented_text[:max_input_chars]
+    truncated_clean = transcript
+    truncated_seg = segmented_text
+    if len(transcript) > max_input_chars:
+        logger.warning(f'summarize_meeting_inner: 清洁版输入 {len(transcript)} 字超过 {max_input_chars}，已截断尾部（长文本建议使用分块入口 summarize_meeting）')
+        truncated_clean = transcript[:max_input_chars]
+    if len(segmented_text) > max_input_chars:
+        logger.warning(f'summarize_meeting_inner: 分段版输入 {len(segmented_text)} 字超过 {max_input_chars}，已截断尾部')
+        truncated_seg = segmented_text[:max_input_chars]
 
     # === Phase 4: 注入语音知识库提示 ===
-    system = SUMMARY_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block)
+    system = SUMMARY_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
     knowledge_fragment = _build_knowledge_fragment(transcript[:2000])
     if knowledge_fragment:
         system += '\n\n' + knowledge_fragment
@@ -456,10 +465,13 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
     total_blocks = [phase1_blocks + phase2_blocks + phase3_blocks]
     done_blocks = [0]
     start_time = [time.time()]
+    last_pct = [0]  # 进度百分比单调不减，防止分母中途变化导致回退
 
     def _report(stage_label, stage_index, block, block_total):
         done_blocks[0] += 1
         pct = int(done_blocks[0] / max(total_blocks[0], 1) * 100)
+        pct = max(pct, last_pct[0])  # 防进度回退
+        last_pct[0] = pct
         elapsed = time.time() - start_time[0]
         per_block = elapsed / max(done_blocks[0], 1)
         remain = max(total_blocks[0] - done_blocks[0], 0)
@@ -492,14 +504,25 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
         progress_callback=lambda b, t: _report('清洁整理', 2, b, t),
     )
 
-    # 阶段3：摘要版（clean 分块各自生成局部总结，再合并；精确修正块数）
+    # 阶段3：摘要版（clean 与 segmented 分别切分，各自生成局部总结，再合并）
+    # 修复: 之前把同一 clean 块同时当 transcript 与 segmented_text 传入，导致 SUMMARY_USER_PROMPT
+    # 的「发言分段版」形同虚设；现两路分别切分并逐一配对。
     clean_chunks = _chunk_text(clean, summary_chunk, overlap=SUMMARY_OVERLAP_CHARS)
-    phase3_blocks = max(1, len(clean_chunks)) + 1  # +1 代表最终合并
+    seg_chunks = _chunk_text(segmented, summary_chunk, overlap=SUMMARY_OVERLAP_CHARS)
+    # 两路分块数可能因阶段2极轻微去噪差 1，按索引对齐，缺失一侧填空串
+    n3 = max(len(clean_chunks), len(seg_chunks))
+    phase3_pairs = [
+        (clean_chunks[i] if i < len(clean_chunks) else '',
+         seg_chunks[i] if i < len(seg_chunks) else '')
+        for i in range(n3)
+    ]
+    phase3_blocks = max(1, n3) + 1  # +1 代表最终合并
+    # 在进入阶段3前一次性算准 total_blocks，配合 _report 的单调防回退，避免进度条倒退
     total_blocks[0] = phase1_blocks + phase2_blocks + phase3_blocks
     logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字, {len(clean_chunks)} 块)')
     summary_parts = []
-    for ci, chunk in enumerate(clean_chunks, 1):
-        summary_parts.append(summarize_meeting_inner(chunk, chunk, knowledge_block, model_id))
+    for ci, (clean_c, seg_c) in enumerate(phase3_pairs, 1):
+        summary_parts.append(summarize_meeting_inner(clean_c, seg_c, knowledge_block, model_id))
         _report('智能摘要', 3, ci, phase3_blocks)
     summary = _merge_summaries(summary_parts, knowledge_block, model_id)
     _report('智能摘要', 3, phase3_blocks, phase3_blocks)  # 合并完成

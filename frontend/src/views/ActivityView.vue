@@ -592,7 +592,7 @@ import {
   // V15.1 术语校正（共用 /api/admin/term-corrections）
   getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections,
 } from '@/api/activity'
-import { getPublicProjects, getProject } from '@/api/investment'
+import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { downloadActivityExcel } from '@/api/activity_export'
 import { downloadActivityImportTemplate, activityImportPreviewApi, activityImportExecute, getTemplateProjects } from '@/api/activity_import'
 import { getDictItems } from '@/api/dict'
@@ -729,9 +729,10 @@ const rules = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadDicts(), loadLLMModels()])
+  await Promise.all([loadProjects(), loadDicts()])
   fetchData()
 })
+// loadLLMModels() 延迟到编辑抽屉打开时按需调用
 
 watch(() => form.project_id, () => {
   if (editDrawerVisible.value) loadProjectDemands()
@@ -762,7 +763,7 @@ function getTagName(code) {
 
 async function loadProjects() {
   try {
-    const res = await getPublicProjects()
+    const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
   } catch { /* ignore */ }
 }

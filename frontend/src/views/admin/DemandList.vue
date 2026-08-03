@@ -332,7 +332,7 @@ import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getDemands, createDemand, updateDemand, getDemand, deleteDemand, batchDeleteDemands } from '@/api/demand'
 import { downloadDemandImportTemplate, demandImportPreview, demandImportExecute } from '@/api/demand'
-import { getPublicProjects, getProject, getDicts } from '@/api/investment'
+import { getPublicProjectsLite, getProject, getDicts } from '@/api/investment'
 
 const demands = ref([])
 const loading = ref(false)
@@ -456,7 +456,7 @@ async function loadDicts() {
 
 async function loadProjects() {
   try {
-    const res = await getPublicProjects()
+    const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
   } catch { /* ignore */ }
 }

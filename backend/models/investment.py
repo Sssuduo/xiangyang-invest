@@ -374,29 +374,19 @@ class ActivityLedger(db.Model):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }
-        # 录音相关字段（始终返回状态，用于表格显示）
+        # 录音相关字段（始终返回状态，用于表格显示；列表场景排除大文本）
         audio_files_list = json.loads(self.audio_files or '[]')
-        result['audio_files'] = audio_files_list
-        result['audio_file'] = audio_files_list[0]['url'] if audio_files_list else None
+        result['audio_files'] = [{'url': af.get('url'), 'name': af.get('name'), 'duration': af.get('duration'),
+                                  'status': af.get('status')} for af in audio_files_list]
         result['audio_status'] = self.audio_status
-        if audio_files_list:
-            result['audio_transcript'] = self.audio_transcript
-            result['audio_summary'] = self.audio_summary
-            result['audio_duration'] = self.audio_duration
-            result['audio_archive'] = self.audio_archive
-            result['audio_archive_size'] = self.audio_archive_size
-            # V15.0 结构化总结
-            result['audio_transcript_segmented'] = self.audio_transcript_segmented
-            result['audio_transcript_clean'] = self.audio_transcript_clean
-            result['audio_summary_structured'] = self.audio_summary_structured
-            result['audio_docx_path'] = self.audio_docx_path
-            result['audio_docx_size'] = self.audio_docx_size
+        result['audio_duration'] = self.audio_duration
         return result
 
     def to_detail_dict(self):
-        """完整详情（含录音转写和总结）"""
+        """完整详情（含录音转写和总结文本）"""
         d = self.to_dict()
         audio_files_list = json.loads(self.audio_files or '[]')
+        d['audio_files'] = audio_files_list  # 完整字段覆盖精简版
         d['audio_file'] = audio_files_list[0]['url'] if audio_files_list else None
         d['audio_archive'] = self.audio_archive
         d['audio_archive_size'] = self.audio_archive_size

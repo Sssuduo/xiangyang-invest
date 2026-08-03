@@ -806,7 +806,7 @@ function handleSelectionChange(selection) { selectedIds.value = selection.map(s 
 function truncate(text, max) { if (!text) return ''; return text.length > max ? text.slice(0, max) + '...' : text }
 
 // ---- 查看 ----
-function handleView(row) {
+async function handleView(row) {
   if (row.tag_names) {
     row._tagNames = row.tag_names
   } else {
@@ -816,6 +816,15 @@ function handleView(row) {
   }
   viewActivity.value = row
   viewDrawerVisible.value = true
+  // 异步加载详情数据（含完整录音转写/总结文本，列表数据不含大字段）
+  try {
+    const res = await getActivity(row.id)
+    if (res.code === 0) {
+      const d = res.data
+      d._tagNames = row._tagNames
+      viewActivity.value = d
+    }
+  } catch { /* 加载详情失败，保留列表数据 */ }
 }
 
 async function handleProjectClick(row) {

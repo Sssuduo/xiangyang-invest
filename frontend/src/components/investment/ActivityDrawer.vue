@@ -64,21 +64,78 @@
         </el-descriptions-item>
         <el-descriptions-item label="写入时间">{{ fmtDt(activity.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="最后更新">{{ fmtDt(activity.updated_at) }}</el-descriptions-item>
+
+        <!-- 录音转写内容 -->
+        <template v-if="activity.audio_files && activity.audio_files.length > 0">
+          <el-descriptions-item label="会议录音" :span="2">
+            <div class="view-audio-card">
+              <div v-for="(af, idx) in activity.audio_files" :key="idx" style="margin-bottom: 6px;">
+                <div class="view-audio-row">
+                  <span style="font-size: 12px; color: #909399; min-width: 60px;">{{ af.name || '录音'+(idx+1) }}</span>
+                  <audio :src="af.url" controls class="view-audio-player" />
+                  <el-tag v-if="af.duration" size="small" type="info" effect="plain">{{ formatDuration(af.duration) }}</el-tag>
+                </div>
+              </div>
+              <div style="margin-top: 4px;">
+                <el-tag v-if="activity.audio_status === 'processing'" size="small" type="warning" effect="plain">转写中...</el-tag>
+                <el-tag v-else-if="activity.audio_status === 'completed'" size="small" type="success" effect="plain">总结完成</el-tag>
+                <el-tag v-else-if="activity.audio_status === 'asr_completed'" size="small" type="primary" effect="plain">转写完成</el-tag>
+                <el-tag v-else-if="activity.audio_status === 'summary_failed'" size="small" type="warning" effect="plain">总结失败</el-tag>
+                <el-tag v-else-if="activity.audio_status === 'asr_failed'" size="small" type="danger" effect="plain">识别失败</el-tag>
+              </div>
+              <div v-if="activity.audio_transcript_clean || activity.audio_summary_structured || activity.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
+                <div class="audio-section-header">
+                  <span class="section-label">录音识别内容</span>
+                  <a v-if="activity.audio_docx_path" :href="activity.audio_docx_path" target="_blank" class="docx-download-link">
+                    <el-icon><Download /></el-icon> 下载 Word
+                  </a>
+                </div>
+                <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
+                  <el-tab-pane v-if="activity.audio_transcript_segmented || activity.audio_transcript" label="分段原文" name="segmented">
+                    <div class="audio-text-content">{{ activity.audio_transcript_segmented || activity.audio_transcript || '暂无转写内容' }}</div>
+                  </el-tab-pane>
+                  <el-tab-pane v-if="activity.audio_transcript_clean" label="清洁版" name="clean">
+                    <div class="audio-markdown-content" v-html="renderMd(activity.audio_transcript_clean)"></div>
+                  </el-tab-pane>
+                  <el-tab-pane v-if="activity.audio_summary_structured" label="摘要版" name="summary">
+                    <div class="audio-markdown-content" v-html="renderMd(activity.audio_summary_structured)"></div>
+                  </el-tab-pane>
+                </el-tabs>
+              </div>
+            </div>
+          </el-descriptions-item>
+        </template>
       </el-descriptions>
     </template>
   </el-drawer>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { Document, View } from '@element-plus/icons-vue'
+import { ref, computed } from 'vue'
+import { Document, View, Download } from '@element-plus/icons-vue'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
+import MarkdownIt from 'markdown-it'
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 const businessAuth = useBusinessAuthStore()
+const audioActiveTab = ref('segmented')
 
 function dn(v) { return businessAuth.isVisitor ? maskName(v) : (v || '') }
 function dc(v) { return businessAuth.isVisitor ? maskContent(v) : (v || '') }
+
+function renderMd(text) {
+  if (!text) return ''
+  return md.render(text)
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return ''
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
 
 function demandStatusColor(s) {
   return { pending: '#e6a23c', processing: '#409eff', resolved: '#67c23a' }[s] || '#909399'

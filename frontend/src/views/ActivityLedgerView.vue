@@ -185,7 +185,7 @@
                   <el-tag v-else-if="viewItem.audio_status === 'asr_failed'" size="small" type="danger" effect="plain">识别失败</el-tag>
                   <el-tag v-else-if="viewItem.audio_status === 'failed'" size="small" type="danger" effect="plain">处理失败</el-tag>
                 </div>
-                <div v-if="viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
+                <div v-if="viewItem.audio_transcript_clean || viewItem.audio_summary_structured || viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
                   <div class="audio-section-header">
                     <span class="section-label">录音识别内容</span>
                     <a v-if="viewItem.audio_docx_path" :href="viewItem.audio_docx_path" target="_blank" class="docx-download-link">
@@ -193,13 +193,13 @@
                     </a>
                   </div>
                   <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
-                    <el-tab-pane label="分段原文" name="segmented">
+                    <el-tab-pane v-if="viewItem.audio_transcript_segmented || viewItem.audio_transcript" label="分段原文" name="segmented">
                       <div class="audio-text-content">{{ viewItem.audio_transcript_segmented || viewItem.audio_transcript || '暂无转写内容' }}</div>
                     </el-tab-pane>
-                    <el-tab-pane label="清洁版" name="clean">
+                    <el-tab-pane v-if="viewItem.audio_transcript_clean" label="清洁版" name="clean">
                       <div class="audio-markdown-content" v-html="renderMd(viewItem.audio_transcript_clean)"></div>
                     </el-tab-pane>
-                    <el-tab-pane label="摘要版" name="summary">
+                    <el-tab-pane v-if="viewItem.audio_summary_structured" label="摘要版" name="summary">
                       <div class="audio-markdown-content" v-html="renderMd(viewItem.audio_summary_structured)"></div>
                     </el-tab-pane>
                   </el-tabs>
@@ -507,8 +507,8 @@
             </el-select>
           </el-form-item>
 
-          <!-- 关联项目（仅编辑模式或已关联时显示） -->
-          <template v-if="editMode === 'create' || editingItem.linked_project_id || form._linkProject">
+          <!-- 关联项目（新建始终显示；编辑或已关联时始终显示） -->
+          <template v-if="editMode === 'create' || editMode === 'edit' || editingItem.linked_project_id">
             <div class="section-header">
               <span class="section-icon"><el-icon><Connection /></el-icon></span>
               <span class="section-title">关联项目</span>
@@ -762,9 +762,14 @@ function openFile(url) {
 }
 
 // ---- 查看 ----
-function handleView(row) {
+async function handleView(row) {
   viewItem.value = row
   viewDrawerVisible.value = true
+  // 异步加载详情数据（含完整录音转写/总结文本，列表数据不含大字段）
+  try {
+    const res = await getLedger(row.id)
+    if (res.code === 0) viewItem.value = res.data
+  } catch { /* 加载详情失败，保留列表数据 */ }
 }
 
 // ---- 项目详情 ----

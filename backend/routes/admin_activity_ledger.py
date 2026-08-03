@@ -107,9 +107,9 @@ def create_ledger():
 @admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>', methods=['GET'])
 @dual_login_required
 def get_ledger(item_id):
-    """获取活动台账详情"""
+    """获取活动台账详情（含完整录音转写/总结文本）"""
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
-    return jsonify({'code': 0, 'data': item.to_dict()})
+    return jsonify({'code': 0, 'data': item.to_detail_dict()})
 
 
 @admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>', methods=['PUT'])

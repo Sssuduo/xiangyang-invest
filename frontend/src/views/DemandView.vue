@@ -380,7 +380,7 @@ import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getPublicDemands, getDemandDicts, createDemand, updateDemand, getDemand, deleteDemand, batchDeleteDemands } from '@/api/demand'
 import { getTemplateProjects, downloadDemandImportTemplate, demandImportPreview, demandImportExecute } from '@/api/demand'
-import { getPublicProjects, getProject } from '@/api/investment'
+import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
 
@@ -524,7 +524,7 @@ async function loadDicts() {
 
 async function loadProjects() {
   try {
-    const res = await getPublicProjects()
+    const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
   } catch { /* ignore */ }
 }

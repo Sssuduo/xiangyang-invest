@@ -555,7 +555,7 @@ import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { useAudioRecording } from '@/composables/useAudioRecording'
 import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels } from '@/api/activityLedger'
-import { getPublicProjects, getProject } from '@/api/investment'
+import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName, maskContent } from '@/utils/mask'
@@ -681,9 +681,10 @@ const rules = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadDicts(), loadLLMModels()])
+  await Promise.all([loadProjects(), loadDicts()])
   fetchData()
 })
+// loadLLMModels() 延迟到编辑抽屉打开时按需调用
 
 async function loadDicts() {
   try {
@@ -698,7 +699,7 @@ function getTagName(code) {
 
 async function loadProjects() {
   try {
-    const res = await getPublicProjects()
+    const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
   } catch { /* ignore */ }
 }

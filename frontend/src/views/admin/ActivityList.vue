@@ -202,7 +202,7 @@ import AdminSidebar from '@/components/common/AdminSidebar.vue'
 import ActivityDrawer from '@/components/investment/ActivityDrawer.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { getActivities, createActivity, updateActivity, getActivity, deleteActivity, batchDeleteActivities } from '@/api/activity'
-import { getPublicProjects, getProject, getPublicDemandDicts } from '@/api/investment'
+import { getPublicProjectsLite, getProject, getPublicDemandDicts } from '@/api/investment'
 import { getDemands } from '@/api/demand'
 import { getDictItems } from '@/api/dict'
 
@@ -297,7 +297,7 @@ function getTagName(code) {
 
 async function loadProjects() {
   try {
-    const res = await getPublicProjects()
+    const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
   } catch { /* ignore */ }
 }

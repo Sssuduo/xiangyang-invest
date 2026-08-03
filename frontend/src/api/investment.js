@@ -5,6 +5,11 @@ export function getPublicProjects(params = {}) {
   return api.get('/investment/projects', { params })
 }
 
+// 获取项目下拉列表（lite 模式，仅返回 id+project_name），用于页面首次加载
+export function getPublicProjectsLite(params = {}) {
+  return api.get('/investment/projects', { params: { ...params, lite: 1 } })
+}
+
 // 公文写作「项目导入」使用：返回原始响应（含 code/data，data 为项目数组，含嵌套 activities/demands）
 export function getInvestmentProjects(params = {}) {
   return api.get('/investment/projects', { params })

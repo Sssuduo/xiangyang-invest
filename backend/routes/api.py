@@ -214,7 +214,8 @@ def upload_image():
 # ============================================================
 @api_bp.route('/investment/projects', methods=['GET'])
 def list_public_projects():
-    """公开项目列表（树形表格用）"""
+    """公开项目列表（树形表格用）；lite=1 只返回 id+name 用于下拉选择"""
+    lite = request.args.get('lite', '0') == '1'
     search = request.args.get('search', '').strip()
     follow_status = request.args.get('follow_status', '').strip()
     meeting_status = request.args.get('meeting_status', '').strip()
@@ -265,6 +266,13 @@ def list_public_projects():
         InvestmentProject.order_no.asc(),
         InvestmentProject.created_at.desc()
     )
+
+    # lite 模式：仅返回 id + project_name，用于前端下拉选择
+    if lite:
+        projects = q.all()
+        return jsonify({'code': 0, 'data': [
+            {'id': p.id, 'project_name': p.project_name} for p in projects
+        ]})
 
     projects = q.all()
 

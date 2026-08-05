@@ -40,6 +40,11 @@ SEGMENT_SYSTEM_PROMPT = """您是专业的政务招商会议文本整理专员, 
 - 仅做"纠错", 不得增删任何实质性句子、不得改写语义、不得省略原句信息。
 - 无法确认的词汇一律保留原样, 宁可不改也不要臆造。
 
+【乱码容错】(识别质量差的录音适用)
+- 若某段文本明显为语音识别错误(无意义字符、乱码、口语碎片、重复符号), 无法判断发言轮次时:
+  不强行分段, 原样保留该段, 并在段落开头标记 [语音不清]。
+- 不得删除任何内容, 包括疑似乱码段; 乱码段也需原样保留。
+
 输出: 仅输出分段 + 校正后的完整文本, 不加任何标题或说明"""
 
 SEGMENT_USER_PROMPT = """请对以下原始会议语音转写文本进行发言分段:
@@ -64,6 +69,12 @@ CLEAN_SYSTEM_PROMPT = """您是专业的政务招商会议文本整理专员, �
 - 同一议题/同一发言下的要点用项目符号(-)列出, 每条保留完整表述, 不简化、不合并不同要点。
 - 严禁为了"整洁"而压缩、概括、省略任何实质性句子或数据。
 - 项目符号(-)后必须紧跟具体内容, 严禁空列表项(如单独的"-"或"- "后无内容)。禁止使用无内容填充的占位列表。
+
+【识别错误修复】(转写质量差的录音适用)
+- 对明显的语音识别错误(同音字、乱码、无意义词)进行合理推断修复: 依据上下文和【语音识别本地知识提示】补全正确写法。
+- 无法确定正确写法的词, 保留原样, 不臆造。
+- 对完全无法理解的乱码段落, 整段标记为 [语音不清] 后原样保留, 不强行解读、不删除。
+- 严禁因为"内容杂乱"就省略或跳过段落。
 
 【严禁】
 - 严禁浓缩、概括、省略、改写语义; 严禁编造。
@@ -98,6 +109,12 @@ SUMMARY_SYSTEM_PROMPT = """您是专业的政务招商会议总结专家, 熟悉
 【分块处理说明】
 - 本纪要可能仅基于会议的一个片段(分块)生成; 若本块信息不足以支撑完整结论, 严禁编造, 仅在相关处标注"待续/见前后块"。最终合并阶段会跨块统一去重。
 
+【降级处理】(内容质量问题)
+- 若输入内容几乎全是无意义乱码或识别碎片, 无法提炼任何有效信息时, 直接输出:
+  "本次录音转写质量较差，无法生成有效摘要，建议重新识别录音。"
+- 严禁输出空字符串; 若实在无内容可写, 也必须输出上述提示句而非空串。
+- 至少有 1 条可确认的信息时, 优先输出该信息, 并在不确定处标注"（识别可能不准确）"。
+
 输出: 仅输出 Markdown 精炼纪要, 不加说明。"""
 
 SUMMARY_USER_PROMPT = """请基于以下会议文本生成高度凝练的结构化纪要。
@@ -128,18 +145,18 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
         return transcript  # 降级：返回原文
 
     from services.llm_service import call_llm
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     echo_chunk, echo_max = _echo_chunk_params(config)
     pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
-    out_parts = []
     total = len(pieces)
-    for idx, piece in enumerate(pieces, 1):
-        # === Phase 4: 注入语音知识库提示 ===
+
+    # 独立块并发回写（V16.10: 串行→并行，2 小时录音从 ~40 次调用降到 ~10 次等待时间）
+    def _process_block(idx, piece):
         system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
         if knowledge_fragment:
             system += '\n\n' + knowledge_fragment
-        # === 注入结束 ===
         user = SEGMENT_USER_PROMPT.replace('{transcript}', piece)
         try:
             result = call_llm(
@@ -154,12 +171,30 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
         # 安全网：回写内容明显短于原文 (被截断) → 退回原文, 保证不丢内容
         if len(result) < len(piece) * 0.7:
             result = piece
-        out_parts.append(result)
+        return idx, result
+
+    # 串行进度回调（按块序回调，避免进度乱序）
+    def _progress_after(idx):
         if progress_callback:
             try:
                 progress_callback(idx, total)
             except Exception:
                 pass
+
+    if total <= 1:
+        # 单块直接执行（避免线程开销）
+        _, out = _process_block(1, pieces[0])
+        out_parts = [out]
+        _progress_after(1)
+    else:
+        # 并发执行；结果按 idx 归位保证顺序稳定
+        out_parts = [None] * total
+        with ThreadPoolExecutor(max_workers=min(4, total)) as ex:
+            futs = {ex.submit(_process_block, i + 1, p): (i + 1) for i, p in enumerate(pieces)}
+            for fut in as_completed(futs):
+                idx, result = fut.result()
+                out_parts[idx - 1] = result
+                _progress_after(idx)
 
     return _renumber_speakers('\n\n'.join(out_parts))
 
@@ -178,18 +213,18 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
         return transcript  # 降级
 
     from services.llm_service import call_llm
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     echo_chunk, echo_max = _echo_chunk_params(config)
     pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
-    out_parts = []
     total = len(pieces)
-    for idx, piece in enumerate(pieces, 1):
-        # === Phase 4: 注入语音知识库提示 ===
+
+    # 独立块并发回写（V16.10: 与阶段1对齐，串行→并行）
+    def _process_block(idx, piece):
         system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
         knowledge_fragment = _build_knowledge_fragment(piece[:2000])
         if knowledge_fragment:
             system += '\n\n' + knowledge_fragment
-        # === 注入结束 ===
         user = CLEAN_USER_PROMPT.replace('{transcript}', piece)
         try:
             result = call_llm(
@@ -205,12 +240,27 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
         # 阈值与 segment 阶段保持一致(0.7): 避免被截断到 50%~70% 时静默接受半块而丢内容
         if len(result) < len(piece) * 0.7:
             result = piece
-        out_parts.append(result)
+        return idx, result
+
+    def _progress_after(idx):
         if progress_callback:
             try:
                 progress_callback(idx, total)
             except Exception:
                 pass
+
+    if total <= 1:
+        _, out = _process_block(1, pieces[0])
+        out_parts = [out]
+        _progress_after(1)
+    else:
+        out_parts = [None] * total
+        with ThreadPoolExecutor(max_workers=min(4, total)) as ex:
+            futs = {ex.submit(_process_block, i + 1, p): (i + 1) for i, p in enumerate(pieces)}
+            for fut in as_completed(futs):
+                idx, result = fut.result()
+                out_parts[idx - 1] = result
+                _progress_after(idx)
 
     return '\n\n'.join(out_parts)
 
@@ -436,7 +486,8 @@ def _merge_summaries(parts, knowledge_block, model_id=None):
     """将多段局部总结合并为一份统一总结；过长时分块合并，最终合并若仍超长则退化为拼接，避免死循环。"""
     parts = [p for p in parts if p and p.strip()]
     if not parts:
-        return ''
+        # 兜底：所有块均为空（如乱码输入）时，返回提示而非空串，避免界面显示空白
+        return '⚠️ 本次录音转写内容质量较差，无法生成有效摘要，建议重新识别录音后再生成总结。'
     if len(parts) == 1:
         return parts[0]
     combined = '\n\n'.join(f'【第 {i + 1} 部分】\n{p}' for i, p in enumerate(parts))
@@ -465,6 +516,19 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
     """
     if not transcript or not transcript.strip():
         return {'segmented': '', 'clean': '', 'summary': '无录音内容，无法生成总结。'}
+
+    # ---- 转写质量门槛：乱码/过短输入直接跳过三阶段，避免垃圾进 → 垃圾出 ----
+    # 注意：ASR 原始转写普遍无标点（正常录音也一样），所以这里只做最基础的门槛
+    # （过短、无意义字符），真正的质量判定在分段后（见阶段1后的 _estimate_segmented_quality）
+    quality = _estimate_text_quality(transcript)
+    if quality['quality'] == 'poor':
+        reason = quality['reason']
+        logger.warning(f'转写质量差，跳过三阶段总结：{reason}')
+        return {
+            'segmented': transcript,
+            'clean': transcript,
+            'summary': f'⚠️ 转写内容质量较差（{reason}），建议重新识别录音后再生成总结。'
+        }
 
     config = _get_llm_config(model_id)
     knowledge_block = build_meeting_knowledge(transcript[:2000])
@@ -510,6 +574,18 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
         progress_callback=lambda b, t: _report('发言分段', 1, b, t),
     )
 
+    # ---- 分段失败检测：无 [发言N]: 标记说明识别质量差（乱码/静音/单段），直接中止后续阶段 ----
+    # 核心判据：正常会议转写经分段后必然产生多个 [发言N]: 标记；
+    # 乱码/识别碎片文本模型无法识别发言轮次 → 0 标记（id=22 实证）
+    if '[发言' not in segmented and len(segmented) > 200:
+        reason = '未生成发言分段标记，疑似转写质量差（乱码或识别碎片）'
+        logger.warning(f'分段检测：{reason}（{len(segmented)} 字）')
+        return {
+            'segmented': segmented,
+            'clean': segmented,
+            'summary': f'⚠️ 本次录音转写质量较差（{reason}），建议重新识别录音后再生成总结。'
+        }
+
     # 阶段2：清洁版（基于分段输出，内部同样按小块回写，避免截断丢内容）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')
     clean = clean_meeting(
@@ -548,6 +624,39 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
 
 
 # ===================== 辅助函数 =====================
+
+def _estimate_text_quality(text: str) -> dict:
+    """评估转写文本质量，识别乱码/过短等不可用输入。
+
+    用于 summarize_meeting 入口门槛：质量差时跳过三阶段 LLM 调用，
+    避免"垃圾输入 → 三阶段无容错 → 垃圾输出"的连锁浪费。
+
+    Returns:
+        dict: {'quality': 'ok'|'poor', 'reason': str}
+    """
+    import re
+    total = len(text)
+    if total < 200:
+        return {'quality': 'poor', 'reason': f'转写内容过短（{total} 字）'}
+
+    # 中文字符占比：乱码文本（拼音/无意义符号/口语错乱）中文字符占比显著偏低
+    cn_chars = re.findall(r'[一-鿿]', text)
+    cn_ratio = len(cn_chars) / total
+    if cn_ratio < 0.5:
+        return {'quality': 'poor', 'reason': f'中文字符占比过低（{cn_ratio:.0%}），疑似乱码或识别错误'}
+
+    # 连续重复字符检测（乱码常见特征：单字/单词无限重复）
+    repeats = re.findall(r'(.)\1{3,}', text)
+    if len(repeats) > 30:
+        return {'quality': 'poor', 'reason': f'存在大量连续重复字符（{len(repeats)} 处）'}
+
+    # 非常规符号占比（emoji、特殊符号、无意义标点簇）
+    weird = re.findall(r'[^一-鿿　-〿＀-￯0-9a-zA-Z，。！？、；：""''（）《》\s-]', text)
+    if len(weird) / total > 0.1:
+        return {'quality': 'poor', 'reason': f'非常规符号占比过高（{len(weird)} 个）'}
+
+    return {'quality': 'ok', 'reason': ''}
+
 
 def _get_llm_config(model_id=None):
     """获取 LLM 配置。

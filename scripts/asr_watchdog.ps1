@@ -63,15 +63,24 @@ function Test-AsrLocal {
 }
 
 function Start-AsrApi {
-    Write-Log "Starting ASR API: python services/asr_api.py --port $ASR_PORT" "INFO"
+    Write-Log "Starting ASR API: python services/asr_api.py --port $ASR_PORT (GPU mode)" "INFO"
     try {
         Set-Location $API_DIR
-        $p = Start-Process -FilePath "python" `
-            -ArgumentList "services/asr_api.py", "--port", $ASR_PORT `
-            -WindowStyle Hidden `
-            -RedirectStandardOutput (Join-Path $SCRIPT_DIR "asr_api.log") `
-            -RedirectStandardError  (Join-Path $SCRIPT_DIR "asr_api_err.log") `
-            -PassThru
+        # ASR_DEVICE_ID=0 强制 GPU 推理（funasr-onnx CUDAExecutionProvider）。
+        # 缺省 -1 会退化到 CPU：转写质量差 + 极慢（id=22 乱码根因之一）。
+        # 注意：PS5.1 Start-Process 不支持 -Environment，改用临时进程环境变量
+        $oldDeviceId = $env:ASR_DEVICE_ID
+        $env:ASR_DEVICE_ID = "0"
+        try {
+            $p = Start-Process -FilePath "python" `
+                -ArgumentList "services/asr_api.py", "--port", $ASR_PORT `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput (Join-Path $SCRIPT_DIR "asr_api.log") `
+                -RedirectStandardError  (Join-Path $SCRIPT_DIR "asr_api_err.log") `
+                -PassThru
+        } finally {
+            $env:ASR_DEVICE_ID = $oldDeviceId
+        }
         $script:asrProc = $p
         # wait for model load (up to ~60s)
         for ($i = 1; $i -le 30; $i++) {
@@ -91,6 +100,12 @@ function Start-Tunnel {
     try {
         ssh.exe -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=10 $SERVER `
             "fuser -k ${REMOTE_PORT}/tcp 2>/dev/null; true" 2>$null | Out-Null
+    } catch {}
+    # kill any leftover local tunnel ssh processes (stale/zombie connections)
+    try {
+        Get-Process ssh -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -match "15002:localhost"
+        } | ForEach-Object { try { $_.Kill() } catch {} }
     } catch {}
     Write-Log "Building SSH reverse tunnel: ${REMOTE_PORT}:localhost:${ASR_PORT} -> $SERVER" "INFO"
     try {
@@ -112,10 +127,16 @@ function Start-Tunnel {
 }
 
 function Test-TunnelAlive {
+    # 1) 本地 ssh 进程必须存活
     if ($null -eq $script:tunnelProc) { return $false }
     if ($script:tunnelProc.HasExited) { return $false }
-    # process alive == tunnel considered alive (laptop side cannot probe server 15002 directly)
-    return $true
+    # 2) 服务器端必须能通过隧道访问到本地 ASR（探测 15002 → /health）
+    #    修复：旧逻辑只看本地进程存活，僵尸隧道（进程在但数据不通）检测不出
+    try {
+        $r = ssh.exe -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=8 $SERVER `
+            "curl -s -m 5 http://127.0.0.1:${REMOTE_PORT}/health" 2>$null
+        return ($r -match '"status"\s*:\s*"ok"')
+    } catch { return $false }
 }
 
 function Invoke-Check {

@@ -429,7 +429,11 @@ def download_audio_docx(item_id):
 @admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/pdf', methods=['POST'])
 @dual_login_required
 def export_audio_pdf(item_id):
-    """导出录音总结 PDF（支持多版本合并：分段原文/清洁版/摘要版）"""
+    """导出录音总结 PDF（支持多版本合并：分段原文/清洁版/摘要版）
+
+    流程：内容先经公文提示词清洗（official_clean_service），
+    再按公文格式（GB/T 9704-2012）生成 PDF。与清洁版 LLM 框架解耦。
+    """
     item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
     data = request.get_json(silent=True) or {}
     versions = data.get('versions') or ['summary']
@@ -439,8 +443,23 @@ def export_audio_pdf(item_id):
         return jsonify({'code': 1, 'message': '请至少选择一个版本'}), 400
 
     try:
+        from services.official_clean_service import official_clean
         from services.pdf_service import generate_meeting_pdf
-        pdf_path = generate_meeting_pdf(item, valid, title='工作台账会议录音总结')
+
+        # 逐版本用公文提示词清洗（失败返回原文，不阻塞导出）
+        cleaned = {}
+        for v in valid:
+            cfg = {'segmented': ('audio_transcript_segmented', 'audio_transcript'),
+                   'clean': ('audio_transcript_clean', None),
+                   'summary': ('audio_summary_structured', 'audio_summary')}[v]
+            text = getattr(item, cfg[0], None) or ''
+            if not text and cfg[1]:
+                text = getattr(item, cfg[1], None) or ''
+            if text:
+                cleaned[v] = official_clean(text)
+
+        pdf_path = generate_meeting_pdf(item, valid, title='工作台账会议录音总结',
+                                        cleaned_contents=cleaned)
         pdf_url = '/static/meetings/' + os.path.basename(pdf_path)
         return jsonify({'code': 0, 'data': {'url': pdf_url, 'name': os.path.basename(pdf_path)}})
     except Exception as e:

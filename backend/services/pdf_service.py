@@ -223,13 +223,15 @@ def _parse_markdown_to_elements(text, styles):
     return elements
 
 
-def generate_meeting_pdf(activity, versions, title='工作台账会议录音总结'):
+def generate_meeting_pdf(activity, versions, title='工作台账会议录音总结', cleaned_contents=None):
     """生成工作台账录音总结 PDF（公文格式，可多版本合并）。
 
     Args:
         activity: ActivityLedger 实例
         versions: 要导出的版本列表，如 ['summary'] 或 ['segmented', 'summary']
         title: PDF 主标题（默认"工作台账会议录音总结"）
+        cleaned_contents: 可选 dict {version: 已清洗文本}；提供时优先使用清洗后内容，
+                         否则读活动实例的原始字段。
 
     Returns:
         str: PDF 文件绝对路径
@@ -239,6 +241,8 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
 
     if not _register_fonts():
         raise RuntimeError('未找到公文字体，无法导出 PDF')
+
+    cleaned_contents = cleaned_contents or {}
 
     out_dir = os.path.join(current_app.static_folder, 'meetings')
     os.makedirs(out_dir, exist_ok=True)
@@ -318,10 +322,14 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
     for i, v in enumerate(versions):
         if v not in VERSIONS:
             continue
-        cfg = VERSIONS[v]
-        text = getattr(activity, cfg['field'], None) or ''
-        if not text and cfg['fallback']:
-            text = getattr(activity, cfg['fallback'], None) or ''
+        # 优先使用公文清洗后的内容，否则读原始字段
+        if v in cleaned_contents and cleaned_contents[v]:
+            text = cleaned_contents[v]
+        else:
+            cfg = VERSIONS[v]
+            text = getattr(activity, cfg['field'], None) or ''
+            if not text and cfg['fallback']:
+                text = getattr(activity, cfg['fallback'], None) or ''
         if not text:
             continue
 

@@ -440,7 +440,7 @@ def export_audio_pdf(item_id):
 
     try:
         from services.pdf_service import generate_meeting_pdf
-        pdf_path = generate_meeting_pdf(item, valid, title='活动台账 会议录音总结')
+        pdf_path = generate_meeting_pdf(item, valid, title='工作台账会议录音总结')
         pdf_url = '/static/meetings/' + os.path.basename(pdf_path)
         return jsonify({'code': 0, 'data': {'url': pdf_url, 'name': os.path.basename(pdf_path)}})
     except Exception as e:

@@ -30,10 +30,12 @@ SEGMENT_SYSTEM_PROMPT = """您是专业的政务招商会议文本整理专员, 
 
 任务: 对原始会议语音转写文本做【基础分段 + 术语/谐音校正】, 输出带发言标记的"分段原文"。本阶段只做"分段"与"识别纠错", 不增删任何实质性内容。
 
-【发言分段】
+【发言分段】(强制要求)
 - 识别发言轮次, 在每轮发言前插入换行与发言标记(格式: [发言N]:), 仅做切断分段。
 - 当话题切换、发言人改变、或出现明显停顿(如"好的""接下来""另外一个事")时切段。
 - 每段以 [发言N]: 开头(N从1递增); 输出篇幅应与原文基本一致。
+- **必须输出至少一个 [发言N]: 标记**。即使整块只有一位发言人/一段话, 也要输出 [发言1]: 开头。
+- 严禁整块原样回写而不加任何发言标记; 若无法识别轮次, 将整块作为 [发言1]: 输出。
 
 【术语/谐音校正】(仅修正明显的语音识别错误, 不改变语义与内容)
 - 依据下方【语音识别本地知识提示】, 把误识别的同音词、方言词、专有名词改正为正确写法。
@@ -152,26 +154,42 @@ def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, p
     total = len(pieces)
 
     # 独立块并发回写（V16.10: 串行→并行，2 小时录音从 ~40 次调用降到 ~10 次等待时间）
+    # 注意：子线程内必须 push app context——_build_knowledge_fragment / _get_llm_config
+    # 需要访问 DB（VoiceKnowledgeEntry / LLMModel），缺 context 会 Working outside of application context
+    from flask import current_app
+    try:
+        _app_obj = current_app._get_current_object()
+    except Exception:
+        _app_obj = None
+
     def _process_block(idx, piece):
-        system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
-        knowledge_fragment = _build_knowledge_fragment(piece[:2000])
-        if knowledge_fragment:
-            system += '\n\n' + knowledge_fragment
-        user = SEGMENT_USER_PROMPT.replace('{transcript}', piece)
+        # 子线程内建立 app context（独立 context，不影响调用方线程）
+        ctx = _app_obj.app_context() if _app_obj is not None else None
+        if ctx is not None:
+            ctx.push()
         try:
-            result = call_llm(
-                config,
-                [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-                temperature=0.2,
-                max_tokens=echo_max, enable_web_search=False,
-            ).strip()
-        except Exception as e:
-            logger.warning(f'segment_meeting failed: {e}')
-            result = piece  # 降级：保留原文
-        # 安全网：回写内容明显短于原文 (被截断) → 退回原文, 保证不丢内容
-        if len(result) < len(piece) * 0.7:
-            result = piece
-        return idx, result
+            system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
+            knowledge_fragment = _build_knowledge_fragment(piece[:2000])
+            if knowledge_fragment:
+                system += '\n\n' + knowledge_fragment
+            user = SEGMENT_USER_PROMPT.replace('{transcript}', piece)
+            try:
+                result = call_llm(
+                    config,
+                    [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+                    temperature=0.2,
+                    max_tokens=echo_max, enable_web_search=False,
+                ).strip()
+            except Exception as e:
+                logger.warning(f'segment_meeting failed: {e}')
+                result = piece  # 降级：保留原文
+            # 安全网：回写内容明显短于原文 (被截断) → 退回原文, 保证不丢内容
+            if len(result) < len(piece) * 0.7:
+                result = piece
+            return idx, result
+        finally:
+            if ctx is not None:
+                ctx.pop()
 
     # 串行进度回调（按块序回调，避免进度乱序）
     def _progress_after(idx):
@@ -220,27 +238,41 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
     total = len(pieces)
 
     # 独立块并发回写（V16.10: 与阶段1对齐，串行→并行）
+    # 注意：子线程内必须 push app context——_build_knowledge_fragment 需要访问 DB
+    from flask import current_app
+    try:
+        _app_obj = current_app._get_current_object()
+    except Exception:
+        _app_obj = None
+
     def _process_block(idx, piece):
-        system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
-        knowledge_fragment = _build_knowledge_fragment(piece[:2000])
-        if knowledge_fragment:
-            system += '\n\n' + knowledge_fragment
-        user = CLEAN_USER_PROMPT.replace('{transcript}', piece)
+        ctx = _app_obj.app_context() if _app_obj is not None else None
+        if ctx is not None:
+            ctx.push()
         try:
-            result = call_llm(
-                config,
-                [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-                temperature=0.3,
-                max_tokens=echo_max, enable_web_search=False,
-            ).strip()
-        except Exception as e:
-            logger.warning(f'clean_meeting failed: {e}')
-            result = piece  # 降级：保留原文
-        # 安全网：回写明显短于原文 (被截断) → 退回原文, 保证不丢内容
-        # 阈值与 segment 阶段保持一致(0.7): 避免被截断到 50%~70% 时静默接受半块而丢内容
-        if len(result) < len(piece) * 0.7:
-            result = piece
-        return idx, result
+            system = CLEAN_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
+            knowledge_fragment = _build_knowledge_fragment(piece[:2000])
+            if knowledge_fragment:
+                system += '\n\n' + knowledge_fragment
+            user = CLEAN_USER_PROMPT.replace('{transcript}', piece)
+            try:
+                result = call_llm(
+                    config,
+                    [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
+                    temperature=0.3,
+                    max_tokens=echo_max, enable_web_search=False,
+                ).strip()
+            except Exception as e:
+                logger.warning(f'clean_meeting failed: {e}')
+                result = piece  # 降级：保留原文
+            # 安全网：回写明显短于原文 (被截断) → 退回原文, 保证不丢内容
+            # 阈值与 segment 阶段保持一致(0.7): 避免被截断到 50%~70% 时静默接受半块而丢内容
+            if len(result) < len(piece) * 0.7:
+                result = piece
+            return idx, result
+        finally:
+            if ctx is not None:
+                ctx.pop()
 
     def _progress_after(idx):
         if progress_callback:
@@ -471,12 +503,18 @@ def _do_merge(text, knowledge_block, model_id=None):
         system += '\n\n# 术语与专有名词参考\n' + knowledge_block
     user = f'请将以下多段局部总结合并为一份统一的结构化总结：\n\n{text}'
     try:
-        return call_llm(
+        result = call_llm(
             config,
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             temperature=0.3,
             max_tokens=6000, enable_web_search=False,
         ).strip()
+        # 兜底：模型返回空串（deepseek-v4-flash 对长 Markdown 合并输入偶发返回空）
+        # 退化为原文本拼接，保证内容不丢，避免摘要为空
+        if not result:
+            logger.warning('合并总结返回空串，退化为原文本拼接')
+            return text
+        return result
     except Exception as e:
         logger.warning(f'合并总结失败：{e}')
         return text
@@ -574,17 +612,31 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
         progress_callback=lambda b, t: _report('发言分段', 1, b, t),
     )
 
-    # ---- 分段失败检测：无 [发言N]: 标记说明识别质量差（乱码/静音/单段），直接中止后续阶段 ----
-    # 核心判据：正常会议转写经分段后必然产生多个 [发言N]: 标记；
-    # 乱码/识别碎片文本模型无法识别发言轮次 → 0 标记（id=22 实证）
+    # ---- 分段检测：无 [发言N]: 标记时降级处理 ----
+    # 转写可读（有标点/可理解）但模型未分段 → 降级：不中止，用原文继续清洁/摘要；
+    # 转写明显乱码（无标点 + 内容不可读）→ 中止，提示重新识别
     if '[发言' not in segmented and len(segmented) > 200:
-        reason = '未生成发言分段标记，疑似转写质量差（乱码或识别碎片）'
-        logger.warning(f'分段检测：{reason}（{len(segmented)} 字）')
-        return {
-            'segmented': segmented,
-            'clean': segmented,
-            'summary': f'⚠️ 本次录音转写质量较差（{reason}），建议重新识别录音后再生成总结。'
-        }
+        # 用质量检测判断是否真乱码（无标点 + 无结构）
+        from flask import current_app as _ca
+        try:
+            _app_ref = _ca._get_current_object()
+        except Exception:
+            _app_ref = None
+        q = _estimate_text_quality(segmented)
+        # 补充标点判据：正常转写即使无分段标记，标点占比应 > 0.2%
+        punct_cnt = len(re.findall(r'[，。！？、；：]', segmented))
+        punct_ratio = punct_cnt / len(segmented) if segmented else 0
+        if q['quality'] == 'poor' or punct_ratio < 0.002:
+            reason = '未生成发言分段标记且标点占比过低，疑似转写质量差（乱码或识别碎片）'
+            logger.warning(f'分段检测：{reason}（{len(segmented)} 字）')
+            return {
+                'segmented': segmented,
+                'clean': segmented,
+                'summary': f'⚠️ 本次录音转写质量较差（{reason}），建议重新识别录音后再生成总结。'
+            }
+        # 可读但未分段：降级用原文继续（不中止流程）
+        logger.warning(f'分段检测：未生成 [发言N]: 标记但内容可读（{len(segmented)} 字），降级用原文继续')
+        segmented = segmented.replace('【', '\n【')  # 按文件标题简单切分，便于清洁版结构
 
     # 阶段2：清洁版（基于分段输出，内部同样按小块回写，避免截断丢内容）
     logger.info(f'阶段2/3: 清洁版 ({len(segmented)} 字输入)')

@@ -78,6 +78,11 @@ export function retryAudioSummary(id, data = null) {
   return api.post(`/admin/activity-ledger/${id}/audio/retry-summary`, data)
 }
 
+// 导出录音总结 PDF（多版本合并）
+export function exportAudioPdf(id, versions) {
+  return api.post(`/admin/activity-ledger/${id}/audio/pdf`, { versions })
+}
+
 // 获取可用 LLM 模型列表（供前端选择）
 export function getLLMModels() {
   return api.get('/llm-models')

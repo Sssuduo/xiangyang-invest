@@ -188,9 +188,14 @@
                 <div v-if="viewItem.audio_transcript_clean || viewItem.audio_summary_structured || viewItem.audio_transcript" class="view-audio-text" style="margin-top: 8px;">
                   <div class="audio-section-header">
                     <span class="section-label">录音识别内容</span>
-                    <a v-if="viewItem.audio_docx_path" :href="viewItem.audio_docx_path" target="_blank" class="docx-download-link">
-                      <el-icon><Download /></el-icon> 下载 Word
-                    </a>
+                    <div class="audio-header-actions">
+                      <el-button size="small" type="primary" plain @click="handleViewCopyCurrent">
+                        <el-icon><CopyDocument /></el-icon> 一键复制
+                      </el-button>
+                      <el-button size="small" type="success" plain @click="handleViewExportPdf">
+                        <el-icon><Document /></el-icon> 导出 PDF
+                      </el-button>
+                    </div>
                   </div>
                   <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
                     <el-tab-pane v-if="viewItem.audio_transcript_segmented || viewItem.audio_transcript" label="分段原文" name="segmented">
@@ -433,6 +438,14 @@
                         <el-icon><Document /></el-icon> 录音识别内容
                         <el-tag v-if="audioDetail?.audio_transcript" size="small" type="primary" effect="plain">{{ (audioDetail.audio_transcript || '').length }} 字</el-tag>
                       </span>
+                      <div class="audio-header-actions">
+                        <el-button size="small" type="primary" plain @click="handleCopyCurrentVersion">
+                          <el-icon><CopyDocument /></el-icon> 一键复制
+                        </el-button>
+                        <el-button size="small" type="success" plain @click="handleExportPdf">
+                          <el-icon><Document /></el-icon> 导出 PDF
+                        </el-button>
+                      </div>
                     </div>
                     <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
                       <el-tab-pane label="分段原文" name="segmented">
@@ -487,8 +500,8 @@
                   <el-button size="small" plain @click="openTermDrawer">
                     <el-icon><Edit /></el-icon> 术语管理
                   </el-button>
-                  <el-button v-if="audioDetail?.audio_docx_path" size="small" type="success" plain @click="downloadAudioDocx">
-                    <el-icon><Download /></el-icon> 下载 Word
+                  <el-button size="small" type="success" plain @click="handleExportPdf">
+                    <el-icon><Document /></el-icon> 导出 PDF
                   </el-button>
                 </div>
               </div>
@@ -543,6 +556,38 @@
         </el-form>
       </div>
     </el-drawer>
+
+    <!-- 导出 PDF 版本选择弹窗 -->
+    <el-dialog v-model="pdfExportDialogVisible" title="导出 PDF" width="420px">
+      <div class="pdf-export-dialog">
+        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个 PDF）：</p>
+        <el-checkbox-group v-model="pdfExportVersions">
+          <el-checkbox label="segmented">分段原文</el-checkbox>
+          <el-checkbox label="clean">清洁版</el-checkbox>
+          <el-checkbox label="summary">摘要版</el-checkbox>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <el-button @click="pdfExportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pdfExportLoading" @click="confirmExportPdf">导出</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 查看抽屉 PDF 导出版本选择弹窗 -->
+    <el-dialog v-model="viewPdfDialogVisible" title="导出 PDF" width="420px">
+      <div class="pdf-export-dialog">
+        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个 PDF）：</p>
+        <el-checkbox-group v-model="viewPdfVersions">
+          <el-checkbox label="segmented">分段原文</el-checkbox>
+          <el-checkbox label="clean">清洁版</el-checkbox>
+          <el-checkbox label="summary">摘要版</el-checkbox>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <el-button @click="viewPdfDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="viewPdfLoading" @click="confirmViewExportPdf">导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -550,11 +595,11 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture, CopyDocument } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { useAudioRecording } from '@/composables/useAudioRecording'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels, exportAudioPdf } from '@/api/activityLedger'
 import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -772,6 +817,73 @@ async function handleView(row) {
   } catch { /* 加载详情失败，保留列表数据 */ }
 }
 
+// ---- 查看抽屉：一键复制当前版本 ----
+async function handleViewCopyCurrent() {
+  const item = viewItem.value
+  if (!item) {
+    ElMessage.warning('暂无内容可复制')
+    return
+  }
+  const tab = audioActiveTab.value
+  let text = ''
+  if (tab === 'segmented') text = item.audio_transcript_segmented || item.audio_transcript || ''
+  else if (tab === 'clean') text = item.audio_transcript_clean || ''
+  else if (tab === 'summary') text = item.audio_summary_structured || item.audio_summary || ''
+  if (!text || !text.trim()) {
+    ElMessage.warning('当前版本暂无内容')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制当前版本内容')
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    ElMessage.success('已复制当前版本内容')
+  }
+}
+
+// ---- 查看抽屉：导出 PDF ----
+const viewPdfDialogVisible = ref(false)
+const viewPdfVersions = ref(['summary'])
+const viewPdfLoading = ref(false)
+
+function handleViewExportPdf() {
+  viewPdfVersions.value = ['summary']
+  viewPdfDialogVisible.value = true
+}
+
+async function confirmViewExportPdf() {
+  const item = viewItem.value
+  if (!item || !item.id) {
+    ElMessage.warning('数据未加载完成')
+    return
+  }
+  if (viewPdfVersions.value.length === 0) {
+    ElMessage.warning('请至少选择一个版本')
+    return
+  }
+  viewPdfLoading.value = true
+  try {
+    const res = await exportAudioPdf(item.id, viewPdfVersions.value)
+    if (res.code === 0) {
+      window.open(res.data.url, '_blank')
+      ElMessage.success('PDF 已生成')
+      viewPdfDialogVisible.value = false
+    } else {
+      ElMessage.error(res.message || '导出失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '导出 PDF 失败')
+  } finally {
+    viewPdfLoading.value = false
+  }
+}
+
 // ---- 项目详情 ----
 async function handleProjectClick(row) {
   if (!row.linked_project_id) return
@@ -964,6 +1076,73 @@ async function handleDeleteAudio() {
 async function downloadAudioDocx() {
   if (!editingId.value) return
   await audio.downloadDocx(editingId.value, `活动台账_会议总结_${editingId.value}.docx`)
+}
+
+// ---- 一键复制当前版本 ----
+async function handleCopyCurrentVersion() {
+  const detail = audioDetail.value
+  if (!detail) {
+    ElMessage.warning('暂无内容可复制')
+    return
+  }
+  const tab = audioActiveTab.value
+  let text = ''
+  if (tab === 'segmented') text = detail.audio_transcript_segmented || detail.audio_transcript || ''
+  else if (tab === 'clean') text = detail.audio_transcript_clean || ''
+  else if (tab === 'summary') text = detail.audio_summary_structured || detail.audio_summary || ''
+  if (!text || !text.trim()) {
+    ElMessage.warning('当前版本暂无内容')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制当前版本内容')
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    ElMessage.success('已复制当前版本内容')
+  }
+}
+
+// ---- 导出 PDF（弹窗多选版本） ----
+const pdfExportDialogVisible = ref(false)
+const pdfExportVersions = ref(['summary'])
+const pdfExportLoading = ref(false)
+
+function handleExportPdf() {
+  pdfExportVersions.value = ['summary']
+  pdfExportDialogVisible.value = true
+}
+
+async function confirmExportPdf() {
+  if (!editingId.value) {
+    ElMessage.warning('请先保存活动台账')
+    return
+  }
+  if (pdfExportVersions.value.length === 0) {
+    ElMessage.warning('请至少选择一个版本')
+    return
+  }
+  pdfExportLoading.value = true
+  try {
+    const res = await exportAudioPdf(editingId.value, pdfExportVersions.value)
+    if (res.code === 0) {
+      // 新标签页打开 PDF
+      window.open(res.data.url, '_blank')
+      ElMessage.success('PDF 已生成')
+      pdfExportDialogVisible.value = false
+    } else {
+      ElMessage.error(res.message || '导出失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '导出 PDF 失败')
+  } finally {
+    pdfExportLoading.value = false
+  }
 }
 
 // ---- 保存 ----
@@ -1320,6 +1499,19 @@ async function handleDelete(row) {
   margin-bottom: 8px;
   padding-bottom: 6px;
   border-bottom: 1px dashed #e0e0e0;
+}
+.audio-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pdf-export-dialog {
+  padding: 8px 4px;
+}
+.pdf-export-tip {
+  font-size: 13px;
+  color: #5a6c7d;
+  margin-bottom: 14px;
 }
 .section-label {
   display: flex;

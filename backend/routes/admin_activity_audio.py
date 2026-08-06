@@ -430,3 +430,24 @@ def download_activity_audio_docx(item_id):
     dir_name = os.path.dirname(docx_abs)
     basename = os.path.basename(docx_abs)
     return send_from_directory(dir_name, basename, as_attachment=True)
+
+
+@admin_activity_audio_bp.route('/activity/<int:item_id>/audio/pdf', methods=['POST'])
+@dual_login_required
+def export_activity_audio_pdf(item_id):
+    """导出招商动态录音总结 PDF（支持多版本合并）"""
+    item = InvestmentActivity.query.filter_by(id=item_id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    versions = data.get('versions') or ['summary']
+    valid = [v for v in versions if v in ('segmented', 'clean', 'summary')]
+    if not valid:
+        return jsonify({'code': 1, 'message': '请至少选择一个版本'}), 400
+
+    try:
+        from services.pdf_service import generate_meeting_pdf
+        pdf_path = generate_meeting_pdf(item, valid, title='招商动态 会议录音总结')
+        pdf_url = '/static/meetings/' + os.path.basename(pdf_path)
+        return jsonify({'code': 0, 'data': {'url': pdf_url, 'name': os.path.basename(pdf_path)}})
+    except Exception as e:
+        logger.error(f'PDF 导出失败: {e}', exc_info=True)
+        return jsonify({'code': 1, 'message': f'PDF 导出失败：{str(e)[:200]}'}), 500

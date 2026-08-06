@@ -130,98 +130,128 @@ SUMMARY_USER_PROMPT = """请基于以下会议文本生成高度凝练的结构�
 注意: 纪要应聚焦核心结论与行动事项, 进行高度凝练, 舍弃过程性细节, 但不得遗漏关键数据与待办。"""
 
 
-# ===================== V15.2 三阶段总结函数 =====================
+# ===================== V16.11 规则分段（阶段1，零 LLM 调用） =====================
 
-def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, progress_callback=None) -> str:
-    """阶段1: 发言分段 — 仅识别发言人并插入 [发言N]: 标记, 100% 保留原文内容, 不增不减。
+# 话题切换信号词：出现时强制切段
+_TOPIC_SWITCH_WORDS = [
+    '下一个', '另外一个', '另一个', '接下来', '下面一个', '再看', '再说下',
+    '汇报一下', '这个项目', '刚才说的', '另外', '还有一个', '还有个',
+]
 
-    按小块 (ECHO_CHUNK_SIZE) 逐块回写, 确保模型能把整块原文完整输出 (避免 max_tokens 截断丢内容);
-    若某块回写内容明显短于原文 (被截断), 退回该块原文以保证不丢内容; 最后全局重排发言人编号。
-    progress_callback(block, total): 每完成一块回调一次, 用于上报进度。
+# 段落起始标记（ASR 输出常见）：数字序号 / 项目符号 / 中文序号
+_LINE_START_PATTERN = re.compile(
+    r'^(?:\d+[\.、．]|[（(]\d+[）)]|一|二|三|四|五|六|七|八|九|十|[①②③④⑤⑥⑦⑧⑨⑩])'
+)
+
+
+def _split_lines_for_segment(text: str) -> list:
+    """把转写文本按行切分为段落候选（保留空行作为天然分段标记）。"""
+    lines = [ln.strip() for ln in text.split('\n')]
+    return [ln for ln in lines if ln]
+
+
+def _is_topic_switch(line: str) -> bool:
+    """判断一行是否包含话题切换信号（整句开头或前 12 字内）。"""
+    head = line[:12]
+    for w in _TOPIC_SWITCH_WORDS:
+        if w in head:
+            return True
+    return False
+
+
+def _looks_like_section_start(line: str) -> bool:
+    """判断一行是否像新段落/新议题起始（序号开头或【文件标题】）。"""
+    if line.startswith('【') or line.startswith('['):
+        return True
+    if _LINE_START_PATTERN.match(line):
+        return True
+    return False
+
+
+def segment_meeting_rule_based(transcript: str, max_segment_chars: int = 400) -> str:
+    """阶段1（规则版）：纯规则发言分段，零 LLM 调用。
+
+    设计目标（V16.11）：
+    - ASR 转写普遍无标点（SenseVoice 特征），LLM 无法可靠识别发言轮次；
+      改为规则分段——按行 + 话题切换词 + 序号起始切段，稳定且零成本。
+    - 规则切分后每段标注 [发言N]:，跨段连续编号；无法归入任何段落的
+      碎片合并到相邻段，保证内容 100% 保留。
+
+    Args:
+        transcript: ASR 转写原始文本
+        max_segment_chars: 单段最大字符数（超过则强制切段，避免段过长）
+
+    Returns:
+        str: 带 [发言N]: 标记的分段文本
     """
     if not transcript or not transcript.strip():
         return ''
 
-    config = _get_llm_config(model_id)
-    if not config:
-        return transcript  # 降级：返回原文
+    lines = _split_lines_for_segment(transcript)
+    if not lines:
+        return transcript
 
-    from services.llm_service import call_llm
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    segments = []          # 每项: [text_lines, start_idx]
+    current = []           # 当前段的行
+    current_len = 0
+    speaker_no = 0         # 发言编号（切段时递增）
 
-    echo_chunk, echo_max = _echo_chunk_params(config)
-    pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
-    total = len(pieces)
+    def _flush():
+        nonlocal current, current_len, speaker_no
+        if current:
+            speaker_no += 1
+            segments.append((list(current), speaker_no))
+            current = []
+            current_len = 0
 
-    # 独立块并发回写（V16.10: 串行→并行，2 小时录音从 ~40 次调用降到 ~10 次等待时间）
-    # 注意：子线程内必须 push app context——_build_knowledge_fragment / _get_llm_config
-    # 需要访问 DB（VoiceKnowledgeEntry / LLMModel），缺 context 会 Working outside of application context
-    from flask import current_app
-    try:
-        _app_obj = current_app._get_current_object()
-    except Exception:
-        _app_obj = None
+    for ln in lines:
+        # 段落起始（序号开头/文件标题）→ 切段
+        if _looks_like_section_start(ln) and current:
+            _flush()
+        # 话题切换词 → 切段
+        elif _is_topic_switch(ln) and current:
+            _flush()
+        # 单段超长 → 强制切段
+        elif current_len + len(ln) > max_segment_chars and current:
+            _flush()
 
-    def _process_block(idx, piece):
-        # 子线程内建立 app context（独立 context，不影响调用方线程）
-        ctx = _app_obj.app_context() if _app_obj is not None else None
-        if ctx is not None:
-            ctx.push()
+        current.append(ln)
+        current_len += len(ln)
+
+    _flush()
+
+    # 组装输出：每段以 [发言N]: 开头，内容行以缩进保留
+    out = []
+    for text_lines, no in segments:
+        body = '\n'.join(text_lines)
+        out.append(f'[发言{no}]:\n{body}')
+    return '\n\n'.join(out)
+
+
+def segment_meeting(transcript: str, knowledge_block: str = '', model_id=None, progress_callback=None) -> str:
+    """阶段1: 发言分段 — 规则分段（V16.11 重构：弃用 LLM 回写）。
+
+    历史问题（id=24 实证）：LLM 对无标点长文本无法识别发言轮次，
+    输出 0 个 [发言N]: 标记；且回写型任务块大小受限，调用次数爆炸。
+    重构为纯规则分段：零 LLM 调用，稳定可靠，效率提升 10 倍以上。
+
+    progress_callback 保留兼容（规则分段瞬时完成，回调一次 100%）。
+    """
+    result = segment_meeting_rule_based(transcript)
+    if progress_callback:
         try:
-            system = SEGMENT_SYSTEM_PROMPT.replace('{meeting_knowledge}', knowledge_block or '（无关联项目）')
-            knowledge_fragment = _build_knowledge_fragment(piece[:2000])
-            if knowledge_fragment:
-                system += '\n\n' + knowledge_fragment
-            user = SEGMENT_USER_PROMPT.replace('{transcript}', piece)
-            try:
-                result = call_llm(
-                    config,
-                    [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-                    temperature=0.2,
-                    max_tokens=echo_max, enable_web_search=False,
-                ).strip()
-            except Exception as e:
-                logger.warning(f'segment_meeting failed: {e}')
-                result = piece  # 降级：保留原文
-            # 安全网：回写内容明显短于原文 (被截断) → 退回原文, 保证不丢内容
-            if len(result) < len(piece) * 0.7:
-                result = piece
-            return idx, result
-        finally:
-            if ctx is not None:
-                ctx.pop()
-
-    # 串行进度回调（按块序回调，避免进度乱序）
-    def _progress_after(idx):
-        if progress_callback:
-            try:
-                progress_callback(idx, total)
-            except Exception:
-                pass
-
-    if total <= 1:
-        # 单块直接执行（避免线程开销）
-        _, out = _process_block(1, pieces[0])
-        out_parts = [out]
-        _progress_after(1)
-    else:
-        # 并发执行；结果按 idx 归位保证顺序稳定
-        out_parts = [None] * total
-        with ThreadPoolExecutor(max_workers=min(4, total)) as ex:
-            futs = {ex.submit(_process_block, i + 1, p): (i + 1) for i, p in enumerate(pieces)}
-            for fut in as_completed(futs):
-                idx, result = fut.result()
-                out_parts[idx - 1] = result
-                _progress_after(idx)
-
-    return _renumber_speakers('\n\n'.join(out_parts))
+            progress_callback(1, 1)
+        except Exception:
+            pass
+    return result
 
 
 def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, progress_callback=None) -> str:
     """阶段2: 清洁版（输入：带标记的分段文本）— 基础结构化整理 + 去噪, 完整度优先、不浓缩。
 
-    同样按小块 (ECHO_CHUNK_SIZE) 回写, 避免 max_tokens 截断丢内容; 回写明显短于原文时退回原文。
-    progress_callback(block, total): 每完成一块回调一次, 用于上报进度。
+    V16.11 重构：清洁是"理解+重组"型任务，输出短、不受回写约束，
+    块大小从 ECHO_CHUNK_SIZE(2000) 提升到 CLEAN_CHUNK_SIZE(8000)，
+    调用次数从 ~12 次降到 ~2-3 次。
     """
     if not transcript or not transcript.strip():
         return ''
@@ -233,8 +263,10 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
     from services.llm_service import call_llm
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    echo_chunk, echo_max = _echo_chunk_params(config)
-    pieces = _chunk_text(transcript, echo_chunk, ECHO_OVERLAP_CHARS)
+    # V16.11：清洁是"理解+重组"型任务，输出短、不受回写约束，
+    # 块大小用 CLEAN_CHUNK_SIZE(8000)，max_tokens 相应放宽
+    clean_chunk, clean_max = _clean_chunk_params(config)
+    pieces = _chunk_text(transcript, clean_chunk, ECHO_OVERLAP_CHARS)
     total = len(pieces)
 
     # 独立块并发回写（V16.10: 与阶段1对齐，串行→并行）
@@ -260,14 +292,14 @@ def clean_meeting(transcript: str, knowledge_block: str = '', model_id=None, pro
                     config,
                     [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                     temperature=0.3,
-                    max_tokens=echo_max, enable_web_search=False,
+                    max_tokens=clean_max, enable_web_search=False,
                 ).strip()
             except Exception as e:
                 logger.warning(f'clean_meeting failed: {e}')
                 result = piece  # 降级：保留原文
-            # 安全网：回写明显短于原文 (被截断) → 退回原文, 保证不丢内容
-            # 阈值与 segment 阶段保持一致(0.7): 避免被截断到 50%~70% 时静默接受半块而丢内容
-            if len(result) < len(piece) * 0.7:
+            # 安全网：清洁是整理型任务，输出通常比输入短（去噪后），
+            # 但不得丢失实质内容——输出低于输入的 50% 视为异常回退
+            if len(result) < len(piece) * 0.5:
                 result = piece
             return idx, result
         finally:
@@ -351,6 +383,11 @@ ECHO_MAX_TOKENS = 6000        # 回写阶段单块输出上限基线
 ECHO_CHUNK_SIZE_MAX = 3000    # 回写阶段单块字符硬上限（受输出 token ~8K 限制，2*3000=6000≤常见上限）
 ECHO_OVERLAP_CHARS = 0        # 回写阶段不加重叠：各块独立回写会致内容重复，重叠仅用于摘要阶段
 
+# 清洁阶段（V16.11）：理解+重组型任务，输出短、不受回写约束，块可大
+CLEAN_CHUNK_SIZE = 8000       # 清洁阶段单块字符基线（输入上下文约束）
+CLEAN_MAX_TOKENS = 4000       # 清洁阶段单块输出上限（整理型输出约为输入的 20-30%）
+CLEAN_CHUNK_SIZE_MAX = 10000  # 清洁阶段单块字符硬上限
+
 # 摘要阶段：理解/总结类任务，输出短，块可较大；块间重叠提升跨块连贯
 SUMMARY_CHUNK_CHARS = 30000
 SUMMARY_OVERLAP_CHARS = 1000
@@ -413,6 +450,27 @@ def _echo_chunk_params(config):
     c = safe_total / 3.5                         # 3.5 ≈ 1.5(输入)+2(输出) tok/字符
     chunk_chars = int(min(ECHO_CHUNK_SIZE_MAX, max(1000, c)))
     max_tokens = int(min(chunk_chars * 2.2, 8192))
+    return chunk_chars, max_tokens
+
+
+def _clean_chunk_params(config):
+    """清洁阶段 (阶段2) 的动态块大小：理解+重组型任务，输出短、不受回写约束。
+
+    V16.11：块大小从 ECHO(2000) 提升到 CLEAN_CHUNK_SIZE(8000)，
+    主要受输入上下文约束（输出短，只占 ~10% 预算）。
+    17450 字录音从 ~12 块降到 ~3 块，LLM 调用次数减少 4 倍。
+
+    Returns:
+        (chunk_chars, max_tokens)
+    """
+    if not config:
+        return CLEAN_CHUNK_SIZE, CLEAN_MAX_TOKENS
+    ctx = _model_context_window(config)
+    safe_total = ctx * 0.75                      # 输入输出合计安全预算
+    # 输入约 1.5 tok/字符，输出约占 20%（整理型输出短）
+    c = safe_total / 1.8
+    chunk_chars = int(min(CLEAN_CHUNK_SIZE_MAX, max(3000, c)))
+    max_tokens = int(min(chunk_chars * 0.5, 8192))
     return chunk_chars, max_tokens
 
 

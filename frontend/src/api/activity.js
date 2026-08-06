@@ -83,6 +83,11 @@ export function retryActivityAudioSummary(id, data = {}) {
   return api.post(`/admin/activity/${id}/audio/retry-summary`, data)
 }
 
+// 导出招商动态录音总结 PDF（多版本合并）
+export function exportActivityAudioPdf(id, versions) {
+  return api.post(`/admin/activity/${id}/audio/pdf`, { versions })
+}
+
 export function getLLMModels() {
   // LLM 模型列表（对齐 activityLedger.js:82，共用 /llm-models）
   return api.get('/llm-models')

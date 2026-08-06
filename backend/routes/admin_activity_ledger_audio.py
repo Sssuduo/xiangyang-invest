@@ -424,3 +424,25 @@ def download_audio_docx(item_id):
     if not os.path.exists(docx_abs):
         return jsonify({'code': 1, 'message': 'Word 文件不存在'}), 404
     return send_from_directory(os.path.dirname(docx_abs), os.path.basename(docx_abs), as_attachment=True)
+
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/pdf', methods=['POST'])
+@dual_login_required
+def export_audio_pdf(item_id):
+    """导出录音总结 PDF（支持多版本合并：分段原文/清洁版/摘要版）"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    versions = data.get('versions') or ['summary']
+    # 仅保留合法版本
+    valid = [v for v in versions if v in ('segmented', 'clean', 'summary')]
+    if not valid:
+        return jsonify({'code': 1, 'message': '请至少选择一个版本'}), 400
+
+    try:
+        from services.pdf_service import generate_meeting_pdf
+        pdf_path = generate_meeting_pdf(item, valid, title='活动台账 会议录音总结')
+        pdf_url = '/static/meetings/' + os.path.basename(pdf_path)
+        return jsonify({'code': 0, 'data': {'url': pdf_url, 'name': os.path.basename(pdf_path)}})
+    except Exception as e:
+        logger.error(f'PDF 导出失败: {e}', exc_info=True)
+        return jsonify({'code': 1, 'message': f'PDF 导出失败：{str(e)[:200]}'}), 500

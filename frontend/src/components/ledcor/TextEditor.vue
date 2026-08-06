@@ -38,6 +38,7 @@
         </div>
       </div>
       <div class="tc-popover-footer">
+        <el-button size="small" type="danger" plain @click="doDelete">删除</el-button>
         <el-button size="small" @click="cancelReplace">取消</el-button>
         <el-button size="small" type="primary" @click="doReplace">替换</el-button>
       </div>
@@ -53,7 +54,7 @@ const props = defineProps({
   candidates: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['selection-change', 'replace'])
+const emit = defineEmits(['selection-change', 'replace', 'delete'])
 
 const editorRef = ref(null)
 const showPopover = ref(false)
@@ -135,6 +136,26 @@ function doReplace() {
     emit('replace', {
       range,
       replacement: replacement.value,
+      source: sourceText,
+    })
+  }
+
+  showPopover.value = false
+  savedRange = null
+  savedSelectedText = ''
+}
+
+// 删除选中内容（不记入知识库映射，仅删除文本）
+function doDelete() {
+  const range = savedRange
+  const sourceText = savedSelectedText
+  if (range && sourceText) {
+    const sel = window.getSelection()
+    sel.removeAllRanges()
+    sel.addRange(range)
+    range.deleteContents()
+
+    emit('delete', {
       source: sourceText,
     })
   }

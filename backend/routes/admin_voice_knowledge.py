@@ -114,12 +114,14 @@ def save_text_corrections(item_id):
         corrections: [
             { original, replacement, position, context_before, context_after, method, confidence }
         ],
+        deletions: [ { original, method } ],   # 删除列表（不生成知识库映射）
         persist_to_knowledge: bool
     }
     """
     item = _get_item_or_404(item_id)
     data = request.get_json(silent=True) or {}
     corrections = data.get('corrections', [])
+    deletions = data.get('deletions', [])
     persist = data.get('persist_to_knowledge', False)
 
     records = []
@@ -147,7 +149,18 @@ def save_text_corrections(item_id):
                     text = text.replace(original, replacement)
             setattr(item, field, text)
 
-    # 沉淀到知识库
+    # 应用删除（从文本中移除选中内容；不创建知识库映射记录）
+    if deletions:
+        for field in ('audio_transcript_segmented', 'audio_transcript_clean',
+                      'audio_summary_structured', 'audio_transcript'):
+            text = getattr(item, field, None) or ''
+            for d in deletions:
+                original = d.get('original', '')
+                if original:
+                    text = text.replace(original, '')
+            setattr(item, field, text)
+
+    # 沉淀到知识库（仅 corrections，不含 deletions）
     if persist:
         for record in records:
             VoiceKnowledgeService.persist_to_knowledge(record.id)
@@ -156,8 +169,8 @@ def save_text_corrections(item_id):
 
     return jsonify({
         'code': 0,
-        'message': f'已保存 {len(records)} 条校正',
-        'data': {'count': len(records), 'persisted': persist},
+        'message': f'已保存 {len(records)} 条校正，{len(deletions)} 条删除',
+        'data': {'count': len(records), 'deleted': len(deletions), 'persisted': persist},
     })
 
 
@@ -329,6 +342,7 @@ def save_activity_corrections(item_id):
     item = _get_activity_or_404(item_id)
     data = request.get_json(silent=True) or {}
     corrections = data.get('corrections', [])
+    deletions = data.get('deletions', [])
     persist = data.get('persist_to_knowledge', False)
 
     # 把校正应用到活动文本字段
@@ -341,6 +355,17 @@ def save_activity_corrections(item_id):
                 replacement = c.get('replacement', '')
                 if original and replacement and original != replacement:
                     text = text.replace(original, replacement)
+            setattr(item, field, text)
+
+    # 应用删除（从文本中移除选中内容；不创建知识库映射记录）
+    if deletions:
+        for field in ('audio_transcript_segmented', 'audio_transcript_clean',
+                      'audio_summary_structured', 'audio_transcript'):
+            text = getattr(item, field, None) or ''
+            for d in deletions:
+                original = d.get('original', '')
+                if original:
+                    text = text.replace(original, '')
             setattr(item, field, text)
 
     # 沉淀到知识库
@@ -363,8 +388,8 @@ def save_activity_corrections(item_id):
     db.session.commit()
     return jsonify({
         'code': 0,
-        'message': f'已保存 {len(corrections)} 条校正',
-        'data': {'count': len(corrections), 'persisted': persist},
+        'message': f'已保存 {len(corrections)} 条校正，{len(deletions)} 条删除',
+        'data': {'count': len(corrections), 'deleted': len(deletions), 'persisted': persist},
     })
 
 

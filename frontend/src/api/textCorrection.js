@@ -25,10 +25,11 @@ export function getSummaryPageData(entityType, ledgerId) {
 
 // 前端导入使用 saveCorrections (原名 saveCorrections 保持兼容)
 export const saveCorrections = saveTextCorrections
-export function saveTextCorrections(entityType, ledgerId, corrections, persistToKnowledge = false) {
+export function saveTextCorrections(entityType, ledgerId, corrections, persistToKnowledge = false, deletions = []) {
   return api.post(`/admin/voice-knowledge/${entityType}/${ledgerId}/save-corrections`, {
     corrections,
     persist_to_knowledge: persistToKnowledge,
+    deletions,  // 删除列表（独立字段，不生成知识库映射）
   })
 }
 

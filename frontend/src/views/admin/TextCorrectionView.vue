@@ -28,6 +28,7 @@
               :candidates="candidates"
               @selection-change="onSelectionChange"
               @replace="onEditorReplace"
+              @delete="onEditorDelete"
             />
           </el-tab-pane>
           <el-tab-pane label="清洁版" name="clean">
@@ -37,6 +38,7 @@
               :candidates="candidates"
               @selection-change="onSelectionChange"
               @replace="onEditorReplace"
+              @delete="onEditorDelete"
             />
           </el-tab-pane>
           <el-tab-pane label="摘要版" name="summary">
@@ -46,6 +48,7 @@
               :candidates="candidates"
               @selection-change="onSelectionChange"
               @replace="onEditorReplace"
+              @delete="onEditorDelete"
             />
           </el-tab-pane>
         </el-tabs>
@@ -140,6 +143,7 @@ const data = reactive({
 })
 
 const corrections = ref([])
+const deletions = ref([])  // 删除列表（不记入知识库映射）
 const candidates = ref([])
 const knowledgeList = ref([])
 
@@ -215,6 +219,17 @@ function onEditorReplace({ range, replacement, source }) {
   })
 }
 
+// 编辑器内删除选中内容（不记入知识库映射，仅记录删除）
+function onEditorDelete({ source }) {
+  // 记录删除（区别于 corrections：删除不生成知识库映射）
+  deletions.value.unshift({
+    id: Date.now(),
+    original: source,
+    method: 'delete',
+  })
+  ElMessage.success(`已删除: ${source}`)
+}
+
 async function runDetection() {
   detecting.value = true
   try {
@@ -288,7 +303,8 @@ async function handleSaveAndPersist() {
 async function doSaveCorrections(persist) {
   saving.value = true
   try {
-    const res = await saveCorrections(entityType.value, ledgerId.value, corrections.value, persist)
+    // 删除记录独立传参（不混入 corrections，避免生成知识库映射）
+    const res = await saveCorrections(entityType.value, ledgerId.value, corrections.value, persist, deletions.value)
     if (res.code === 0) {
       ElMessage.success(persist ? '已保存并沉淀到知识库' : '已保存到台账')
     } else {

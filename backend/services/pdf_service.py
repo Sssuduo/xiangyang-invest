@@ -331,16 +331,5 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
         # 解析 Markdown（公文格式）；不输出版本标签标题（如"分段原文""摘要版"）
         elements.extend(_parse_markdown_to_elements(text, styles))
 
-    # ---- 文末落款（仅最后一个版本后追加） ----
-    elements.append(Spacer(1, _LINE_SPACING * 2))
-    # 落款右对齐：农高区工作专班 + 成文日期
-    sign_style = ParagraphStyle('sign', fontName=_FONT_NAMES['fangsong'],
-                                fontSize=_FONT_SIZE_BODY, leading=_LINE_SPACING,
-                                alignment=2, rightIndent=0,
-                                textColor=HexColor('#000000'))
-    elements.append(Paragraph('农高区工作专班', sign_style))
-    today = datetime.now().strftime('%Y年%m月%d日')
-    elements.append(Paragraph(today, sign_style))
-
     doc.build(elements)
     return file_path

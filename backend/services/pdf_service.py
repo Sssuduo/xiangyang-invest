@@ -70,9 +70,10 @@ _PAGE_BOTTOM = 35 * mm
 _PAGE_LEFT = 28 * mm
 _PAGE_RIGHT = 26 * mm
 
-# 版本定义（清洁版已移除，仅保留分段原文与摘要版）
+# 版本定义
 VERSIONS = {
     'segmented': {'label': '分段原文', 'field': 'audio_transcript_segmented', 'fallback': 'audio_transcript'},
+    'clean': {'label': '清洁版', 'field': 'audio_transcript_clean', 'fallback': None},
     'summary': {'label': '摘要版', 'field': 'audio_summary_structured', 'fallback': 'audio_summary'},
 }
 

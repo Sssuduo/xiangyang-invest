@@ -1,18 +1,17 @@
 """
-录音总结 PDF 导出服务 — 公文格式版
+工作台账录音总结 PDF 导出服务 — 公文格式版（GB/T 9704-2012）
 
-将活动台账/招商动态的录音总结（分段原文/清洁版/摘要版）导出为 PDF。
+将工作台账的录音总结（分段原文/摘要版）导出为 PDF。
 支持多版本合并导出（一个 PDF 包含多个版本）。
 
 公文格式（GB/T 9704-2012）：
-- 正标题：方正小标宋简体，2号字（22pt）
-- 一级标题：黑体，3号字（16pt），如"一、"
-- 二级标题：楷体GB2312，3号字（16pt），如"（一）"或"1."
-- 三级标题：仿宋GB2312，3号字加粗（16pt）
-- 正文：仿宋GB2312，3号字（16pt）
-- 页边距：上3cm，下2.5cm，左右2.5cm
-- 段落：固定值28磅（行距）
-- 标题与正文间隔1行
+- 页边距：上3.7cm、下3.5cm、左2.8cm、右2.6cm（版心 156mm×225mm）
+- 正标题：方正小标宋简体，二号(22pt)，居中；上空1行、下空1行
+- 一级标题（##）：黑体，三号(16pt)，首行缩进2字符，"一、二、三、"
+- 二级标题（###）：楷体GB2312，三号(16pt)，首行缩进2字符，"（一）（二）"
+- 三级标题（####）：仿宋GB2312加粗，三号(16pt)，"1. 2. 3."
+- 正文：仿宋GB2312，三号(16pt)，首行缩进2字符，行距固定值29磅
+- 页码：四号半角宋体阿拉伯数字，版心下边缘之下，数字左右各加一字线
 """
 import os
 import re
@@ -40,9 +39,10 @@ except ImportError:
 # 字体文件路径（/usr/share/fonts/office/ 下）
 _FONT_PATHS = {
     'xiaobiaosong': '/usr/share/fonts/office/方正小标宋简体.ttf',   # 正标题
-    'simhei': '/usr/share/fonts/office/黑体.ttf',                   # 一级标题
-    'kaiti': '/usr/share/fonts/office/楷体_GB2312.ttf',             # 二级标题/落款
+    'simhei': '/usr/share/fonts/office/黑体.ttf',                   # 一级标题/表头
+    'kaiti': '/usr/share/fonts/office/楷体_GB2312.ttf',             # 二级标题
     'fangsong': '/usr/share/fonts/office/仿宋_GB2312.ttf',          # 正文
+    'songti': '/usr/share/fonts/wqy-microhei/wqy-microhei.ttc',     # 页码（宋体替代）
 }
 
 # 字体注册名（reportlab 内使用）
@@ -53,26 +53,26 @@ _FONT_NAMES = {
     'fangsong': 'FangSong',
 }
 
-# 字号（pt）：公文 2号=22pt, 3号=16pt
-_FONT_SIZE_TITLE = 22    # 2号字：正标题
-_FONT_SIZE_H1 = 16       # 3号字：一级标题
-_FONT_SIZE_H2 = 16       # 3号字：二级标题
-_FONT_SIZE_BODY = 16     # 3号字：正文
-_FONT_SIZE_NOTE = 14     # 4号字：落款/时间
+# 字号（pt）：公文 二号=22pt, 三号=16pt, 四号=14pt
+_FONT_SIZE_TITLE = 22    # 二号：正标题
+_FONT_SIZE_H1 = 16       # 三号：一级标题
+_FONT_SIZE_H2 = 16       # 三号：二级标题
+_FONT_SIZE_H3 = 16       # 三号：三级标题
+_FONT_SIZE_BODY = 16     # 三号：正文
+_FONT_SIZE_NOTE = 14     # 四号：页码
 
-# 行距：固定值28磅
-_LINE_SPACING = 28
+# 行距：固定值29磅（国标）
+_LINE_SPACING = 29
 
-# 页面设置（cm → mm）：上3，下2.5，左右2.5
-_PAGE_TOP = 30 * mm
-_PAGE_BOTTOM = 25 * mm
-_PAGE_LEFT = 25 * mm
-_PAGE_RIGHT = 25 * mm
+# 页面设置（GB/T 9704-2012）：上3.7cm 下3.5cm 左2.8cm 右2.6cm
+_PAGE_TOP = 37 * mm
+_PAGE_BOTTOM = 35 * mm
+_PAGE_LEFT = 28 * mm
+_PAGE_RIGHT = 26 * mm
 
-# 版本定义
+# 版本定义（清洁版已移除，仅保留分段原文与摘要版）
 VERSIONS = {
     'segmented': {'label': '分段原文', 'field': 'audio_transcript_segmented', 'fallback': 'audio_transcript'},
-    'clean': {'label': '清洁版', 'field': 'audio_transcript_clean', 'fallback': None},
     'summary': {'label': '摘要版', 'field': 'audio_summary_structured', 'fallback': 'audio_summary'},
 }
 
@@ -106,14 +106,16 @@ def _strip_markdown(text):
     return text
 
 
-def _parse_markdown_to_elements(text, styles, font_name):
-    """将 Markdown 文本解析为 reportlab flowables 列表（公文格式）"""
+def _parse_markdown_to_elements(text, styles):
+    """将 Markdown 文本解析为 reportlab flowables 列表（GB/T 9704-2012）"""
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.colors import HexColor
 
     elements = []
     in_table = False
     table_rows = []
+    # 有序列表计数器（按层级）
+    order_counters = {}
 
     def _flush_table():
         nonlocal in_table, table_rows
@@ -122,30 +124,33 @@ def _parse_markdown_to_elements(text, styles, font_name):
             return
         data = [[Paragraph(_strip_markdown(c), styles['cell']) for c in row] for row in table_rows]
         # 计算列宽：总可用宽度均分
-        avail_width = (210 - 50) * mm  # A4 宽 210mm - 左右边距各 25mm
+        avail_width = (210 - 28 - 26) * mm  # A4 宽 210mm - 左右边距 28+26mm
         ncols = max(len(r) for r in table_rows)
         col_widths = [avail_width / ncols] * ncols
         t = Table(data, repeatRows=1, colWidths=col_widths)
         t.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e0e4e8')),
-            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f0f3f8')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#000000')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('LEFTPADDING', (0, 0), (-1, -1), 4),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
         elements.append(t)
-        elements.append(Spacer(1, 8))
+        elements.append(Spacer(1, 6))
         in_table = False
         table_rows = []
+
+    def _indent2(text):
+        """首行缩进2字符（全角空格）"""
+        return f'　　{text}'
 
     for raw_line in text.strip().split('\n'):
         line = raw_line.strip()
         if not line:
             if in_table:
                 _flush_table()
-            elements.append(Spacer(1, _LINE_SPACING / 2))
+            # 空行：不额外加空行（公文不空行），仅块间自然间隔
             continue
 
         # 表格行
@@ -163,38 +168,53 @@ def _parse_markdown_to_elements(text, styles, font_name):
         if in_table:
             _flush_table()
 
-        # 分隔线
+        # 分隔线 → 黑色细实线
         if re.match(r'^[━═-]{5,}', line):
+            from reportlab.platypus import HRFlowable
+            elements.append(HRFlowable(width='100%', thickness=0.5,
+                                       color=HexColor('#000000'),
+                                       spaceBefore=6, spaceAfter=6))
             continue
 
         # ---- 公文格式标题层级 ----
+        # 三级标题（####）：仿宋加粗，"1. 2. 3." 或 "一是"
         if line.startswith('#### '):
-            # 三级标题：仿宋加粗
-            elements.append(Paragraph(_strip_markdown(line[5:]), styles['h3']))
+            content = _strip_markdown(line[5:])
+            elements.append(Paragraph(_indent2(f'<b>{content}</b>'), styles['h3']))
+        # 二级标题（###）：楷体，"（一）（二）"
         elif line.startswith('### '):
-            elements.append(Paragraph(_strip_markdown(line[4:]), styles['h2']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line[4:])), styles['h2']))
+        # 一级标题（##）：黑体，"一、二、"
         elif line.startswith('## '):
-            elements.append(Paragraph(_strip_markdown(line[3:]), styles['h1']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line[3:])), styles['h1']))
+        # 文档总标题（#）：小标宋二号（对应正标题）
         elif line.startswith('# '):
-            elements.append(Paragraph(_strip_markdown(line[2:]), styles['h1']))
+            elements.append(Paragraph(_strip_markdown(line[2:]), styles['doc_title']))
+        # 一级标题：黑体，"一、"
         elif re.match(r'^[一二三四五六七八九十]+、', line):
-            # 一级标题：黑体，如"一、"
-            elements.append(Paragraph(_strip_markdown(line), styles['h1']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
+        # 二级标题：楷体，"（一）"
         elif re.match(r'^（[一二三四五六七八九十]+）', line):
-            # 二级标题：楷体，如"（一）"
-            elements.append(Paragraph(_strip_markdown(line), styles['h2']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h2']))
+        # 三级标题：仿宋加粗，"1."
         elif re.match(r'^\d+[\.．]', line):
-            # 二级标题：楷体，如"1."
-            elements.append(Paragraph(_strip_markdown(line), styles['h2']))
+            elements.append(Paragraph(_indent2(f'<b>{_strip_markdown(line)}</b>'), styles['h3']))
+        # 有序列表：按层级匹配序号（一、→（一）→1.→（1））
+        elif re.match(r'^\d+[、\)）]', line):
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))
+        # 无序列表：实心圆点，首行缩进2字符
         elif line.startswith('- '):
-            # 列表项：仿宋正文
-            elements.append(Paragraph(f'　{_strip_markdown(line[2:])}', styles['body']))
+            content = _strip_markdown(line[2:])
+            elements.append(Paragraph(_indent2(f'● {content}'), styles['body']))
+        # 引用块：仿宋，左右缩进2字符
         elif line.startswith('> '):
-            # 引用：楷体
-            elements.append(Paragraph(_strip_markdown(line[2:]), styles['quote']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line[2:])), styles['quote']))
+        # 加粗段落
+        elif line.startswith('**') and line.endswith('**') and len(line) > 4:
+            elements.append(Paragraph(_indent2(line), styles['body_bold']))
         else:
             # 正文：仿宋，首行缩进2字符
-            elements.append(Paragraph(f'　　{_strip_markdown(line)}', styles['body']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))
 
     if in_table:
         _flush_table()
@@ -202,13 +222,13 @@ def _parse_markdown_to_elements(text, styles, font_name):
     return elements
 
 
-def generate_meeting_pdf(activity, versions, title='活动台账 会议录音总结'):
-    """生成录音总结 PDF（公文格式，可多版本合并）。
+def generate_meeting_pdf(activity, versions, title='工作台账会议录音总结'):
+    """生成工作台账录音总结 PDF（公文格式，可多版本合并）。
 
     Args:
-        activity: ActivityLedger / InvestmentActivity 实例
-        versions: 要导出的版本列表，如 ['summary'] 或 ['segmented', 'clean', 'summary']
-        title: PDF 主标题
+        activity: ActivityLedger 实例
+        versions: 要导出的版本列表，如 ['summary'] 或 ['segmented', 'summary']
+        title: PDF 主标题（默认"工作台账会议录音总结"）
 
     Returns:
         str: PDF 文件绝对路径
@@ -223,7 +243,7 @@ def generate_meeting_pdf(activity, versions, title='活动台账 会议录音总
     os.makedirs(out_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_name = re.sub(r'[\\/:*?"<>|]', '_', (activity.content or '会议总结')[:30])
+    safe_name = re.sub(r'[\\/:*?"<>|]', '_', (activity.content or '工作台账')[:30])
     file_name = f'{safe_name}_会议总结_{timestamp}.pdf'
     file_path = os.path.join(out_dir, file_name)
 
@@ -237,43 +257,44 @@ def generate_meeting_pdf(activity, versions, title='活动台账 会议录音总
         title=title,
     )
 
-    # ---- 公文格式样式 ----
+    # ---- 公文格式样式（GB/T 9704-2012） ----
     styles = {
-        # 正标题：方正小标宋简体 2号字(22pt)，居中
-        'title': ParagraphStyle('title', fontName=_FONT_NAMES['xiaobiaosong'],
-                                fontSize=_FONT_SIZE_TITLE, leading=_LINE_SPACING + 4,
-                                alignment=1, textColor=HexColor('#000000'),
-                                spaceAfter=_LINE_SPACING),
-        # 副标题/落款：楷体 3号字
-        'subtitle': ParagraphStyle('subtitle', fontName=_FONT_NAMES['kaiti'],
-                                   fontSize=_FONT_SIZE_NOTE, leading=_LINE_SPACING,
-                                   alignment=1, textColor=HexColor('#000000'),
-                                   spaceAfter=_LINE_SPACING),
-        # 一级标题：黑体 3号字，如"一、"
+        # 正标题：方正小标宋 二号(22pt) 居中
+        'doc_title': ParagraphStyle('doc_title', fontName=_FONT_NAMES['xiaobiaosong'],
+                                    fontSize=_FONT_SIZE_TITLE, leading=_LINE_SPACING + 6,
+                                    alignment=1, textColor=HexColor('#000000')),
+        # 一级标题：黑体 三号(16pt) 首行缩进2
         'h1': ParagraphStyle('h1', fontName=_FONT_NAMES['simhei'],
                              fontSize=_FONT_SIZE_H1, leading=_LINE_SPACING,
-                             spaceBefore=_LINE_SPACING, spaceAfter=_LINE_SPACING / 2,
                              textColor=HexColor('#000000')),
-        # 二级标题：楷体 3号字，如"（一）"或"1."
+        # 二级标题：楷体 三号(16pt)
         'h2': ParagraphStyle('h2', fontName=_FONT_NAMES['kaiti'],
                              fontSize=_FONT_SIZE_H2, leading=_LINE_SPACING,
-                             spaceBefore=_LINE_SPACING / 2, spaceAfter=_LINE_SPACING / 2,
                              textColor=HexColor('#000000')),
-        # 三级标题：仿宋 3号字加粗
+        # 三级标题：仿宋加粗 三号(16pt)
         'h3': ParagraphStyle('h3', fontName=_FONT_NAMES['fangsong'],
-                             fontSize=_FONT_SIZE_BODY, leading=_LINE_SPACING,
-                             spaceBefore=_LINE_SPACING / 2, spaceAfter=_LINE_SPACING / 2,
+                             fontSize=_FONT_SIZE_H3, leading=_LINE_SPACING,
                              textColor=HexColor('#000000')),
-        # 正文：仿宋 3号字
+        # 正文：仿宋 三号(16pt)
         'body': ParagraphStyle('body', fontName=_FONT_NAMES['fangsong'],
                                fontSize=_FONT_SIZE_BODY, leading=_LINE_SPACING,
-                               spaceAfter=2, wordWrap='CJK',
+                               spaceAfter=0, wordWrap='CJK',
                                textColor=HexColor('#000000')),
-        # 引用/备注：楷体
-        'quote': ParagraphStyle('quote', fontName=_FONT_NAMES['kaiti'],
-                                fontSize=_FONT_SIZE_NOTE, leading=_LINE_SPACING,
-                                leftIndent=12, textColor=HexColor('#000000')),
-        # 表格单元格：仿宋 3号字（小号适配）
+        # 正文加粗
+        'body_bold': ParagraphStyle('body_bold', fontName=_FONT_NAMES['fangsong'],
+                                    fontSize=_FONT_SIZE_BODY, leading=_LINE_SPACING,
+                                    spaceAfter=0, wordWrap='CJK',
+                                    textColor=HexColor('#000000')),
+        # 引用：仿宋，左右缩进2字符
+        'quote': ParagraphStyle('quote', fontName=_FONT_NAMES['fangsong'],
+                                fontSize=_FONT_SIZE_BODY, leading=_LINE_SPACING,
+                                leftIndent=16, rightIndent=16,
+                                textColor=HexColor('#000000')),
+        # 表格表头：黑体
+        'th': ParagraphStyle('th', fontName=_FONT_NAMES['simhei'],
+                             fontSize=12, leading=18, wordWrap='CJK',
+                             textColor=HexColor('#000000')),
+        # 表格内容：仿宋
         'cell': ParagraphStyle('cell', fontName=_FONT_NAMES['fangsong'],
                                fontSize=12, leading=18, wordWrap='CJK',
                                textColor=HexColor('#000000')),
@@ -281,25 +302,18 @@ def generate_meeting_pdf(activity, versions, title='活动台账 会议录音总
 
     elements = []
 
-    # ---- 正标题：方正小标宋 2号字 ----
-    elements.append(Paragraph(title, styles['title']))
-    # 标题与正文间隔1行
-    elements.append(Spacer(1, _LINE_SPACING))
+    # ---- 正标题：方正小标宋 二号字 居中，上空1行 ----
+    elements.append(Spacer(1, _LINE_SPACING))  # 标题上空1行
+    elements.append(Paragraph(title, styles['doc_title']))
+    elements.append(Spacer(1, _LINE_SPACING))  # 标题下空1行
 
-    # ---- 副标题：活动内容（楷体） ----
-    subtitle = activity.content or '活动台账'
-    if len(subtitle) > 80:
-        subtitle = subtitle[:80] + '...'
-    elements.append(Paragraph(subtitle, styles['subtitle']))
+    # ---- 台账内容（取工作台账 content 字段，正文格式，首行缩进2） ----
+    ledger_content = (activity.content or '').strip()
+    if ledger_content:
+        elements.append(Paragraph(f'　　{ledger_content}', styles['body']))
+        elements.append(Spacer(1, _LINE_SPACING))
 
-    # ---- 落款时间（楷体） ----
-    activity_date = activity.date.strftime('%Y年%m月%d日') if activity.date else '未知日期'
-    elements.append(Paragraph(
-        f'活动时间：{activity_date}　生成时间：{datetime.now().strftime("%Y年%m月%d日 %H:%M")}',
-        styles['subtitle']))
-    elements.append(Spacer(1, _LINE_SPACING))
-
-    # ---- 各版本内容 ----
+    # ---- 各版本内容（不含版本标签标题，不含落款时间） ----
     for i, v in enumerate(versions):
         if v not in VERSIONS:
             continue
@@ -313,12 +327,8 @@ def generate_meeting_pdf(activity, versions, title='活动台账 会议录音总
         if i > 0:
             elements.append(PageBreak())
 
-        # 版本标题：黑体 3号
-        elements.append(Paragraph(f'{cfg["label"]}', styles['h1']))
-        elements.append(Spacer(1, _LINE_SPACING / 2))
-
-        # 解析 Markdown（公文格式）
-        elements.extend(_parse_markdown_to_elements(text, styles, _FONT_NAMES['fangsong']))
+        # 解析 Markdown（公文格式）；不输出版本标签标题（如"分段原文""摘要版"）
+        elements.extend(_parse_markdown_to_elements(text, styles))
 
     doc.build(elements)
     return file_path

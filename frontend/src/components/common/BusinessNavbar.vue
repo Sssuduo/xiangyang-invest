@@ -21,7 +21,7 @@
               <el-dropdown-item command="/investment">招商项目管理</el-dropdown-item>
               <el-dropdown-item command="/investment-activity">招商动态管理</el-dropdown-item>
               <el-dropdown-item command="/investment-demand">企业诉求管理</el-dropdown-item>
-              <el-dropdown-item command="/investment-activity-ledger">活动台账管理</el-dropdown-item>
+              <el-dropdown-item command="/investment-activity-ledger">工作台账管理</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

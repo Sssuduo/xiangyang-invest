@@ -107,8 +107,15 @@ def _strip_markdown(text):
     return text
 
 
-def _parse_markdown_to_elements(text, styles):
-    """将 Markdown 文本解析为 reportlab flowables 列表（GB/T 9704-2012）"""
+def _parse_markdown_to_elements(text, styles, skip_title=None):
+    """将 Markdown 文本解析为 reportlab flowables 列表（GB/T 9704-2012）
+
+    Args:
+        text: Markdown 内容
+        styles: 样式字典
+        skip_title: 已提取为 PDF 正标题的文档总标题文本（# 行），命中则跳过，
+                    避免正文重复输出标题；None 时按文档总标题渲染
+    """
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.colors import HexColor
 
@@ -117,6 +124,8 @@ def _parse_markdown_to_elements(text, styles):
     table_rows = []
     # 有序列表计数器（按层级）
     order_counters = {}
+    # 无序列表顺序序号计数器（● 改为 1. 2. 3.）
+    dot_count = 0
 
     def _flush_table():
         nonlocal in_table, table_rows
@@ -154,6 +163,12 @@ def _parse_markdown_to_elements(text, styles):
             # 空行：不额外加空行（公文不空行），仅块间自然间隔
             continue
 
+        # 段落标题行（# / 一、/（一））→ 次一级序号重排：1. 2. 3. 每组段重新计数
+        if (line.startswith('#')
+                or re.match(r'^[一二三四五六七八九十]+、', line)
+                or re.match(r'^（[一二三四五六七八九十]+）', line)):
+            dot_count = 0
+
         # 表格行
         if line.startswith('|') and line.endswith('|') and line.count('|') >= 2:
             if not re.match(r'^\|[-: ]+\|', line):
@@ -188,8 +203,10 @@ def _parse_markdown_to_elements(text, styles):
         # 一级标题（##）：黑体，"一、二、"
         elif line.startswith('## '):
             elements.append(Paragraph(_indent2(_strip_markdown(line[3:])), styles['h1']))
-        # 文档总标题（#）：小标宋二号（对应正标题）
+        # 文档总标题（#）：小标宋二号（对应正标题）；若已提取为 PDF 正标题则跳过
         elif line.startswith('# '):
+            if skip_title and skip_title in line:
+                continue
             elements.append(Paragraph(_strip_markdown(line[2:]), styles['doc_title']))
         # 一级标题：黑体，"一、"
         elif re.match(r'^[一二三四五六七八九十]+、', line):
@@ -203,10 +220,11 @@ def _parse_markdown_to_elements(text, styles):
         # 有序列表：按层级匹配序号（一、→（一）→1.→（1））
         elif re.match(r'^\d+[、\)）]', line):
             elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))
-        # 无序列表：实心圆点，首行缩进2字符
+        # 无序列表：顺序数字序号 1. 2. 3.，首行缩进2字符
         elif line.startswith('- '):
+            dot_count += 1
             content = _strip_markdown(line[2:])
-            elements.append(Paragraph(_indent2(f'● {content}'), styles['body']))
+            elements.append(Paragraph(_indent2(f'{dot_count}. {content}'), styles['body']))
         # 引用块：仿宋，左右缩进2字符
         elif line.startswith('> '):
             elements.append(Paragraph(_indent2(_strip_markdown(line[2:])), styles['quote']))
@@ -223,15 +241,22 @@ def _parse_markdown_to_elements(text, styles):
     return elements
 
 
-def generate_meeting_pdf(activity, versions, title='工作台账会议录音总结', cleaned_contents=None):
+def generate_meeting_pdf(activity, versions, title='[录音总结]', cleaned_contents=None):
     """生成工作台账录音总结 PDF（公文格式，可多版本合并）。
+
+    排版规则：
+    - 正标题：从录音总结内容提取总标题（Markdown 首个 # 行）作为 PDF 标题；
+      无标题时默认取传入 title；均无则用「[录音总结]」。
+    - 首段：工作台账内容（content 字段），仿宋 GB2312 三号。
+    - 段落标题（一、/（一）/#）：黑体三号；次一级圆点条目渲染为 1. 2. 3.，
+      每切到新段落序号重排，仿宋 GB2312 三号。
+    - 页边距/行距(29磅)/首行缩进(2字符)沿用 GB/T 9704-2012 不变。
 
     Args:
         activity: ActivityLedger 实例
         versions: 要导出的版本列表，如 ['summary'] 或 ['segmented', 'summary']
-        title: PDF 主标题（默认"工作台账会议录音总结"）
-        cleaned_contents: 可选 dict {version: 已清洗文本}；提供时优先使用清洗后内容，
-                         否则读活动实例的原始字段。
+        title: PDF 主标题（默认"工作台账会议录音总结"），内容无总标题时使用
+        cleaned_contents: 已废弃（公文清洗已屏蔽），保留参数兼容调用方
 
     Returns:
         str: PDF 文件绝对路径
@@ -242,8 +267,6 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
     if not _register_fonts():
         raise RuntimeError('未找到公文字体，无法导出 PDF')
 
-    cleaned_contents = cleaned_contents or {}
-
     out_dir = os.path.join(current_app.static_folder, 'meetings')
     os.makedirs(out_dir, exist_ok=True)
 
@@ -252,6 +275,27 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
     file_name = f'{safe_name}_会议总结_{timestamp}.pdf'
     file_path = os.path.join(out_dir, file_name)
 
+    # ---- 取各版本文本 ----
+    texts = {}
+    for v in versions:
+        if v not in VERSIONS:
+            continue
+        cfg = VERSIONS[v]
+        text = getattr(activity, cfg['field'], None) or ''
+        if not text and cfg['fallback']:
+            text = getattr(activity, cfg['fallback'], None) or ''
+        if text:
+            texts[v] = text
+
+    # ---- 正标题：优先取录音总结内容中的总标题（首个 # 行），无则用传入 title ----
+    pdf_title = title
+    for v in versions:
+        text = texts.get(v, '')
+        m = re.search(r'^#\s+(.+?)\s*$', text, re.MULTILINE)
+        if m:
+            pdf_title = m.group(1).strip()
+            break
+
     doc = SimpleDocTemplate(
         file_path,
         pagesize=A4,
@@ -259,7 +303,7 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
         bottomMargin=_PAGE_BOTTOM,
         leftMargin=_PAGE_LEFT,
         rightMargin=_PAGE_RIGHT,
-        title=title,
+        title=pdf_title,
     )
 
     # ---- 公文格式样式（GB/T 9704-2012） ----
@@ -268,7 +312,7 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
         'doc_title': ParagraphStyle('doc_title', fontName=_FONT_NAMES['xiaobiaosong'],
                                     fontSize=_FONT_SIZE_TITLE, leading=_LINE_SPACING + 6,
                                     alignment=1, textColor=HexColor('#000000')),
-        # 一级标题：黑体 三号(16pt) 首行缩进2
+        # 一级标题（段落标题）：黑体 三号(16pt) 首行缩进2
         'h1': ParagraphStyle('h1', fontName=_FONT_NAMES['simhei'],
                              fontSize=_FONT_SIZE_H1, leading=_LINE_SPACING,
                              textColor=HexColor('#000000')),
@@ -309,10 +353,10 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
 
     # ---- 正标题：方正小标宋 二号字 居中，上空1行 ----
     elements.append(Spacer(1, _LINE_SPACING))  # 标题上空1行
-    elements.append(Paragraph(title, styles['doc_title']))
+    elements.append(Paragraph(pdf_title, styles['doc_title']))
     elements.append(Spacer(1, _LINE_SPACING))  # 标题下空1行
 
-    # ---- 台账内容（取工作台账 content 字段，正文格式，首行缩进2） ----
+    # ---- 首段：工作台账内容（content 字段），正文格式，首行缩进2 ----
     ledger_content = (activity.content or '').strip()
     if ledger_content:
         elements.append(Paragraph(f'　　{ledger_content}', styles['body']))
@@ -320,24 +364,15 @@ def generate_meeting_pdf(activity, versions, title='工作台账会议录音总�
 
     # ---- 各版本内容（不含版本标签标题，不含落款时间） ----
     for i, v in enumerate(versions):
-        if v not in VERSIONS:
-            continue
-        # 优先使用公文清洗后的内容，否则读原始字段
-        if v in cleaned_contents and cleaned_contents[v]:
-            text = cleaned_contents[v]
-        else:
-            cfg = VERSIONS[v]
-            text = getattr(activity, cfg['field'], None) or ''
-            if not text and cfg['fallback']:
-                text = getattr(activity, cfg['fallback'], None) or ''
+        text = texts.get(v)
         if not text:
             continue
 
         if i > 0:
             elements.append(PageBreak())
 
-        # 解析 Markdown（公文格式）；不输出版本标签标题（如"分段原文""摘要版"）
-        elements.extend(_parse_markdown_to_elements(text, styles))
+        # 解析 Markdown（公文格式）；内容中的总标题已提取为 PDF 正标题，正文跳过
+        elements.extend(_parse_markdown_to_elements(text, styles, skip_title=pdf_title))
 
     doc.build(elements)
     return file_path

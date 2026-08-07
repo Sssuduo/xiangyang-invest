@@ -46,6 +46,7 @@ git config --global core.sshCommand "ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25
 - 针对地图 404 的修复 `--exclude='data'` 必须随代码入库（经 review），否则下次部署会被 `git reset --hard origin/master` 还原而复发。
 - 任何对 `deploy.sh` 的修改都需同步进入 `master`（经 `dev` 合并），不能只改生产磁盘。
 - nginx `/static/uploads/` 别名属"带外修改"，应纳入仓库管理，避免服务器重置即丢失。
+- **生产根目录 `deploy.sh`（untracked）是实际被执行的部署入口**，git 跟踪的是 `scripts/deploy.sh`（含 `--exclude='data'` 与受保护资产断言）。两者必须保持一致：生产 `deploy.sh` 应始终用 `scripts/deploy.sh` 覆盖（`cp scripts/deploy.sh deploy.sh`），否则旧版会重复清空 `static/data` 导致地图 404。
 
 ## 6. 分布式 Git Hooks（强制执行流程）
 

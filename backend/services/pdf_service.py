@@ -163,10 +163,11 @@ def _parse_markdown_to_elements(text, styles, skip_title=None):
             # 空行：不额外加空行（公文不空行），仅块间自然间隔
             continue
 
-        # 段落标题行（# / 一、/（一））→ 次一级序号重排：1. 2. 3. 每组段重新计数
+        # 段落标题行（# / 一、/（一）/1.）→ 次一级序号重排：1. 2. 3. 每组段重新计数
         if (line.startswith('#')
                 or re.match(r'^[一二三四五六七八九十]+、', line)
-                or re.match(r'^（[一二三四五六七八九十]+）', line)):
+                or re.match(r'^（[一二三四五六七八九十]+）', line)
+                or re.match(r'^\d+[\.．]', line)):
             dot_count = 0
 
         # 表格行
@@ -193,13 +194,14 @@ def _parse_markdown_to_elements(text, styles, skip_title=None):
             continue
 
         # ---- 公文格式标题层级 ----
-        # 三级标题（####）：仿宋加粗，"1. 2. 3." 或 "一是"
+        # 段落标题统一黑体三号（用户要求：一、二、三、… 用黑体3号）
+        # 三级标题（####）：黑体
         if line.startswith('#### '):
             content = _strip_markdown(line[5:])
-            elements.append(Paragraph(_indent2(f'<b>{content}</b>'), styles['h3']))
-        # 二级标题（###）：楷体，"（一）（二）"
+            elements.append(Paragraph(_indent2(content), styles['h1']))
+        # 二级标题（###）：黑体
         elif line.startswith('### '):
-            elements.append(Paragraph(_indent2(_strip_markdown(line[4:])), styles['h2']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line[4:])), styles['h1']))
         # 一级标题（##）：黑体，"一、二、"
         elif line.startswith('## '):
             elements.append(Paragraph(_indent2(_strip_markdown(line[3:])), styles['h1']))
@@ -211,17 +213,17 @@ def _parse_markdown_to_elements(text, styles, skip_title=None):
         # 一级标题：黑体，"一、"
         elif re.match(r'^[一二三四五六七八九十]+、', line):
             elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
-        # 二级标题：楷体，"（一）"
+        # 二级标题：黑体，"（一）"
         elif re.match(r'^（[一二三四五六七八九十]+）', line):
-            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h2']))
-        # 三级标题：仿宋加粗，"1."
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
+        # 三级标题：黑体，"1."
         elif re.match(r'^\d+[\.．]', line):
-            elements.append(Paragraph(_indent2(f'<b>{_strip_markdown(line)}</b>'), styles['h3']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
         # 有序列表：按层级匹配序号（一、→（一）→1.→（1））
         elif re.match(r'^\d+[、\)）]', line):
             elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))
-        # 无序列表：顺序数字序号 1. 2. 3.，首行缩进2字符
-        elif line.startswith('- '):
+        # 无序列表（* / -）：顺序数字序号 1. 2. 3.，首行缩进2字符
+        elif line.startswith('- ') or line.startswith('* '):
             dot_count += 1
             content = _strip_markdown(line[2:])
             elements.append(Paragraph(_indent2(f'{dot_count}. {content}'), styles['body']))

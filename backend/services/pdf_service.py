@@ -163,11 +163,10 @@ def _parse_markdown_to_elements(text, styles, skip_title=None):
             # 空行：不额外加空行（公文不空行），仅块间自然间隔
             continue
 
-        # 段落标题行（# / 一、/（一）/1.）→ 次一级序号重排：1. 2. 3. 每组段重新计数
+        # 段落标题行（# / 一、/（一））→ 次一级序号重排：1. 2. 3. 每组段重新计数
         if (line.startswith('#')
                 or re.match(r'^[一二三四五六七八九十]+、', line)
-                or re.match(r'^（[一二三四五六七八九十]+）', line)
-                or re.match(r'^\d+[\.．]', line)):
+                or re.match(r'^（[一二三四五六七八九十]+）', line)):
             dot_count = 0
 
         # 表格行
@@ -216,9 +215,9 @@ def _parse_markdown_to_elements(text, styles, skip_title=None):
         # 二级标题：黑体，"（一）"
         elif re.match(r'^（[一二三四五六七八九十]+）', line):
             elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
-        # 三级标题：黑体，"1."
+        # 数字序号条目（1. 2. 3.）：内容条目，正文仿宋
         elif re.match(r'^\d+[\.．]', line):
-            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['h1']))
+            elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))
         # 有序列表：按层级匹配序号（一、→（一）→1.→（1））
         elif re.match(r'^\d+[、\)）]', line):
             elements.append(Paragraph(_indent2(_strip_markdown(line)), styles['body']))

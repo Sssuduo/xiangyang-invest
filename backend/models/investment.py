@@ -112,6 +112,8 @@ class InvestmentLead(db.Model):
     last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     converted_project = db.relationship('InvestmentProject', foreign_keys=[converted_project_id])
+    # 研判模型关联（admin_lead joinedload 预加载用；缺此关系会导致列表接口 500）
+    ai_model = db.relationship('LLMModel', foreign_keys=[ai_model_id])
 
     def to_dict(self):
         return {

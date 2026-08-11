@@ -73,7 +73,7 @@ def list_inbox():
 
     status = request.args.get('status', 'pending')  # pending | snoozed | done | superseded | all
     page = int(request.args.get('page', 1))
-    size = int(request.args.get('page_size', 50))
+    size = int(request.args.get('page_size', 100))
 
     q = UserMessage.query.filter_by(user_id=user_id, user_type=user_type)
     if status != 'all':

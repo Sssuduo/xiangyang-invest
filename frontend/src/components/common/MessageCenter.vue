@@ -47,9 +47,9 @@ async function loadMessages() {
   loading.value = true
   try {
     const [p, s, d] = await Promise.all([
-      userMessageApi.listInbox({ status: 'pending' }),
-      userMessageApi.listInbox({ status: 'snoozed' }),
-      userMessageApi.listInbox({ status: 'done' }),
+      userMessageApi.listInbox({ status: 'pending', page_size: 100 }),
+      userMessageApi.listInbox({ status: 'snoozed', page_size: 100 }),
+      userMessageApi.listInbox({ status: 'done', page_size: 100 }),
     ])
     // 响应拦截器已解包 response.data → res 即 {code, data:{items,total}}
     messages.value = [

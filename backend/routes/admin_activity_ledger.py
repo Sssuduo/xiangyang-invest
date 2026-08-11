@@ -1,7 +1,7 @@
 import json
-from datetime import datetime
+from datetime import datetime, date
 from flask import request, jsonify
-from models import ActivityLedger, InvestmentActivity, InvestmentProject
+from models import ActivityLedger, InvestmentActivity, InvestmentProject, ConstructionProject, WorkProgress
 from extensions import db
 from routes import admin_activity_ledger_bp
 from routes.business_auth import dual_login_required, visitor_block
@@ -36,11 +36,12 @@ def list_ledger():
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 20, type=int)
 
-    # 预加载 linked_project / linked_activity 避免 to_dict 内隐式 N+1 查询
+    # 预加载 linked_project / linked_activity / linked_construction 避免 to_dict 内隐式 N+1 查询
     from sqlalchemy.orm import joinedload
     q = ActivityLedger.query.options(
         joinedload(ActivityLedger.linked_project),
-        joinedload(ActivityLedger.linked_activity)
+        joinedload(ActivityLedger.linked_activity),
+        joinedload(ActivityLedger.linked_construction)
     )
 
     if search:
@@ -280,3 +281,92 @@ def unlink_from_project(item_id):
 
     db.session.commit()
     return jsonify({'code': 0, 'data': item.to_dict(), 'message': '已取消关联（原招商动态记录保留）'})
+
+
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/link-construction', methods=['POST'])
+@dual_login_required
+@visitor_block
+def link_to_construction(item_id):
+    """将活动台账关联到在建项目——写入工作进展表并建立关联"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    if item.linked_construction_id:
+        return jsonify({'code': 1, 'message': '该记录已关联在建项目，请先取消关联'}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 1, 'message': '请求数据不能为空'}), 400
+
+    construction_id = data.get('construction_id')
+    if not construction_id:
+        return jsonify({'code': 1, 'message': '请选择要关联的在建项目'}), 400
+
+    # 校验项目存在
+    construction = ConstructionProject.query.filter_by(id=int(construction_id)).first()
+    if not construction:
+        return jsonify({'code': 1, 'message': '所选在建项目不存在'}), 404
+
+    # 写入工作进展表（对齐招商动态的关联逻辑）
+    progress = WorkProgress(
+        project_id=construction.id,
+        start_date=item.date.date() if item.date else date.today(),
+        end_date=item.date.date() if item.date else date.today(),
+        content=item.content,
+        files=item.files
+    )
+    db.session.add(progress)
+    db.session.flush()
+
+    # 建立关联
+    item.linked_construction_id = construction.id
+    item.linked_work_progress_id = progress.id
+
+    # 审计日志
+    user_info = get_current_user_info()
+    if user_info:
+        log_changes('activity_ledger', item_id, {
+            'linked_construction_id': (None, construction.id),
+            'linked_work_progress_id': (None, progress.id)
+        }, 'link_construction', user_info)
+        log_changes('work_progress', progress.id, {
+            'project_id': (None, progress.project_id),
+            'start_date': (None, progress.start_date.isoformat() if progress.start_date else None),
+            'end_date': (None, progress.end_date.isoformat() if progress.end_date else None),
+            'content': (None, progress.content),
+            'files': (None, progress.files)
+        }, 'create', user_info)
+
+    db.session.commit()
+    return jsonify({
+        'code': 0,
+        'data': item.to_dict(),
+        'message': f'已关联至在建项目「{construction.project_name}」并同步到工作进展'
+    })
+
+
+@admin_activity_ledger_bp.route('/activity-ledger/<int:item_id>/unlink-construction', methods=['POST'])
+@dual_login_required
+@visitor_block
+def unlink_from_construction(item_id):
+    """取消活动台账与在建项目的关联（保留工作进展记录）"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+
+    if not item.linked_construction_id:
+        return jsonify({'code': 1, 'message': '该记录尚未关联在建项目'}), 400
+
+    old_construction_id = item.linked_construction_id
+    old_work_progress_id = item.linked_work_progress_id
+
+    item.linked_construction_id = None
+    item.linked_work_progress_id = None
+
+    # 审计日志
+    user_info = get_current_user_info()
+    if user_info:
+        log_changes('activity_ledger', item_id, {
+            'linked_construction_id': (old_construction_id, None),
+            'linked_work_progress_id': (old_work_progress_id, None)
+        }, 'unlink_construction', user_info)
+
+    db.session.commit()
+    return jsonify({'code': 0, 'data': item.to_dict(), 'message': '已取消关联（原工作进展记录保留）'})

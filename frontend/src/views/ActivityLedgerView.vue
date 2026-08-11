@@ -83,14 +83,19 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="关联项目" width="160">
+          <el-table-column label="关联项目" width="240">
             <template #default="{ row }">
               <template v-if="row.linked_project_id">
                 <el-tag type="warning" effect="plain" size="small" style="cursor: pointer;" @click="handleProjectClick(row)">
                   {{ dn(row.linked_project_name) }}
                 </el-tag>
               </template>
-              <span v-else class="no-data">未关联</span>
+              <template v-if="row.linked_construction_id">
+                <el-tag type="success" effect="plain" size="small" style="cursor: pointer; margin-left: 4px;">
+                  {{ dn(row.linked_construction_name) }}
+                </el-tag>
+              </template>
+              <span v-if="!row.linked_project_id && !row.linked_construction_id" class="no-data">未关联</span>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
@@ -162,7 +167,10 @@
             <template v-if="viewItem.linked_project_id">
               <el-tag type="warning" effect="plain">{{ viewItem.linked_project_name }}</el-tag>
             </template>
-            <span v-else class="no-data">未关联</span>
+            <template v-if="viewItem.linked_construction_id">
+              <el-tag type="success" effect="plain" style="margin-left: 4px;">{{ viewItem.linked_construction_name }}</el-tag>
+            </template>
+            <span v-if="!viewItem.linked_project_id && !viewItem.linked_construction_id" class="no-data">未关联</span>
           </el-descriptions-item>
           <template v-if="viewItem.audio_files && viewItem.audio_files.length > 0">
             <el-descriptions-item label="会议录音" :span="2">
@@ -520,28 +528,54 @@
             </el-select>
           </el-form-item>
 
-          <!-- 关联项目（新建始终显示；编辑或已关联时始终显示） -->
+          <!-- 关联招商项目（新建始终显示；编辑或已关联时始终显示） -->
           <template v-if="editMode === 'create' || editMode === 'edit' || editingItem.linked_project_id">
             <div class="section-header">
               <span class="section-icon"><el-icon><Connection /></el-icon></span>
-              <span class="section-title">关联项目</span>
+              <span class="section-title">招商项目</span>
             </div>
-            <el-form-item v-if="editingItem.linked_project_id" label="已关联项目">
+            <el-form-item v-if="editingItem.linked_project_id" label="已关联招商项目">
               <div class="linked-project-display">
                 <el-tag type="warning" effect="plain" size="large">{{ editingItem.linked_project_name }}</el-tag>
-                <el-popconfirm title="确定取消与该项目的关联吗？（招商动态记录将保留）" confirm-button-text="确定" cancel-button-text="取消" @confirm="handleUnlink">
+                <el-popconfirm title="确定取消与该招商项目的关联吗？（招商动态记录将保留）" confirm-button-text="确定" cancel-button-text="取消" @confirm="handleUnlink">
                   <template #reference>
                     <el-button type="danger" size="small" :loading="unlinking" style="margin-left: 10px;">取消关联</el-button>
                   </template>
                 </el-popconfirm>
               </div>
             </el-form-item>
-            <el-form-item v-else label="关联项目">
+            <el-form-item v-else label="选择招商项目">
               <div class="link-project-row">
                 <el-select v-model="form._linkProjectId" placeholder="选择要关联的招商项目" filterable clearable style="flex: 1;">
                   <el-option v-for="p in projectList" :key="p.id" :label="p.project_name" :value="p.id" />
                 </el-select>
                 <span class="link-hint">选择项目后保存，系统将自动把该活动写入对应项目的招商动态</span>
+              </div>
+            </el-form-item>
+          </template>
+
+          <!-- 关联在建项目（V16.23 新增） -->
+          <template v-if="editMode === 'create' || editMode === 'edit' || editingItem.linked_construction_id">
+            <div class="section-header">
+              <span class="section-icon"><el-icon><Connection /></el-icon></span>
+              <span class="section-title">在建项目</span>
+            </div>
+            <el-form-item v-if="editingItem.linked_construction_id" label="已关联在建项目">
+              <div class="linked-project-display">
+                <el-tag type="success" effect="plain" size="large">{{ editingItem.linked_construction_name }}</el-tag>
+                <el-popconfirm title="确定取消与该在建项目的关联吗？（工作进展记录将保留）" confirm-button-text="确定" cancel-button-text="取消" @confirm="handleUnlinkConstruction">
+                  <template #reference>
+                    <el-button type="danger" size="small" :loading="unlinking" style="margin-left: 10px;">取消关联</el-button>
+                  </template>
+                </el-popconfirm>
+              </div>
+            </el-form-item>
+            <el-form-item v-else label="选择在建项目">
+              <div class="link-project-row">
+                <el-select v-model="form._linkConstructionId" placeholder="选择要关联的在建项目" filterable clearable style="flex: 1;">
+                  <el-option v-for="p in constructionList" :key="p.id" :label="p.project_name" :value="p.id" />
+                </el-select>
+                <span class="link-hint">选择项目后保存，系统将自动把该活动写入对应项目的工作进展</span>
               </div>
             </el-form-item>
           </template>
@@ -599,7 +633,8 @@ import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Con
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { useAudioRecording } from '@/composables/useAudioRecording'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels, exportAudioPdf } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, linkToConstruction, unlinkFromConstruction, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels, exportAudioPdf } from '@/api/activityLedger'
+import { getProjects as getConstructionProjects } from '@/api/construction'
 import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
@@ -691,6 +726,8 @@ const uploadRef = ref(null)
 const saving = ref(false)
 const unlinking = ref(false)
 const fileList = ref([])
+// V16.23 关联在建项目
+const constructionList = ref([])
 
 
 
@@ -716,7 +753,8 @@ const defaultForm = () => ({
   files: [],
   tags: [],
   _linkProject: false,
-  _linkProjectId: ''
+  _linkProjectId: '',
+  _linkConstructionId: ''
 })
 
 const form = reactive(defaultForm())
@@ -726,7 +764,7 @@ const rules = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadDicts()])
+  await Promise.all([loadProjects(), loadConstructionProjects(), loadDicts()])
   fetchData()
 })
 // loadLLMModels() 延迟到编辑抽屉打开时按需调用
@@ -746,6 +784,14 @@ async function loadProjects() {
   try {
     const res = await getPublicProjectsLite()
     if (res.code === 0) projectList.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+// V16.23 加载在建项目列表（关联字典）
+async function loadConstructionProjects() {
+  try {
+    const res = await getConstructionProjects({ page_size: 200 })
+    if (res.code === 0) constructionList.value = (res.data || []).filter(p => !p.is_deleted)
   } catch { /* ignore */ }
 }
 
@@ -941,6 +987,7 @@ async function openEdit(row) {
       form.tags = Array.isArray(d.tags) ? [...d.tags] : []
       form._linkProject = !!d.linked_project_id
       form._linkProjectId = ''
+      form._linkConstructionId = ''
       // 加载录音详情（多文件）—— 由 composable 统一处理状态/多版本/模型回填
       await loadAudioDetail(row.id)
       try {
@@ -1170,13 +1217,22 @@ async function handleSave() {
       fetchData()
     } else {
       await updateLedger(editingId.value, data)
-      // 如果设置了关联项目，执行关联
+      // 如果设置了关联招商项目，执行关联
       if (form._linkProjectId) {
         try {
           const linkRes = await linkToProject(editingId.value, form._linkProjectId)
-          ElMessage.success(linkRes.message || '已关联至项目')
+          ElMessage.success(linkRes.message || '已关联至招商项目')
         } catch (err) {
-          ElMessage.warning('内容已更新，但关联项目失败：' + (err.message || '未知错误'))
+          ElMessage.warning('内容已更新，但关联招商项目失败：' + (err.message || '未知错误'))
+        }
+      }
+      // V16.23 如果设置了关联在建项目，执行关联（写入工作进展）
+      if (form._linkConstructionId) {
+        try {
+          const linkRes = await linkToConstruction(editingId.value, form._linkConstructionId)
+          ElMessage.success(linkRes.message || '已关联至在建项目')
+        } catch (err) {
+          ElMessage.warning('内容已更新，但关联在建项目失败：' + (err.message || '未知错误'))
         }
       }
       ElMessage.success('活动台账更新成功')
@@ -1187,7 +1243,7 @@ async function handleSave() {
   finally { saving.value = false }
 }
 
-// ---- 取消关联 ----
+// ---- 取消关联招商项目 ----
 async function handleUnlink() {
   unlinking.value = true
   try {
@@ -1196,6 +1252,19 @@ async function handleUnlink() {
     editingItem.value = { ...editingItem.value, linked_project_id: null, linked_project_name: '' }
     form._linkProject = false
     form._linkProjectId = ''
+    fetchData()
+  } catch (err) { ElMessage.error(err.message) }
+  finally { unlinking.value = false }
+}
+
+// ---- 取消关联在建项目（V16.23）----
+async function handleUnlinkConstruction() {
+  unlinking.value = true
+  try {
+    const res = await unlinkFromConstruction(editingId.value)
+    ElMessage.success(res.message || '已取消关联')
+    editingItem.value = { ...editingItem.value, linked_construction_id: null, linked_construction_name: '', linked_work_progress_id: null }
+    form._linkConstructionId = ''
     fetchData()
   } catch (err) { ElMessage.error(err.message) }
   finally { unlinking.value = false }

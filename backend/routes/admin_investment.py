@@ -698,11 +698,9 @@ def overdue_alerts():
 
     for rule, alert_type in ((no_meeting_rule, 'no_meeting'), (no_followup_rule, 'no_followup')):
         for p in get_triggered_projects(rule):
-            # 最近动态时间
-            last_act = InvestmentActivity.query.filter_by(
-                project_id=p.id,
-                is_deleted=False if hasattr(InvestmentActivity, 'is_deleted') else True
-            ).order_by(InvestmentActivity.date.desc()).first()
+            # 最近动态时间（动态无 is_deleted 列，直接按 project_id 查）
+            last_act = InvestmentActivity.query.filter_by(project_id=p.id) \
+                .order_by(InvestmentActivity.date.desc()).first()
             last_activity_date = last_act.date.date() if last_act and last_act.date else None
             if alert_type == 'no_followup' and not last_activity_date:
                 last_activity_date = p.first_contact_date

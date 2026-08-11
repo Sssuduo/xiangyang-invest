@@ -97,12 +97,16 @@ async function loadMessages() {
 async function handleSnooze(id) {
   await userMessageApi.snooze(id)
   loadMessages()
+  emit('changed')
 }
 
 async function handleDone(id) {
   await userMessageApi.done(id)
   loadMessages()
+  emit('changed')
 }
+
+const emit = defineEmits(['changed'])
 
 onMounted(loadMessages)
 defineExpose({ loadMessages })

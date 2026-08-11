@@ -93,7 +93,7 @@
         </span>
       </div>
     </template>
-    <MessageCenter ref="messageCenterRef" />
+    <MessageCenter ref="messageCenterRef" @changed="fetchUnreadCount" />
   </el-drawer>
 
   <!-- 登录弹窗 -->
@@ -200,8 +200,8 @@ async function fetchUnreadCount() {
 }
 function openMessageCenter() {
   showMessageCenter.value = true
-  // 打开抽屉即标记已读（角标清零），并加载消息
-  userMessageApi.markRead().then(() => { unreadCount.value = 0 })
+  // 打开抽屉刷新角标（角标 = 待处理数量，不因打开而清零）
+  fetchUnreadCount()
   nextTick(() => messageCenterRef.value?.loadMessages?.())
 }
 

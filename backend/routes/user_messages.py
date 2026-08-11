@@ -101,7 +101,10 @@ def list_inbox():
 
 @api_bp.route('/messages/unread-count', methods=['GET'])
 def unread_count():
-    """未读消息数（未读 + 待处理），供 Navbar badge 用"""
+    """待处理消息数（pending + 挂起），供 Navbar badge 用
+
+    角标 = 待处理数量（打开抽屉不清零，处理消息后才减少）
+    """
     user_id, user_type = _get_current_user_info()
     if not user_id:
         return jsonify({'code': 0, 'data': {'count': 0}}), 200
@@ -110,7 +113,6 @@ def unread_count():
         UserMessage.user_id == user_id,
         UserMessage.user_type == user_type,
         UserMessage.status.in_(['pending', 'snoozed']),
-        UserMessage.is_read == False,
     ).count()
     return jsonify({'code': 0, 'data': {'count': count}}), 200
 

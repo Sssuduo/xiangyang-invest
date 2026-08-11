@@ -59,6 +59,11 @@
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
+          <span class="nav-item message-bell" title="消息提醒" @click="openMessageCenter">
+            <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
+              <el-icon><Bell /></el-icon>
+            </el-badge>
+          </span>
           <span class="nav-item nav-user nav-user-clickable" @click="showProfileDialog = true">
             <el-icon><UserFilled /></el-icon>
             {{ businessAuth.user?.display_name || businessAuth.user?.username }}
@@ -152,10 +157,12 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, UserFilled, User, Lock } from '@element-plus/icons-vue'
+import { ArrowDown, UserFilled, User, Lock, Bell } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { clearAuthCache } from '@/router'
+import MessageCenter from '@/components/common/MessageCenter.vue'
+import { userMessageApi } from '@/api/userMessage'
 
 const props = defineProps({
   variant: { type: String, default: 'light' }, // 'home' | 'light' | 'overlay' | 'contact'
@@ -167,6 +174,27 @@ const router = useRouter()
 const businessAuth = useBusinessAuthStore()
 
 // 消息中心
+const showMessageCenter = ref(false)
+const unreadCount = ref(0)
+const messageCenterRef = ref(null)
+
+// 定时拉取未读数（进入页面 + 每 60s）
+let unreadTimer = null
+async function fetchUnreadCount() {
+  if (!businessAuth.isLoggedIn) return
+  try {
+    const res = await userMessageApi.unreadCount()
+    if (res?.data?.code === 0) {
+      unreadCount.value = res.data.data?.unread_count ?? 0
+    }
+  } catch { /* ignore */ }
+}
+function openMessageCenter() {
+  showMessageCenter.value = true
+  unreadCount.value = 0
+  nextTick(() => messageCenterRef.value?.loadMessages?.())
+}
+
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge'))
@@ -195,7 +223,16 @@ const loginRules = {
 
 // 检查登录状态
 onMounted(() => {
-  businessAuth.check()
+  businessAuth.check().then(() => {
+    if (businessAuth.isLoggedIn) {
+      fetchUnreadCount()
+      unreadTimer = setInterval(fetchUnreadCount, 60000)
+    }
+  })
+})
+
+onUnmounted(() => {
+  if (unreadTimer) clearInterval(unreadTimer)
 })
 
 async function handleLogin() {
@@ -346,6 +383,15 @@ async function handleChangePassword() {
 .nav-logout { cursor: pointer; }
 
 /* 消息提醒 */
+.message-bell {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 10px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.message-bell .el-icon { vertical-align: middle; }
 .nav-message-badge { margin: 0 12px; cursor: pointer; }
 .nav-message-btn { border-color: transparent; background: transparent; }
 .nav-message-btn:hover { background: rgba(0,0,0,0.04); }

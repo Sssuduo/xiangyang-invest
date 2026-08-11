@@ -71,7 +71,8 @@ def get_triggered_projects(rule: MessageRule):
             # 动态无 is_deleted 列（本地模型有、生产无），直接按 project_id 查
             last_act = InvestmentActivity.query.filter_by(project_id=p.id) \
                 .order_by(InvestmentActivity.date.desc()).first()
-            ref_date = last_act.date if last_act else p.first_contact_date
+            # last_act.date 是 DateTime，需转 date 再与 today 比较
+            ref_date = last_act.date.date() if last_act and last_act.date else p.first_contact_date
             if ref_date and (today - ref_date).days > rule.threshold_days:
                 triggered.append(p)
         return triggered

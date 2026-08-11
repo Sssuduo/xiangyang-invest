@@ -678,11 +678,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 import { Search, Document, Plus, Delete, Download, UploadFilled, Upload, ArrowDown, ArrowUp, MoreFilled, View, OfficeBuilding, ArrowRight, DataAnalysis, PriceTag, Operation, Printer, Finished, User } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
@@ -750,6 +751,32 @@ function handleSizeChange() {
 }
 function handleShowAllChange(val) {
   currentPage.value = 1
+}
+
+// 消息站超链接跳转：focusProjectId 定位并高亮目标项目
+const focusProjectId = ref(null)
+watch(() => route.query.focusProjectId, (val) => {
+  if (val) focusProjectId.value = Number(val)
+}, { immediate: true })
+
+function scrollToFocusProject() {
+  const pid = focusProjectId.value
+  if (!pid) return
+  nextTick(() => {
+    // 找到目标行（跨页则先定位所在页）
+    const idx = projects.value.findIndex(p => p.id === pid)
+    if (idx >= 0) {
+      currentPage.value = Math.floor(idx / pageSize.value) + 1
+      nextTick(() => {
+        const el = tableRef.value?.$el?.querySelector(`tr[data-row-key="${pid}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.classList.add('focus-row-highlight')
+          setTimeout(() => el.classList.remove('focus-row-highlight'), 3000)
+        }
+      })
+    }
+  })
 }
 
 // 展开卡片折叠/展开控制
@@ -910,7 +937,7 @@ const rules = {
   responsible_unit_code: [{ required: false, message: '请选择责任单位', trigger: 'change' }]
 }
 
-onMounted(async () => { loadDicts(); fetchData() })
+onMounted(async () => { loadDicts(); await fetchData(); scrollToFocusProject() })
 
 async function loadDicts() {
   try { const res = await getDicts(); if (res.code === 0) Object.assign(dicts, res.data) } catch { /* ignore */ }
@@ -1757,5 +1784,14 @@ async function handleDelete(row) {
 }
 .el-drawer__body {
   padding: 12px 20px 20px !important;
+}
+
+/* 消息站跳转高亮 */
+:deep(.focus-row-highlight) {
+  animation: focus-row-flash 3s ease;
+}
+@keyframes focus-row-flash {
+  0%, 40% { background-color: #ecf5ff; }
+  100% { background-color: transparent; }
 }
 </style>

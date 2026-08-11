@@ -85,6 +85,14 @@
     :close-on-click-modal="true"
     append-to-body
   >
+    <template #header>
+      <div class="drawer-title-bar">
+        <span class="drawer-title">
+          <el-icon><Bell /></el-icon>
+          消息提醒
+        </span>
+      </div>
+    </template>
     <MessageCenter ref="messageCenterRef" />
   </el-drawer>
 
@@ -185,7 +193,7 @@ async function fetchUnreadCount() {
   try {
     const res = await userMessageApi.unreadCount()
     if (res?.data?.code === 0) {
-      unreadCount.value = res.data.data?.unread_count ?? 0
+      unreadCount.value = res.data.data?.count ?? 0
     }
   } catch { /* ignore */ }
 }
@@ -395,6 +403,23 @@ async function handleChangePassword() {
 .nav-message-badge { margin: 0 12px; cursor: pointer; }
 .nav-message-btn { border-color: transparent; background: transparent; }
 .nav-message-btn:hover { background: rgba(0,0,0,0.04); }
+
+/* 抽屉标题栏（与系统其他抽屉统一：渐变底 + 白色加粗） */
+.drawer-title-bar {
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  margin: 0 -20px;
+  padding: 20px 20px 20px 40px;
+  width: 420px;
+}
+.drawer-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .login-error { color: #f56c6c; font-size: 13px; text-align: center; margin: 0; }
 .profile-success { color: #67c23a; font-size: 13px; text-align: center; margin: 0; }

@@ -192,8 +192,9 @@ async function fetchUnreadCount() {
   if (!businessAuth.isLoggedIn) return
   try {
     const res = await userMessageApi.unreadCount()
-    if (res?.data?.code === 0) {
-      unreadCount.value = res.data.data?.count ?? 0
+    // 响应拦截器已解包 response.data → res 即 {code, data:{count}}
+    if (res?.code === 0) {
+      unreadCount.value = res.data?.count ?? 0
     }
   } catch { /* ignore */ }
 }

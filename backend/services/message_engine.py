@@ -81,9 +81,20 @@ def get_triggered_projects(rule: MessageRule):
 
 
 def evaluate_rule(rule: MessageRule) -> int:
-    """评估单条规则,生成用户消息。返回生成的消息数。"""
+    """评估单条规则,生成用户消息。返回生成的消息数。
+
+    规则运行 = 先清空该规则全部 pending/snoozed 消息，再按当前结果写入新消息；
+    已处理（done）记录保留不删。
+    """
     if not rule.is_active:
         return 0
+
+    # 先清空本规则的待处理/挂起消息（确保列表中无历史数据）
+    UserMessage.query.filter(
+        UserMessage.rule_id == rule.id,
+        UserMessage.status.in_(['pending', 'snoozed']),
+    ).delete(synchronize_session=False)
+    db.session.commit()
 
     sources = _get_triggered_sources(rule)
     if not sources:
@@ -95,15 +106,15 @@ def evaluate_rule(rule: MessageRule) -> int:
 
     generated = 0
     for project in sources:
-        # 覆盖逻辑：同一 rule+source 的历史 pending/snoozed 消息标记为"过期"
-        # （每日规则运行后重新展示，已处理的保留不覆盖）
-        old_msgs = UserMessage.query.filter(
+        # 若该项目已有"已处理"记录（任意用户 done），不再重新提醒（保留历史）
+        handled_before = UserMessage.query.filter(
             UserMessage.rule_id == rule.id,
             UserMessage.source_type == 'investment_project',
             UserMessage.source_id == project.id,
-        ).filter(UserMessage.status.in_(['pending', 'snoozed'])).all()
-        for om in old_msgs:
-            om.status = 'superseded'
+            UserMessage.status == 'done',
+        ).first()
+        if handled_before:
+            continue
 
         for user_id, user_type in users:
             user = AdminUser.query.get(user_id) or BusinessUser.query.get(user_id)

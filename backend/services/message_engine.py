@@ -37,23 +37,30 @@ def _get_users(rule: MessageRule):
 
 
 def _get_triggered_sources(rule: MessageRule):
-    """根据 condition_type 返回触发源项目列表"""
+    """根据 condition_type 返回触发源项目列表（由 get_triggered_projects 实现）"""
+    return get_triggered_projects(rule)
+
+
+def get_triggered_projects(rule: MessageRule):
+    """按规则条件返回触发的招商项目列表（供消息引擎与数据看板复用）"""
     today = date.today()
 
     if rule.condition_type == 'project_no_meeting':
-        # 招商项目:未研判 且 首次对接时间超过 threshold_days 天
+        # 招商项目超期未研判：首次对接时间不为空 且 距今超过 threshold_days 天
+        # 且 专班研判结论为空（历史数据首次对接时间为空的不提醒）
         projects = InvestmentProject.query.filter(
             InvestmentProject.is_deleted == False,
-            InvestmentProject.meeting_status_code == 'not_meeting',
             InvestmentProject.first_contact_date != None,
         ).all()
         return [
             p for p in projects
-            if (today - p.first_contact_date).days > rule.threshold_days
+            if not (p.conclusion or '').strip()
+            and (today - p.first_contact_date).days > rule.threshold_days
         ]
 
     if rule.condition_type == 'project_no_followup':
-        # 招商项目:超期无动态(最近一条 activity 时间超过 threshold_days)
+        # 招商项目超期无动态：最近一次动态的时间距今超过 threshold_days 天
+        # （无动态则退回首次对接时间比较；首次对接时间为空的项目不参与）
         projects = InvestmentProject.query.filter(
             InvestmentProject.is_deleted == False,
             InvestmentProject.first_contact_date != None,
@@ -117,6 +124,7 @@ def evaluate_rule(rule: MessageRule) -> int:
                 'first_contact_date': project.first_contact_date.isoformat(),
                 'threshold_days': str(rule.threshold_days),
                 'project_id': str(project.id),
+                'conclusion': (project.conclusion or '').strip(),
             }
             body = _render_template(rule.body_template, variables)
             title = _render_template(rule.title_template, variables)

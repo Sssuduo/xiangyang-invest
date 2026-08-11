@@ -45,10 +45,18 @@ def _utc_to_beijing(dt):
 
 
 def _serialize(msg):
-    """序列化消息：时间转北京时间 + 附带项目已处理协同信息"""
+    """序列化消息：时间转北京时间 + 附带项目已处理协同信息 + 提醒类型"""
     d = msg.to_dict()
     d['triggered_at'] = _utc_to_beijing(msg.triggered_at).isoformat() if msg.triggered_at else None
     d['handled_at'] = _utc_to_beijing(msg.handled_at).isoformat() if msg.handled_at else None
+
+    # 提醒类型（按规则映射，供前端筛选）
+    if msg.rule_id == 1:
+        d['alert_type'] = 'no_meeting'
+    elif msg.rule_id == 3:
+        d['alert_type'] = 'no_followup'
+    else:
+        d['alert_type'] = 'other'
 
     # 协同处理：本项目若有其他用户已处理，本用户该项目的消息标为 handled_by_other
     if msg.status != 'done' and msg.source_type == 'investment_project' and msg.source_id:

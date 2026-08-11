@@ -331,6 +331,11 @@ class ActivityLedger(db.Model):
     tags = db.Column(db.Text, default='[]')
     linked_project_id = db.Column(db.Integer, db.ForeignKey('investment_projects.id'), nullable=True)
     linked_activity_id = db.Column(db.Integer, db.ForeignKey('investment_activities.id'), nullable=True)
+    # V16.23 关联在建项目（与招商项目并列；保存后写入在建项目工作进展）
+    linked_construction_id = db.Column(db.Integer, db.ForeignKey('construction_projects.id'), nullable=True)
+    linked_work_progress_id = db.Column(db.Integer, db.ForeignKey('work_progress.id'), nullable=True)
+    # V16.23 关联在建项目（与招商项目并列，均指向项目字典）
+    linked_construction_id = db.Column(db.Integer, db.ForeignKey('construction_projects.id'), nullable=True)
     # 录音文件相关字段
     # audio_files: JSON数组 [{url, name, duration, size, status: 'ok'|'error', error: ''}, ...]
     audio_files = db.Column(db.Text, default='[]')        # 多录音文件列表（可在线播放）
@@ -362,6 +367,9 @@ class ActivityLedger(db.Model):
 
     linked_project = db.relationship('InvestmentProject', foreign_keys=[linked_project_id])
     linked_activity = db.relationship('InvestmentActivity', foreign_keys=[linked_activity_id])
+    linked_construction = db.relationship('ConstructionProject', foreign_keys=[linked_construction_id])
+    linked_work_progress = db.relationship('WorkProgress', foreign_keys=[linked_work_progress_id])
+    linked_construction = db.relationship('ConstructionProject', foreign_keys=[linked_construction_id])
 
     def to_dict(self):
         result = {
@@ -373,6 +381,9 @@ class ActivityLedger(db.Model):
             'linked_project_id': self.linked_project_id,
             'linked_project_name': self.linked_project.project_name if self.linked_project else '',
             'linked_activity_id': self.linked_activity_id,
+            'linked_construction_id': self.linked_construction_id,
+            'linked_construction_name': self.linked_construction.project_name if self.linked_construction else '',
+            'linked_work_progress_id': self.linked_work_progress_id,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

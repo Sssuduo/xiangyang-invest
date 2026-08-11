@@ -44,6 +44,9 @@ def _run_auto_migrations(app):
             # V15.1 进度
             ('progress_message', 'VARCHAR(255)'),
             ('progress_pct', 'INTEGER'),
+            # V16.23 关联在建项目 + 工作进展
+            ('linked_construction_id', 'INTEGER'),
+            ('linked_work_progress_id', 'INTEGER'),
         ],
         'work_progress': [
             ('import_user_id', 'INTEGER'),

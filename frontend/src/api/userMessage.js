@@ -8,6 +8,9 @@ export const userMessageApi = {
   unreadCount() {
     return api.get('/messages/unread-count')
   },
+  markRead() {
+    return api.post('/messages/mark-read')
+  },
   snooze(id) {
     return api.post(`/messages/${id}/snooze`)
   },

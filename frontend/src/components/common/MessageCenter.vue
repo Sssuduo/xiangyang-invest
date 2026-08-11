@@ -1,7 +1,7 @@
 <template>
   <div class="message-center">
     <el-tabs v-model="activeTab" stretch>
-      <el-tab-pane :label="`待处理(${pendingCount})`" name="pending">
+      <el-tab-pane :label="`待处理(${pending.length})`" name="pending">
         <MessageList
           :messages="pending"
           :loading="loading"
@@ -10,7 +10,7 @@
           @done="handleDone"
         />
       </el-tab-pane>
-      <el-tab-pane label="已挂起" name="snoozed">
+      <el-tab-pane :label="`已挂起(${snoozed.length})`" name="snoozed">
         <MessageList
           :messages="snoozed"
           :loading="loading"
@@ -19,7 +19,7 @@
           @done="handleDone"
         />
       </el-tab-pane>
-      <el-tab-pane label="已处理" name="done">
+      <el-tab-pane :label="`已处理(${done.length})`" name="done">
         <MessageList
           :messages="done"
           :loading="loading"
@@ -42,7 +42,6 @@ const activeTab = ref('pending')
 const pending = computed(() => messages.value.filter(m => m.status === 'pending'))
 const snoozed = computed(() => messages.value.filter(m => m.status === 'snoozed'))
 const done = computed(() => messages.value.filter(m => m.status === 'done'))
-const pendingCount = computed(() => pending.value.length + snoozed.value.length)
 
 async function loadMessages() {
   loading.value = true

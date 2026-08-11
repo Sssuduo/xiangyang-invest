@@ -75,11 +75,15 @@ class UserMessage(db.Model):
 
     # 状态: pending(待处理) | snoozed(挂起) | done(已处理)
     status = db.Column(db.String(16), default='pending')
+    # 已读标记：角标 = 未读消息数，打开抽屉后清 0
+    is_read = db.Column(db.Boolean, nullable=False, default=False)
 
     # 时间
     triggered_at = db.Column(db.DateTime, default=datetime.utcnow)
     snoozed_until = db.Column(db.DateTime, nullable=True)
     handled_at = db.Column(db.DateTime, nullable=True)
+    # 处理人（协同：某用户处理某项目后，其他用户同项目消息显示处理人）
+    handled_by = db.Column(db.String(128), nullable=True)
 
     # 关系
     rule = db.relationship('MessageRule', backref=db.backref('messages', lazy='dynamic'))
@@ -103,9 +107,11 @@ class UserMessage(db.Model):
             'link_route': self.link_route,
             'link_query': link_query_obj,
             'status': self.status,
+            'is_read': self.is_read,
             'triggered_at': self.triggered_at.isoformat() if self.triggered_at else None,
             'snoozed_until': self.snoozed_until.isoformat() if self.snoozed_until else None,
             'handled_at': self.handled_at.isoformat() if self.handled_at else None,
+            'handled_by': self.handled_by,
         }
 
 

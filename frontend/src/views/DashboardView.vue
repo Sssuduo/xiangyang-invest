@@ -194,7 +194,9 @@
 
           <!-- 表1：超期未研判 -->
           <div class="overdue-block">
-            <div class="overdue-block-title">超期未研判（{{ noMeetingData.length }}）</div>
+            <el-tooltip content="规则：招商项目首次对接时间不为空，且距今超过 14 天，且专班研判结论为空（未研判），即触发提醒" placement="top">
+              <div class="overdue-block-title overdue-block-title-hover">超期未研判（{{ noMeetingData.length }}）</div>
+            </el-tooltip>
             <el-table
               :data="pagedNoMeeting"
               border
@@ -228,7 +230,9 @@
 
           <!-- 表2：超期无动态 -->
           <div class="overdue-block">
-            <div class="overdue-block-title">超期无动态（{{ noFollowupData.length }}）</div>
+            <el-tooltip content="规则：招商项目最近一次动态的时间距今超过 14 天（无动态则按首次对接时间计算），即触发提醒" placement="top">
+              <div class="overdue-block-title overdue-block-title-hover">超期无动态（{{ noFollowupData.length }}）</div>
+            </el-tooltip>
             <el-table
               :data="pagedNoFollowup"
               border
@@ -1163,6 +1167,10 @@ onUnmounted(() => {
   font-weight: 600;
   color: #1a3a5c;
   margin-bottom: 8px;
+}
+.overdue-block-title-hover {
+  cursor: help;
+  display: inline-block;
 }
 .overdue-table {
   width: 100%;

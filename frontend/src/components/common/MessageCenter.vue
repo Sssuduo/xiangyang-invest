@@ -52,10 +52,11 @@ async function loadMessages() {
       userMessageApi.listInbox({ status: 'snoozed' }),
       userMessageApi.listInbox({ status: 'done' }),
     ])
+    // 响应拦截器已解包 response.data → res 即 {code, data:{items,total}}
     messages.value = [
-      ...(p.data.data?.items || []),
-      ...(s.data.data?.items || []),
-      ...(d.data.data?.items || []),
+      ...(p.data?.items || []),
+      ...(s.data?.items || []),
+      ...(d.data?.items || []),
     ]
   } finally {
     loading.value = false

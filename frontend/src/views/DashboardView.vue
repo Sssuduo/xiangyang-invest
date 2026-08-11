@@ -186,55 +186,80 @@
           <div class="resize-handle" @mousedown="onResizeStart"></div>
         </div>
 
-        <!-- 超期提醒（表格，自适应拖动） -->
+        <!-- 超期提醒：拆分为两个表格，各按 10 行分页 -->
         <div class="chart-panel chart-panel-full overdue-panel">
           <div class="chart-panel-header">
             <h3>超期提醒</h3>
-            <div class="chart-panel-actions">
-              <el-select v-model="overdueFilter" placeholder="全部类型" clearable size="small" style="width: 130px;" @change="overduePage = 1">
-                <el-option label="超期未研判" value="no_meeting" />
-                <el-option label="超期无动态" value="no_followup" />
-              </el-select>
+          </div>
+
+          <!-- 表1：超期未研判 -->
+          <div class="overdue-block">
+            <div class="overdue-block-title">超期未研判（{{ noMeetingData.length }}）</div>
+            <el-table
+              :data="pagedNoMeeting"
+              border
+              stripe
+              size="small"
+              class="overdue-table"
+              empty-text="暂无数据"
+            >
+              <el-table-column prop="order_no" label="序号" width="70" align="center" />
+              <el-table-column prop="project_name" label="项目名称" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="invest_enterprise" label="投资企业" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="first_contact_date" label="首次对接" width="120" align="center" />
+              <el-table-column prop="overdue_days" label="超期天数" width="90" align="center">
+                <template #default="{ row }">
+                  <span :style="{ color: row.overdue_days > 30 ? '#f56c6c' : '#e6a23c', fontWeight: 600 }">
+                    {{ row.overdue_days ?? '-' }} 天
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-if="noMeetingData.length > 10" class="overdue-pager">
+              <el-pagination
+                small
+                layout="prev, pager, next"
+                :total="noMeetingData.length"
+                :page-size="10"
+                v-model:current-page="noMeetingPage"
+              />
             </div>
           </div>
-          <el-table
-            :data="pagedOverdue"
-            border
-            stripe
-            size="small"
-            class="overdue-table"
-            :max-height="340"
-            empty-text="暂无超期提醒数据"
-          >
-            <el-table-column prop="order_no" label="序号" width="70" align="center" />
-            <el-table-column prop="alert_type" label="提醒类型" width="110" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.alert_type === 'no_meeting' ? 'danger' : 'warning'" size="small">
-                  {{ row.alert_type === 'no_meeting' ? '超期未研判' : '超期无动态' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="project_name" label="项目名称" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="invest_enterprise" label="投资企业" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="first_contact_date" label="首次对接" width="120" align="center" />
-            <el-table-column prop="last_activity_date" label="最近动态" width="120" align="center" />
-            <el-table-column prop="overdue_days" label="超期天数" width="90" align="center">
-              <template #default="{ row }">
-                <span :style="{ color: row.overdue_days > 30 ? '#f56c6c' : '#e6a23c', fontWeight: 600 }">
-                  {{ row.overdue_days ?? '-' }} 天
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="overdueData.length > 6" class="overdue-pager">
-            <el-pagination
-              small
-              layout="prev, pager, next"
-              :total="overdueData.length"
-              :page-size="6"
-              v-model:current-page="overduePage"
-            />
+
+          <!-- 表2：超期无动态 -->
+          <div class="overdue-block">
+            <div class="overdue-block-title">超期无动态（{{ noFollowupData.length }}）</div>
+            <el-table
+              :data="pagedNoFollowup"
+              border
+              stripe
+              size="small"
+              class="overdue-table"
+              empty-text="暂无数据"
+            >
+              <el-table-column prop="order_no" label="序号" width="70" align="center" />
+              <el-table-column prop="project_name" label="项目名称" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="invest_enterprise" label="投资企业" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="last_activity_date" label="最近动态" width="120" align="center" />
+              <el-table-column prop="overdue_days" label="超期天数" width="90" align="center">
+                <template #default="{ row }">
+                  <span :style="{ color: row.overdue_days > 30 ? '#f56c6c' : '#e6a23c', fontWeight: 600 }">
+                    {{ row.overdue_days ?? '-' }} 天
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-if="noFollowupData.length > 10" class="overdue-pager">
+              <el-pagination
+                small
+                layout="prev, pager, next"
+                :total="noFollowupData.length"
+                :page-size="10"
+                v-model:current-page="noFollowupPage"
+              />
+            </div>
           </div>
+
           <div class="resize-handle" @mousedown="onResizeStart"></div>
         </div>
       </div>
@@ -860,15 +885,21 @@ function disposeCharts() {
   resizeObserver?.disconnect()
 }
 
-// 超期提醒
+// 超期提醒：拆分为两个表格（未研判 / 无动态），各按 10 行分页
 const overdueData = ref([])
-const overdueFilter = ref('')
-const overduePage = ref(1)
+const noMeetingPage = ref(1)
+const noFollowupPage = ref(1)
 
-const pagedOverdue = computed(() => {
-  const list = overdueFilter.value ? overdueData.value.filter(r => r.alert_type === overdueFilter.value) : overdueData.value
-  const start = (overduePage.value - 1) * 6
-  return list.slice(start, start + 6)
+const noMeetingData = computed(() => overdueData.value.filter(r => r.alert_type === 'no_meeting'))
+const noFollowupData = computed(() => overdueData.value.filter(r => r.alert_type === 'no_followup'))
+
+const pagedNoMeeting = computed(() => {
+  const start = (noMeetingPage.value - 1) * 10
+  return noMeetingData.value.slice(start, start + 10)
+})
+const pagedNoFollowup = computed(() => {
+  const start = (noFollowupPage.value - 1) * 10
+  return noFollowupData.value.slice(start, start + 10)
 })
 
 async function fetchOverdueAlerts() {
@@ -1124,12 +1155,20 @@ onUnmounted(() => {
 .overdue-panel {
   min-height: 340px;
 }
+.overdue-block {
+  margin-bottom: 16px;
+}
+.overdue-block-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a3a5c;
+  margin-bottom: 8px;
+}
 .overdue-table {
   width: 100%;
-  flex: 1;
 }
 .overdue-pager {
-  margin-top: 10px;
+  margin-top: 8px;
   display: flex;
   justify-content: flex-end;
 }

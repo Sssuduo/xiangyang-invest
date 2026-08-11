@@ -49,11 +49,12 @@ const loading = ref(false)
 const activeTab = ref('pending')
 const typeFilter = ref('')
 
-// 按项目主体去重（同项目多条规则消息只保留最新一条）
+// 按项目主体 + 规则类型去重（同一项目同一规则只保留最新一条，
+// 不同规则（未研判/无动态）分别展示，类型筛选才有意义）
 function dedupeByProject(list) {
   const seen = new Map()
   for (const m of list) {
-    const key = m.source_id ? `p${m.source_id}` : `m${m.id}`
+    const key = m.source_id ? `p${m.source_id}_${m.alert_type || ''}` : `m${m.id}`
     if (!seen.has(key) || new Date(m.triggered_at) > new Date(seen.get(key).triggered_at)) {
       seen.set(key, m)
     }

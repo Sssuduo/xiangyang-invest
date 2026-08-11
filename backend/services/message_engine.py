@@ -68,7 +68,8 @@ def get_triggered_projects(rule: MessageRule):
         triggered = []
         for p in projects:
             from models import InvestmentActivity
-            last_act = InvestmentActivity.query.filter_by(project_id=p.id, is_deleted=False if hasattr(InvestmentActivity, 'is_deleted') else True) \
+            # 动态无 is_deleted 列（本地模型有、生产无），直接按 project_id 查
+            last_act = InvestmentActivity.query.filter_by(project_id=p.id) \
                 .order_by(InvestmentActivity.date.desc()).first()
             ref_date = last_act.date if last_act else p.first_contact_date
             if ref_date and (today - ref_date).days > rule.threshold_days:

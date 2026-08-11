@@ -8,13 +8,18 @@ from routes import api_bp
 
 
 def _get_current_user_info():
-    """返回 (user_id, user_type) 兼容 AdminUser 与 BusinessUser"""
-    if current_user.is_authenticated:
-        return current_user.id, 'admin'
+    """返回 (user_id, user_type) 兼容 AdminUser 与 BusinessUser
+
+    业务端优先（消息站是业务端功能）：先查 session 的 business_user_id，
+    再查 Flask-Login 的 current_user。suduo 等用户同时存在于两张表时，
+    以业务登录身份为准，避免查到 admin 身份的重复消息。
+    """
     from flask import session
     biz_id = session.get('business_user_id')
     if biz_id:
         return int(biz_id), 'business'
+    if current_user.is_authenticated:
+        return current_user.id, 'admin'
     return None, None
 
 

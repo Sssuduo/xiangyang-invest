@@ -200,7 +200,8 @@ async function fetchUnreadCount() {
 }
 function openMessageCenter() {
   showMessageCenter.value = true
-  unreadCount.value = 0
+  // 打开抽屉即标记已读（角标清零），并加载消息
+  userMessageApi.markRead().then(() => { unreadCount.value = 0 })
   nextTick(() => messageCenterRef.value?.loadMessages?.())
 }
 

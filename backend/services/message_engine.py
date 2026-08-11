@@ -95,36 +95,40 @@ def evaluate_rule(rule: MessageRule) -> int:
 
     generated = 0
     for project in sources:
-        # 去重:同一 rule+source 不重复生成 pending 消息
-        exists_pending = UserMessage.query.filter(
+        # 覆盖逻辑：同一 rule+source 的历史 pending/snoozed 消息标记为"过期"
+        # （每日规则运行后重新展示，已处理的保留不覆盖）
+        old_msgs = UserMessage.query.filter(
             UserMessage.rule_id == rule.id,
             UserMessage.source_type == 'investment_project',
             UserMessage.source_id == project.id,
-            UserMessage.status == 'pending',
-        ).first()
-        if exists_pending:
-            continue
+        ).filter(UserMessage.status.in_(['pending', 'snoozed'])).all()
+        for om in old_msgs:
+            om.status = 'superseded'
 
         for user_id, user_type in users:
-            # 去重:同一 user+rule+source 不重复
-            exists = UserMessage.query.filter(
-                UserMessage.user_id == user_id,
-                UserMessage.user_type == user_type,
-                UserMessage.rule_id == rule.id,
-                UserMessage.source_id == project.id,
-            ).filter(UserMessage.status.in_(['pending', 'snoozed'])).first()
-            if exists:
-                continue
-
             user = AdminUser.query.get(user_id) or BusinessUser.query.get(user_id)
             if not user:
                 continue
 
+            # 实际超期天数（no_followup 用最近动态/首接时间；no_meeting 用首接时间）
+            today = date.today()
+            if rule.condition_type == 'project_no_followup':
+                from models import InvestmentActivity
+                last_act = InvestmentActivity.query.filter_by(project_id=project.id) \
+                    .order_by(InvestmentActivity.date.desc()).first()
+                ref_date = last_act.date.date() if last_act and last_act.date else project.first_contact_date
+            else:
+                ref_date = project.first_contact_date
+            overdue_days = (today - ref_date).days if ref_date else rule.threshold_days
+
             variables = {
                 'username': getattr(user, 'display_name', None) or user.username,
+                # project_name 纯文本（标题用）；project_name_link 为 [项目名] 链接标记（消息体用）
                 'project_name': project.project_name,
+                'project_name_link': f'[{project.project_name}]',
                 'first_contact_date': project.first_contact_date.isoformat(),
                 'threshold_days': str(rule.threshold_days),
+                'overdue_days': str(overdue_days),
                 'project_id': str(project.id),
                 'conclusion': (project.conclusion or '').strip(),
             }
@@ -144,6 +148,7 @@ def evaluate_rule(rule: MessageRule) -> int:
                 link_route=rule.link_route,
                 link_query=link_query,
                 status='pending',
+                is_read=False,
             )
             db.session.add(msg)
             generated += 1

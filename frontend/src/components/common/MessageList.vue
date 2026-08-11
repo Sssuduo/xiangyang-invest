@@ -1,8 +1,13 @@
 <template>
   <div class="message-list">
     <el-empty v-if="!messages.length && !loading" description="暂无消息" :image-size="80" />
-    <div v-for="msg in messages" :key="msg.id" class="message-item">
+    <div v-for="msg in messages" :key="msg.id" class="message-item" :class="{ 'msg-superseded': msg.status === 'superseded' }">
+      <div class="message-title">{{ msg.title }}</div>
       <div class="message-body" v-html="renderedBody(msg)" @click="handleBodyClick($event, msg)" />
+      <div v-if="msg.handled_by_other" class="message-other-handled">
+        <el-tag size="small" type="success">已由 {{ msg.handled_by_other }} 处理</el-tag>
+        <span class="message-handle-time">{{ formatTime(msg.handled_by_other_at) }}</span>
+      </div>
       <div class="message-meta">
         <span class="message-time">{{ formatTime(msg.triggered_at) }}</span>
         <div v-if="status !== 'done'" class="message-actions">
@@ -27,10 +32,10 @@ defineEmits(['snooze', 'done'])
 const router = useRouter()
 
 function renderedBody(msg) {
-  // 把 [文本] 包裹的内容渲染成链接
+  // [项目名] → 项目超链接；[文本] → 高亮文本
   if (!msg.body) return ''
   const linkQuery = msg.link_query || {}
-  const projectId = linkQuery.focusProjectId
+  const projectId = linkQuery.focusProjectId || msg.source_id
   return msg.body.replace(
     /\[([^\]]+)\]/g,
     (m, text) => {
@@ -54,11 +59,15 @@ function handleBodyClick(e, msg) {
 function formatTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
   const now = new Date()
   const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+  if (diffDays === 0) {
+    return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+  }
   if (diffDays < 7) return `${diffDays}天前`
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' +
+    d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
 }
 </script>
 
@@ -70,20 +79,34 @@ function formatTime(iso) {
   transition: background 0.15s;
 }
 .message-item:hover { background: #fafafa; }
+.message-item.msg-superseded { opacity: 0.6; }
+.message-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
 .message-body {
   font-size: 14px;
   line-height: 1.6;
   color: #303133;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .message-body :deep(.msg-link) {
   color: #409eff;
   cursor: pointer;
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
 }
 .message-body :deep(.msg-link:hover) { text-decoration: underline; }
 .message-body :deep(.msg-text) { color: #606266; }
+.message-other-handled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.message-handle-time { font-size: 12px; color: #909399; }
 .message-meta {
   display: flex;
   justify-content: space-between;

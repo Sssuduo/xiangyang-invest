@@ -80,6 +80,11 @@ def _run_auto_migrations(app):
             ('audio_archive_size', 'INTEGER'),
             ('summary_model_id', 'INTEGER'),
         ],
+        # V16.21 消息站：已读标记 + 协同处理人
+        'user_messages': [
+            ('is_read', 'BOOLEAN'),
+            ('handled_by', 'VARCHAR(128)'),
+        ],
         # 后续如有新增字段，在此追加即可
     }
 

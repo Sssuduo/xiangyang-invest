@@ -763,19 +763,28 @@ function scrollToFocusProject() {
   const pid = focusProjectId.value
   if (!pid) return
   nextTick(() => {
-    // 找到目标行（跨页则先定位所在页）
+    // 找到目标项目
+    const target = projects.value.find(p => p.id === pid)
+    if (!target) return
+    // 定位所在页
     const idx = projects.value.findIndex(p => p.id === pid)
-    if (idx >= 0) {
-      currentPage.value = Math.floor(idx / pageSize.value) + 1
-      nextTick(() => {
-        const el = tableRef.value?.$el?.querySelector(`tr[data-row-key="${pid}"]`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          el.classList.add('focus-row-highlight')
-          setTimeout(() => el.classList.remove('focus-row-highlight'), 3000)
+    currentPage.value = Math.floor(idx / pageSize.value) + 1
+    nextTick(() => {
+      // 按项目名匹配行（el-table row-key 不渲染为 data-row-key 属性）
+      const name = target.project_name
+      const rows = tableRef.value?.$el?.querySelectorAll('.el-table__body tr')
+      let el = null
+      if (rows) {
+        for (const tr of rows) {
+          if (tr.innerText.includes(name)) { el = tr; break }
         }
-      })
-    }
+      }
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('focus-row-highlight')
+        setTimeout(() => el.classList.remove('focus-row-highlight'), 3000)
+      }
+    })
   })
 }
 

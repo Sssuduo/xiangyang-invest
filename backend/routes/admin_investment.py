@@ -670,3 +670,59 @@ def investment_stats():
             'by_team_leader': by_team_leader,
         }
     })
+
+
+# ============================================================
+# 数据看板 — 超期提醒明细
+# ============================================================
+
+@admin_investment_bp.route('/investment/overdue-alerts', methods=['GET'])
+@dual_login_required
+def overdue_alerts():
+    """超期提醒明细：复用消息引擎触发逻辑，返回两类超期项目
+
+    - no_meeting: 首次对接>N天且专班结论为空（未研判）
+    - no_followup: 最近动态距今>N天（无动态退回首次对接时间）
+    默认按招商项目列表 order_no 升序排序。
+    """
+    from datetime import date
+    from services.message_engine import get_triggered_projects
+    from models import MessageRule, InvestmentActivity
+
+    # 组装两条规则对象（仅用 condition_type + threshold_days 字段）
+    no_meeting_rule = MessageRule(condition_type='project_no_meeting', threshold_days=14)
+    no_followup_rule = MessageRule(condition_type='project_no_followup', threshold_days=14)
+
+    today = date.today()
+    result = []
+
+    for rule, alert_type in ((no_meeting_rule, 'no_meeting'), (no_followup_rule, 'no_followup')):
+        for p in get_triggered_projects(rule):
+            # 最近动态时间
+            last_act = InvestmentActivity.query.filter_by(
+                project_id=p.id,
+                is_deleted=False if hasattr(InvestmentActivity, 'is_deleted') else True
+            ).order_by(InvestmentActivity.date.desc()).first()
+            last_activity_date = last_act.date.date() if last_act and last_act.date else None
+            if alert_type == 'no_followup' and not last_activity_date:
+                last_activity_date = p.first_contact_date
+
+            ref_date = p.first_contact_date if alert_type == 'no_meeting' else (last_activity_date or p.first_contact_date)
+            overdue_days = (today - ref_date).days if ref_date else None
+
+            result.append({
+                'alert_type': alert_type,
+                'order_no': p.order_no,
+                'project_id': p.id,
+                'project_name': p.project_name,
+                'invest_enterprise': p.invest_enterprise,
+                'first_contact_date': p.first_contact_date.isoformat() if p.first_contact_date else None,
+                'last_activity_date': last_activity_date.isoformat() if last_activity_date else None,
+                'overdue_days': overdue_days,
+                'conclusion': (p.conclusion or '').strip(),
+            })
+
+    # 默认按 order_no 升序
+    result.sort(key=lambda x: (x['order_no'] or 0, x['project_id']))
+
+    return jsonify({'code': 0, 'data': result})

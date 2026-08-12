@@ -685,9 +685,18 @@ def overdue_alerts():
     - no_followup: 最近动态距今>N天（无动态退回首次对接时间）
     默认按招商项目列表 order_no 升序排序。
     """
-    from datetime import date
+    from datetime import date, datetime, timedelta, timezone
     from services.message_engine import get_triggered_projects
-    from models import MessageRule, InvestmentActivity
+    from models import MessageRule, InvestmentActivity, MessageRuleLog
+
+    # 最近一次规则运行时间（取 message_rule_logs 最新触发时间，UTC→北京时间）
+    last_log = MessageRuleLog.query.order_by(MessageRuleLog.triggered_at.desc()).first()
+    run_time = None
+    if last_log and last_log.triggered_at:
+        utc = last_log.triggered_at
+        if utc.tzinfo is None:
+            utc = utc.replace(tzinfo=timezone.utc)
+        run_time = (utc + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M')
 
     # 组装两条规则对象（仅用 condition_type + threshold_days 字段）
     no_meeting_rule = MessageRule(condition_type='project_no_meeting', threshold_days=14)
@@ -723,4 +732,4 @@ def overdue_alerts():
     # 默认按 order_no 升序
     result.sort(key=lambda x: (x['order_no'] or 0, x['project_id']))
 
-    return jsonify({'code': 0, 'data': result})
+    return jsonify({'code': 0, 'data': result, 'run_time': run_time})

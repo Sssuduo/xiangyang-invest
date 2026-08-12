@@ -190,6 +190,7 @@
         <div class="chart-panel chart-panel-full overdue-panel">
           <div class="chart-panel-header">
             <h3>超期提醒</h3>
+            <span v-if="overdueRunTime" class="overdue-run-time">规则运行时间：{{ overdueRunTime }}</span>
           </div>
 
           <!-- 表1：超期未研判 -->
@@ -891,6 +892,7 @@ function disposeCharts() {
 
 // 超期提醒：拆分为两个表格（未研判 / 无动态），各按 10 行分页
 const overdueData = ref([])
+const overdueRunTime = ref('')
 const noMeetingPage = ref(1)
 const noFollowupPage = ref(1)
 
@@ -911,6 +913,7 @@ async function fetchOverdueAlerts() {
     const res = await getOverdueAlerts()
     if (res?.code === 0) {
       overdueData.value = res.data || []
+      overdueRunTime.value = res.run_time || ''
     }
   } catch { /* ignore */ }
 }
@@ -1158,6 +1161,11 @@ onUnmounted(() => {
 /* 超期提醒表格 */
 .overdue-panel {
   min-height: 340px;
+}
+.overdue-run-time {
+  font-size: 13px;
+  color: #909399;
+  font-weight: 500;
 }
 .overdue-block {
   margin-bottom: 16px;

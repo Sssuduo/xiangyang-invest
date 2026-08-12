@@ -48,14 +48,14 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="/toolbox">通用工具箱</el-dropdown-item>
               <el-dropdown-item command="/lead">招商线索研判</el-dropdown-item>
               <el-dropdown-item command="/knowledge">本地招商知识库</el-dropdown-item>
               <el-dropdown-item command="/knowledge/drafts">知识沉淀审核</el-dropdown-item>
+              <!-- 公文写作作为 AI 工具箱二级菜单，放最下方 -->
+              <el-dropdown-item divided command="/official-doc">公文写作</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <router-link v-if="businessAuth.isLoggedIn" to="/official-doc" class="nav-item" active-class="active-item">公文写作</router-link>
         <router-link to="/contact" class="nav-item" active-class="active-item">联系我们</router-link>
         <!-- 登录 / 用户信息 -->
         <template v-if="businessAuth.isLoggedIn">
@@ -207,7 +207,7 @@ function openMessageCenter() {
 
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
-const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge'))
+const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge') || route.path.startsWith('/official-doc'))
 
 function handleCommand(path) {
   if (route.path !== path) {

@@ -21,7 +21,6 @@
               <el-dropdown-item command="/investment">招商项目管理</el-dropdown-item>
               <el-dropdown-item command="/investment-activity">招商动态管理</el-dropdown-item>
               <el-dropdown-item command="/investment-demand">企业诉求管理</el-dropdown-item>
-              <el-dropdown-item command="/investment-activity-ledger">工作台账管理</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -40,6 +39,8 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- 工作台账管理 一级菜单 — 仅登录后可见（在建项目库右侧，AI 工具箱左侧） -->
+        <router-link v-if="businessAuth.isLoggedIn" to="/investment-activity-ledger" class="nav-item" active-class="active-item">工作台账管理</router-link>
         <!-- AI 工具箱 下拉菜单 — 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isToolboxRoute }">

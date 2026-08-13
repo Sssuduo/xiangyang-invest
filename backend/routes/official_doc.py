@@ -59,14 +59,15 @@ def upload_official_doc_template():
     except ValueError as e:
         return jsonify({'code': 1, 'message': str(e)}), 400
 
-    # 解析结构
-    structure = parse_document_structure(content, doc_type)
+    # 解析结构：优先 LLM 骨架解析（fixed/slot 标注），失败回退正则
+    from services.official_doc_skeleton import parse_skeleton
+    structure = parse_skeleton(content)
 
     template = OfficialDocTemplate(
         name=name,
         doc_type=doc_type,
         content=content,
-        structure=structure,
+        structure=json.dumps(structure, ensure_ascii=False),
         file_name=file.filename,
         file_size=len(content),
         created_by=current_user_id()
@@ -274,6 +275,66 @@ def serve_official_doc_file(filename):
     if not path or not os.path.isfile(path):
         abort(404)
     return send_file(path, as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+# ============================================================
+# 模式 B：框架复用（骨架逐段生成）
+# ============================================================
+@api_bp.route('/official-doc/skeleton/<int:template_id>', methods=['GET'])
+@business_login_required
+def get_template_skeleton(template_id):
+    """获取范本骨架（列表；fixed/slot 标注）"""
+    template = OfficialDocTemplate.query.get_or_404(template_id)
+    try:
+        skeleton = json.loads(template.structure) if template.structure else []
+    except json.JSONDecodeError:
+        skeleton = []
+    return jsonify({'code': 0, 'data': {'skeleton': skeleton, 'content': template.content, 'name': template.name}})
+
+
+@api_bp.route('/official-doc/skeleton/<int:template_id>/save', methods=['POST'])
+@business_login_required
+def save_template_skeleton(template_id):
+    """保存用户编辑后的骨架（fixed/slot 调整、槽位数据映射）"""
+    template = OfficialDocTemplate.query.get_or_404(template_id)
+    data = request.get_json(silent=True) or {}
+    skeleton = data.get('skeleton')
+    if not isinstance(skeleton, list):
+        return jsonify({'code': 1, 'message': '骨架格式无效'}), 400
+    template.structure = json.dumps(skeleton, ensure_ascii=False)
+    db.session.commit()
+    return jsonify({'code': 0, 'message': '骨架已保存'})
+
+
+@api_bp.route('/official-doc/generate-from-skeleton', methods=['POST'])
+@business_login_required
+def generate_from_skeleton_api():
+    """模式 B：基于骨架+槽位数据逐段生成成文
+
+    请求：{model_id, template_id, skeleton, replacements}
+    - skeleton: 用户编辑后的骨架（含 fixed/slot 标注）
+    - replacements: 槽位数据 {slot_key: 文本}，如 {project_name: 'xxx', amount: 'xx万元'}
+    """
+    data = request.get_json(silent=True) or {}
+    model_id = data.get('model_id')
+    skeleton = data.get('skeleton') or []
+    replacements = data.get('replacements') or {}
+
+    if not model_id:
+        return jsonify({'code': 1, 'message': '请选择模型'}), 400
+    if not isinstance(skeleton, list) or not skeleton:
+        return jsonify({'code': 1, 'message': '骨架不能为空'}), 400
+
+    model = LLMModel.query.get(model_id)
+    if not model or not model.is_active:
+        return jsonify({'code': 1, 'message': '模型不存在或已禁用'}), 400
+
+    from services.official_doc_skeleton import generate_from_skeleton
+    try:
+        document = generate_from_skeleton(skeleton, replacements, model_id=model_id)
+        return jsonify({'code': 0, 'data': {'document': document}})
+    except Exception as e:
+        return jsonify({'code': 1, 'message': f'生成失败：{str(e)}'}), 500
 
 
 # ============================================================

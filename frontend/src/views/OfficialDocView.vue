@@ -138,6 +138,30 @@
 
       <!-- 右侧主内容 -->
       <main class="doc-main">
+        <!-- 模式切换 -->
+        <div class="mode-switch">
+          <el-radio-group v-model="workMode" size="small">
+            <el-radio-button value="create">✍️ 从零创作</el-radio-button>
+            <el-radio-button value="reuse">🔁 框架复用（旧材料换数据）</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <!-- 模式 B：框架复用 -->
+        <template v-if="workMode === 'reuse'">
+          <div v-if="!skeletonTemplateId" class="mode-b-hint">
+            <el-empty description="请先在左侧选择「我的范本」——上传过同类材料的范本后，这里会展示骨架结构" :image-size="100" />
+          </div>
+          <SkeletonEditor
+            v-else
+            v-model:skeleton="skeletonData"
+            :model-id="selectedModelId"
+            :template-id="skeletonTemplateId"
+            @generated="handleSkeletonGenerated"
+          />
+        </template>
+
+        <!-- 模式 A：从零创作（三步流程） -->
+        <template v-else>
         <!-- 步骤条 -->
         <el-steps :active="currentStep" finish-status="success" align-center>
           <el-step title="准备素材" description="输入或导入写作素材" />
@@ -182,6 +206,7 @@
             @regenerate="handleGenerateDocument"
           />
         </div>
+        </template>
       </main>
     </div>
 
@@ -265,10 +290,19 @@ import { QuestionFilled, UploadFilled } from '@element-plus/icons-vue'
 import MaterialEditor from '@/components/official-doc/MaterialEditor.vue'
 import OutlineEditor from '@/components/official-doc/OutlineEditor.vue'
 import DocumentPreview from '@/components/official-doc/DocumentPreview.vue'
+import SkeletonEditor from '@/components/official-doc/SkeletonEditor.vue'
+import { getTemplateSkeleton } from '@/api/official-doc'
 import { docTypes, builtinTemplates } from '@/config/officialDocRules'
 
 // 当前步骤
 const currentStep = ref(0)
+
+// 工作模式：create=从零创作（三步）| reuse=框架复用（旧材料换数据）
+const workMode = ref('create')
+// 模式 B 状态
+const skeletonTemplateId = ref(null)   // 当前骨架对应的范本 ID
+const skeletonData = ref([])           // 骨架列表（可编辑）
+const skeletonLoading = ref(false)
 
 // 模型列表
 const models = ref([])
@@ -366,14 +400,40 @@ function handleTemplateChange(templateId) {
     if (tpl) {
       if (tpl.doc_type) selectedDocType.value = tpl.doc_type
       templateContent.value = tpl.content || ''
+      // 模式 B：加载该范本骨架
+      skeletonTemplateId.value = tpl.id
+      loadSkeleton(tpl.id)
     }
   } else {
     const tpl = builtinTemplatesRef.find(t => t.id === templateId)
     templateContent.value = ''
+    skeletonTemplateId.value = null
+    skeletonData.value = []
     if (tpl && tpl.docType) {
       selectedDocType.value = tpl.docType
     }
   }
+}
+
+// 加载范本骨架（模式 B）
+async function loadSkeleton(templateId) {
+  skeletonLoading.value = true
+  try {
+    const res = await getTemplateSkeleton(templateId)
+    if (res.code === 0) {
+      const raw = res.data?.skeleton
+      skeletonData.value = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : [])
+    }
+  } catch {
+    skeletonData.value = []
+  } finally {
+    skeletonLoading.value = false
+  }
+}
+
+// 模式 B 生成完成：填入预览
+function handleSkeletonGenerated(doc) {
+  document.value = doc
 }
 
 // 上传范本
@@ -738,5 +798,21 @@ async function handleGenerateDocument() {
 .help-content ol,
 .help-content ul {
   padding-left: 20px;
+}
+
+/* 模式切换 */
+.mode-switch {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.mode-b-hint {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
 }
 </style>

@@ -50,3 +50,20 @@ export function downloadHtml(data) {
     responseType: 'blob'
   })
 }
+
+// ===== 模式 B：框架复用 =====
+
+// 获取范本骨架
+export function getTemplateSkeleton(templateId) {
+  return api.get(`/official-doc/skeleton/${templateId}`)
+}
+
+// 保存编辑后的骨架
+export function saveTemplateSkeleton(templateId, skeleton) {
+  return api.post(`/official-doc/skeleton/${templateId}/save`, { skeleton })
+}
+
+// 基于骨架+槽位数据逐段生成成文
+export function generateFromSkeleton(data) {
+  return api.post('/official-doc/generate-from-skeleton', data)
+}

@@ -48,18 +48,9 @@
           </el-table-column>
         </el-table>
 
-        <!-- 详情抽屉：只读展示 + 阶段推进 -->
-        <el-drawer v-model="showDetail" size="760px" destroy-on-close>
-          <template #header>
-            <div class="drawer-title-bar">
-              <span class="drawer-title">
-                <el-icon><Flag /></el-icon>
-                {{ detail ? detail.title : '榜单详情' }}
-              </span>
-            </div>
-          </template>
+        <!-- 详情抽屉：只读展示 + 阶段推进（AppDrawer 固化风格） -->
+        <AppDrawer v-model="showDetail" :title="detail ? detail.title : '榜单详情'" :icon="Flag" size="760px">
           <template v-if="detail">
-            <div class="drawer-body">
             <el-steps :active="stepActiveIndex" align-center finish-status="success" class="steps-bar">
               <el-step v-for="s in BIDDING_STAGES" :key="s.key" :title="s.name" />
             </el-steps>
@@ -131,123 +122,138 @@
               </el-timeline-item>
             </el-timeline>
             <el-empty v-else description="暂无跟踪记录" :image-size="50" />
-            </div>
           </template>
           <template #footer>
             <el-button type="primary" plain @click="showDetail = false">关闭</el-button>
           </template>
-        </el-drawer>
+        </AppDrawer>
 
         <!-- 企业需求申报抽屉 -->
-        <el-drawer v-model="showForm" size="700px" destroy-on-close @closed="declareTab = 'basic'">
-          <template #header>
-            <div class="drawer-title-bar">
-              <span class="drawer-title">
-                <el-icon><Document /></el-icon>
-                {{ editing ? '编辑企业需求申报' : '企业需求申报' }}
-              </span>
-            </div>
-          </template>
-          <div class="drawer-body">
+        <!-- 企业需求申报抽屉（AppDrawer 固化风格 + 3 tab + 企业选择） -->
+        <AppDrawer
+          v-model="showForm"
+          :title="editing ? '编辑企业需求申报' : '企业需求申报'"
+          :icon="Document"
+          size="700px"
+          @update:model-value="onDeclareClose"
+        >
+          <div class="sticky-tabs">
             <el-tabs v-model="declareTab">
-              <el-tab-pane label="基本信息" name="basic">
-                <el-form :model="form" label-width="130px" label-position="left" class="declare-form">
-                  <el-form-item label="榜单/需求名称" required>
-                    <el-input v-model="form.title" placeholder="一句话概括" />
-                  </el-form-item>
-                  <el-form-item label="技术领域">
-                    <el-select v-model="form.category_code" style="width: 100%">
-                      <el-option v-for="c in dicts.categories" :key="c.code" :label="c.name" :value="c.code" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="需求来源">
-                    <el-select v-model="form.demand_source" style="width: 100%">
-                      <el-option v-for="s in DEMAND_SOURCES" :key="s" :label="s" :value="s" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="预期投入(万)">
-                    <el-input-number v-model="form.expected_budget" :min="0" :precision="2" />
-                  </el-form-item>
-                  <el-form-item label="期望时限">
-                    <el-date-picker v-model="form.expected_deadline" type="date" value-format="YYYY-MM-DD" />
-                  </el-form-item>
-                </el-form>
-              </el-tab-pane>
+              <!-- 企业概况 -->
               <el-tab-pane label="企业概况" name="enterprise">
-                <el-form :model="form" label-width="130px" label-position="left" class="declare-form">
+                <div class="enterprise-picker">
+                  <el-radio-group v-model="enterpriseMode" size="small">
+                    <el-radio-button label="select">选择已有企业</el-radio-button>
+                    <el-radio-button label="new">新建企业</el-radio-button>
+                  </el-radio-group>
+                  <el-select
+                    v-if="enterpriseMode === 'select'"
+                    v-model="form.enterprise_id" filterable
+                    placeholder="搜索并选择企业"
+                    style="width: 100%; margin-top: 12px;"
+                    :loading="enterpriseLoading"
+                    @change="onEnterpriseSelected"
+                  >
+                    <el-option v-for="e in enterprises" :key="e.id" :label="e.org_name" :value="e.id">
+                      <span>{{ e.org_name }}</span>
+                      <span style="float: right; color: #909399; font-size: 12px;">{{ e.industry_code || '' }}</span>
+                    </el-option>
+                  </el-select>
+                  <el-alert
+                    v-if="enterpriseMode === 'select' && form.enterprise_id && currentEnterprise"
+                    type="success" :closable="false" show-icon
+                    :title="`已选择：${currentEnterprise.org_name}`" class="enterprise-picked"
+                  />
+                </div>
+
+                <el-form
+                  v-if="enterpriseMode === 'new'"
+                  :model="form" label-width="120px" label-position="left" class="declare-form enterprise-form"
+                >
                   <el-form-item label="企业名称" required>
-                    <el-input v-model="form.demander_name" />
+                    <el-input v-model="form.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
                   </el-form-item>
                   <el-form-item label="企业地址">
-                    <el-input v-model="form.enterprise_address" />
+                    <el-input v-model="form.enterprise_address" placeholder="企业地址" maxlength="120" show-word-limit />
                   </el-form-item>
-                  <el-form-item label="资质/荣誉（多选）">
-                    <el-checkbox-group v-model="form.enterprise_qualifications">
-                      <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
-                    </el-checkbox-group>
+                  <el-form-item label="资质荣誉">
+                    <el-tooltip content="资质/荣誉，可多选" placement="top">
+                      <el-checkbox-group v-model="form.enterprise_qualifications">
+                        <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
+                      </el-checkbox-group>
+                    </el-tooltip>
                   </el-form-item>
                   <el-form-item label="所属行业">
-                    <el-select v-model="form.industry_code" style="width: 100%">
+                    <el-select v-model="form.industry_code" placeholder="选择行业" style="width: 100%">
                       <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
                     </el-select>
                   </el-form-item>
                   <el-form-item label="注册资本">
-                    <el-input v-model="form.registered_capital" style="width: 220px" placeholder="如：1.44亿" />
+                    <el-input v-model="form.registered_capital" placeholder="如：1.44亿" maxlength="32" />
                   </el-form-item>
                   <el-form-item label="成立时间">
-                    <el-input v-model="form.founded_year" style="width: 220px" placeholder="如：1996年" />
+                    <el-input v-model="form.founded_year" placeholder="如：1996年" maxlength="16" />
                   </el-form-item>
                   <el-form-item label="人员规模">
-                    <el-input v-model="form.staff_size" style="width: 220px" placeholder="如：220" />
+                    <el-input v-model="form.staff_size" placeholder="如：220" maxlength="16" />
                   </el-form-item>
                   <el-form-item label="企业性质">
                     <el-radio-group v-model="form.enterprise_nature">
                       <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
                     </el-radio-group>
                   </el-form-item>
-                  <el-form-item label="主要产品/服务">
-                    <el-input v-model="form.main_products" type="textarea" :rows="2" />
+                  <el-form-item label="主要产品或服务">
+                    <el-input v-model="form.main_products" type="textarea" :rows="3" maxlength="300" show-word-limit
+                      placeholder="如：玉米种子选育、加工、销售" />
                   </el-form-item>
-                  <el-form-item label="上年度营收">
-                    <el-input v-model="form.last_year_revenue" style="width: 220px" placeholder="如：3.61亿" />
+                  <el-form-item label="上年度营业收入">
+                    <el-input v-model="form.last_year_revenue" placeholder="如：3.61亿" maxlength="32" />
                   </el-form-item>
                   <el-form-item label="联系人及职务">
-                    <el-input v-model="form.demander_contact" />
+                    <el-input v-model="form.contact_name" placeholder="联系人及职务（如：王勇，市场部总经理）" maxlength="64" />
                   </el-form-item>
                   <el-form-item label="手机号码">
-                    <el-input v-model="form.demander_phone" style="width: 220px" />
+                    <el-input v-model="form.contact_phone" placeholder="手机号码" maxlength="20" />
                   </el-form-item>
                 </el-form>
+                <el-empty v-else-if="enterpriseMode === 'select' && !form.enterprise_id"
+                  description="请选择已有企业，或切换为「新建企业」" :image-size="60" />
               </el-tab-pane>
 
+              <!-- 需求描述 -->
               <el-tab-pane label="需求描述" name="demand">
-                <el-form :model="form" label-width="130px" label-position="left" class="declare-form">
+                <el-form :model="form" label-width="120px" label-position="left" class="declare-form">
+                  <el-form-item label="需求名称" required>
+                    <el-input v-model="form.title" maxlength="80" show-word-limit placeholder="一句话概括" />
+                  </el-form-item>
                   <el-form-item label="主要技术难点">
-                    <el-input v-model="form.tech_difficulties" type="textarea" :rows="3" />
+                    <el-input v-model="form.tech_difficulties" type="textarea" :rows="5" maxlength="1000" show-word-limit />
                   </el-form-item>
                   <el-form-item label="主要技术指标">
-                    <el-input v-model="form.tech_indicators" type="textarea" :rows="3" />
+                    <el-input v-model="form.tech_indicators" type="textarea" :rows="5" maxlength="1000" show-word-limit />
                   </el-form-item>
                   <el-form-item label="主要研究内容">
-                    <el-input v-model="form.research_content" type="textarea" :rows="3" />
-                  </el-form-item>
-                  <el-form-item label="需求描述（兼容）">
-                    <el-input v-model="form.requirement_desc" type="textarea" :rows="2" />
+                    <el-input v-model="form.research_content" type="textarea" :rows="5" maxlength="1000" show-word-limit />
                   </el-form-item>
                 </el-form>
               </el-tab-pane>
 
+              <!-- 合作意向 -->
               <el-tab-pane label="合作意向" name="coop">
-                <el-form :model="form" label-width="130px" label-position="left" class="declare-form">
-                  <el-form-item label="拟短期合作（多选）">
-                    <el-checkbox-group v-model="form.short_term_cooperation">
-                      <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-                    </el-checkbox-group>
+                <el-form :model="form" label-width="120px" label-position="left" class="declare-form">
+                  <el-form-item label="拟短期合作方式">
+                    <el-tooltip content="拟短期合作方式，可多选" placement="top">
+                      <el-checkbox-group v-model="form.short_term_cooperation">
+                        <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+                      </el-checkbox-group>
+                    </el-tooltip>
                   </el-form-item>
-                  <el-form-item label="拟长期合作（多选）">
-                    <el-checkbox-group v-model="form.long_term_cooperation">
-                      <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-                    </el-checkbox-group>
+                  <el-form-item label="拟长期合作方式">
+                    <el-tooltip content="拟长期合作方式，可多选" placement="top">
+                      <el-checkbox-group v-model="form.long_term_cooperation">
+                        <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+                      </el-checkbox-group>
+                    </el-tooltip>
                   </el-form-item>
                   <el-form-item label="意向合作专家">
                     <el-radio-group v-model="form.expert_intent">
@@ -256,7 +262,8 @@
                     </el-radio-group>
                   </el-form-item>
                   <el-form-item v-if="form.expert_intent === 'yes'" label="专家及单位">
-                    <el-input v-model="form.expert_names" type="textarea" :rows="2" placeholder="如：严建兵、邱法展（华中农业大学）" />
+                    <el-input v-model="form.expert_names" type="textarea" :rows="3" maxlength="300" show-word-limit
+                      placeholder="如：严建兵、邱法展（华中农业大学）" />
                   </el-form-item>
                 </el-form>
               </el-tab-pane>
@@ -266,7 +273,7 @@
             <el-button @click="showForm = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="saveForm">保存</el-button>
           </template>
-        </el-drawer>
+        </AppDrawer>
 
         <!-- 阶段操作 -->
         <el-dialog v-model="showAction" :title="actionMeta ? actionMeta.label : ''" width="520px">
@@ -345,6 +352,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Flag, Document } from '@element-plus/icons-vue'
 import AdminSidebar from '@/components/common/AdminSidebar.vue'
+import AppDrawer from '@/components/common/AppDrawer.vue'
 import { biddingApi } from '@/api/bidding'
 import {
   BIDDING_STAGES, TERMINAL_STAGES, TERMINAL_LABELS, STAGE_ACTIONS,
@@ -402,19 +410,61 @@ async function openDetail(row) {
   if (res.code === 0) { detail.value = res.data; showDetail.value = true }
 }
 
-// 登记/编辑
+// 登记/编辑（企业需求申报）
 const showForm = ref(false)
-const declareTab = ref('basic')
+const declareTab = ref('enterprise')
 const editing = ref(null)
 const form = reactive({})
 
+// ===== 企业档案 =====
+const enterprises = ref([])
+const enterpriseLoading = ref(false)
+const enterpriseMode = ref('new')
+const currentEnterprise = computed(() =>
+  enterprises.value.find(e => e.id === form.enterprise_id) || null)
+
+async function fetchEnterprises() {
+  enterpriseLoading.value = true
+  try {
+    const res = await biddingApi.listEnterprises()
+    if (res.code === 0) enterprises.value = res.data
+  } finally {
+    enterpriseLoading.value = false
+  }
+}
+
+function onEnterpriseSelected() {
+  const e = currentEnterprise.value
+  if (e) {
+    form.org_name = e.org_name
+    form.enterprise_address = e.enterprise_address
+    form.enterprise_qualifications = [...e.enterprise_qualifications]
+    form.industry_code = e.industry_code
+    form.registered_capital = e.registered_capital
+    form.founded_year = e.founded_year
+    form.staff_size = e.staff_size
+    form.enterprise_nature = e.enterprise_nature
+    form.main_products = e.main_products
+    form.last_year_revenue = e.last_year_revenue
+    form.contact_name = e.contact_name
+    form.contact_phone = e.contact_phone
+  }
+}
+
+function onDeclareClose(val) {
+  if (!val) {
+    declareTab.value = 'enterprise'
+    enterpriseMode.value = 'new'
+  }
+}
+
 function emptyForm() {
   return {
-    title: '', category_code: '', demander_name: '', demander_contact: '', demander_phone: '',
-    demand_source: '', requirement_desc: '', expected_budget: 0, expected_deadline: '',
+    title: '',
+    enterprise_id: null, org_name: '',
     enterprise_address: '', enterprise_qualifications: [], industry_code: '',
     registered_capital: '', founded_year: '', staff_size: '', enterprise_nature: '',
-    main_products: '', last_year_revenue: '',
+    main_products: '', last_year_revenue: '', contact_name: '', contact_phone: '',
     tech_difficulties: '', tech_indicators: '', research_content: '',
     short_term_cooperation: [], long_term_cooperation: [], expert_intent: 'no', expert_names: '',
   }
@@ -423,15 +473,16 @@ function emptyForm() {
 function openCreate() {
   editing.value = null
   Object.assign(form, emptyForm())
+  declareTab.value = 'enterprise'
+  enterpriseMode.value = 'new'
   showForm.value = true
 }
 function openEdit(row) {
   editing.value = row
   Object.assign(form, {
-    title: row.title, category_code: row.category_code, demander_name: row.demander_name,
-    demander_contact: row.demander_contact, demander_phone: row.demander_phone,
-    demand_source: row.demand_source, requirement_desc: row.requirement_desc,
-    expected_budget: row.expected_budget, expected_deadline: row.expected_deadline,
+    title: row.title,
+    enterprise_id: row.enterprise_id || null,
+    org_name: row.demander_name || '',
     enterprise_address: row.enterprise_address || '',
     enterprise_qualifications: [...(row.enterprise_qualifications || [])],
     industry_code: row.industry_code || '',
@@ -441,6 +492,8 @@ function openEdit(row) {
     enterprise_nature: row.enterprise_nature || '',
     main_products: row.main_products || '',
     last_year_revenue: row.last_year_revenue || '',
+    contact_name: row.demander_contact || '',
+    contact_phone: row.demander_phone || '',
     tech_difficulties: row.tech_difficulties || '',
     tech_indicators: row.tech_indicators || '',
     research_content: row.research_content || '',
@@ -449,21 +502,65 @@ function openEdit(row) {
     expert_intent: row.expert_intent || 'no',
     expert_names: row.expert_names || '',
   })
+  enterpriseMode.value = row.enterprise_id ? 'select' : 'new'
+  declareTab.value = 'enterprise'
   showForm.value = true
 }
+
+function buildDeclarePayload() {
+  const payload = {
+    title: form.title,
+    tech_difficulties: form.tech_difficulties,
+    tech_indicators: form.tech_indicators,
+    research_content: form.research_content,
+    short_term_cooperation: form.short_term_cooperation,
+    long_term_cooperation: form.long_term_cooperation,
+    expert_intent: form.expert_intent,
+    expert_names: form.expert_names,
+  }
+  if (enterpriseMode.value === 'select' && form.enterprise_id) {
+    payload.enterprise_id = form.enterprise_id
+  } else {
+    Object.assign(payload, {
+      org_name: form.org_name,
+      enterprise_address: form.enterprise_address,
+      enterprise_qualifications: form.enterprise_qualifications,
+      industry_code: form.industry_code,
+      registered_capital: form.registered_capital,
+      founded_year: form.founded_year,
+      staff_size: form.staff_size,
+      enterprise_nature: form.enterprise_nature,
+      main_products: form.main_products,
+      last_year_revenue: form.last_year_revenue,
+      contact_name: form.contact_name,
+      contact_phone: form.contact_phone,
+    })
+  }
+  return payload
+}
+
 async function saveForm() {
   if (!form.title.trim()) {
-    ElMessage.warning('请填写榜单/需求名称'); return
+    ElMessage.warning('请填写需求名称'); return
   }
-  if (!form.demander_name.trim()) {
-    ElMessage.warning('请填写企业名称'); return
+  if (enterpriseMode.value === 'new' && !form.org_name.trim()) {
+    ElMessage.warning('请填写企业名称（或切换为选择已有企业）'); return
+  }
+  if (enterpriseMode.value === 'select' && !form.enterprise_id) {
+    ElMessage.warning('请选择企业（或切换为新建企业）'); return
   }
   saving.value = true
   try {
+    const payload = buildDeclarePayload()
     const res = editing.value
-      ? await biddingApi.updateProject(editing.value.id, form)
-      : await biddingApi.createProject(form)
-    if (res.code === 0) { ElMessage.success(res.message); showForm.value = false; fetchData() }
+      ? await biddingApi.updateProject(editing.value.id, payload)
+      : await biddingApi.createProject(payload)
+    if (res.code === 0) {
+      ElMessage.success(res.message)
+      showForm.value = false
+      fetchData()
+      fetchEnterprises()
+    }
   } finally { saving.value = false }
 }
 function handleDelete(row) {
@@ -519,7 +616,7 @@ async function submitAction() {
   } finally { saving.value = false }
 }
 
-onMounted(() => { fetchDicts(); fetchData() })
+onMounted(() => { fetchDicts(); fetchData(); fetchEnterprises() })
 </script>
 
 <style scoped>
@@ -563,25 +660,8 @@ onMounted(() => { fetchDicts(); fetchData() })
 .timeline-list { padding-left: 4px; }
 .timeline-content { line-height: 1.7; }
 
-/* ---- 抽屉标准风格（与系统其他抽屉一致） ---- */
-.drawer-title-bar {
-  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
-  margin: 0 -20px 0 -20px;
-  padding: 20px 20px 20px 40px;
-}
-.drawer-title {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.drawer-body {
-  padding: 4px 0 20px;
-}
-.declare-form {
-  max-width: 620px;
-}
+/* 企业需求申报：企业选择/新建 */
+.enterprise-picker { margin-bottom: 4px; }
+.enterprise-picked { margin-top: 10px; }
+.enterprise-form { margin-top: 4px; }
 </style>

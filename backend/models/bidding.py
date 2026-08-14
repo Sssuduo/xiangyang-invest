@@ -1,4 +1,4 @@
-"""揭榜挂帅模型：榜单项目 / 揭榜申请 / 里程碑 / 全周期时间线 / 揭榜方用户 / 技术领域字典"""
+"""揭榜挂帅模型：榜单项目 / 揭榜申请 / 里程碑 / 全周期时间线 / 揭榜方用户 / 企业档案 / 技术领域字典"""
 import json
 from datetime import datetime
 from extensions import db
@@ -59,6 +59,45 @@ class BiddingUser(db.Model):
         }
 
 
+class BiddingEnterprise(db.Model):
+    """企业档案 — 1 个企业可发布多个技术需求（企业需求申报表"企业概况"独立存）"""
+    __tablename__ = 'bidding_enterprises'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    org_name = db.Column(db.String(255), nullable=False)           # 企业名称
+    enterprise_address = db.Column(db.String(255), default='')     # 企业地址
+    enterprise_qualifications = db.Column(db.Text, default='[]')   # 资质/荣誉 多选 JSON
+    industry_code = db.Column(db.String(64), default='')           # 所属行业
+    registered_capital = db.Column(db.String(64), default='')      # 注册资本
+    founded_year = db.Column(db.String(16), default='')            # 成立时间
+    staff_size = db.Column(db.String(32), default='')              # 人员规模
+    enterprise_nature = db.Column(db.String(32), default='')       # 企业性质
+    main_products = db.Column(db.Text, default='')                 # 主要产品/服务
+    last_year_revenue = db.Column(db.String(64), default='')       # 上年度营业收入
+    contact_name = db.Column(db.String(64), default='')            # 联系人及职务
+    contact_phone = db.Column(db.String(32), default='')           # 手机号码
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'org_name': self.org_name,
+            'enterprise_address': self.enterprise_address or '',
+            'enterprise_qualifications': json.loads(self.enterprise_qualifications) if self.enterprise_qualifications else [],
+            'industry_code': self.industry_code or '',
+            'registered_capital': self.registered_capital or '',
+            'founded_year': self.founded_year or '',
+            'staff_size': self.staff_size or '',
+            'enterprise_nature': self.enterprise_nature or '',
+            'main_products': self.main_products or '',
+            'last_year_revenue': self.last_year_revenue or '',
+            'contact_name': self.contact_name or '',
+            'contact_phone': self.contact_phone or '',
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+        }
+
+
 class BiddingProject(db.Model):
     """揭榜挂帅榜单项目主表 — 一条记录贯穿七步工作法"""
     __tablename__ = 'bidding_projects'
@@ -69,7 +108,7 @@ class BiddingProject(db.Model):
     # === 基础信息（需求征集阶段登记） ===
     title = db.Column(db.String(255), nullable=False)          # 榜单/项目名称
     category_code = db.Column(db.String(32), default='')       # 技术领域（字典）
-    demander_name = db.Column(db.String(255), default='')      # 发榜企业名称
+    demander_name = db.Column(db.String(255), default='')      # 发榜企业名称（冗余，兼容旧数据）
     demander_contact = db.Column(db.String(64), default='')    # 企业联系人
     demander_phone = db.Column(db.String(32), default='')
     demand_source = db.Column(db.String(32), default='')       # 企业申报/专班征集/部门推荐
@@ -77,6 +116,7 @@ class BiddingProject(db.Model):
     requirement_attachment = db.Column(db.Text, default='[]')  # 需求附件 JSON 数组
     expected_budget = db.Column(db.Float, default=0.0)         # 预期投入（万元）
     expected_deadline = db.Column(db.Date, nullable=True)      # 期望解决时限
+    enterprise_id = db.Column(db.Integer, db.ForeignKey('bidding_enterprises.id'), nullable=True)  # 关联企业档案
 
     # === 企业概况（企业需求申报表） ===
     enterprise_address = db.Column(db.String(255), default='')        # 企业地址
@@ -157,6 +197,7 @@ class BiddingProject(db.Model):
     timeline = db.relationship('BiddingTimeline', backref='project', lazy='dynamic',
                                order_by='BiddingTimeline.created_at.desc()')
     selected_bid = db.relationship('BiddingBid', foreign_keys=[selected_bid_id])
+    enterprise = db.relationship('BiddingEnterprise', foreign_keys=[enterprise_id])
 
     def to_dict(self):
         return {
@@ -172,6 +213,8 @@ class BiddingProject(db.Model):
             'requirement_attachment': json.loads(self.requirement_attachment) if self.requirement_attachment else [],
             'expected_budget': self.expected_budget or 0.0,
             'expected_deadline': self.expected_deadline.isoformat() if self.expected_deadline else None,
+            'enterprise_id': self.enterprise_id,
+            'enterprise_name': self.enterprise.org_name if self.enterprise else (self.demander_name or ''),
             # 企业概况（申报表）
             'enterprise_address': self.enterprise_address or '',
             'enterprise_qualifications': json.loads(self.enterprise_qualifications) if self.enterprise_qualifications else [],

@@ -34,4 +34,9 @@ export const biddingApi = {
 
   // 看板
   getStats: () => api.get('/admin/bidding/stats'),
+
+  // 企业档案（1 企业可发布多个需求）
+  listEnterprises: (params) => api.get('/admin/bidding/enterprises', { params }),
+  createEnterprise: (data) => api.post('/admin/bidding/enterprises', data),
+  updateEnterprise: (id, data) => api.put(`/admin/bidding/enterprises/${id}`, data),
 }

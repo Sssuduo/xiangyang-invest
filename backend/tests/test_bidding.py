@@ -339,7 +339,9 @@ def test_terminate_flows(admin_client, app):
         db.session.commit()
 
     # 论证驳回
-    resp = admin_client.post('/api/admin/bidding/projects', json={'title': '驳回案例'})
+    resp = admin_client.post('/api/admin/bidding/projects', json={
+        'title': '驳回案例', 'demander_name': '测试企业A', 'org_name': '测试企业A',
+    })
     pid = _json(resp)['data']['id']
     admin_client.post(f'/api/admin/bidding/projects/{pid}/transition', json={'action': 'submit_argument'})
     resp = admin_client.post(f'/api/admin/bidding/projects/{pid}/transition', json={
@@ -351,7 +353,9 @@ def test_terminate_flows(admin_client, app):
     assert resp.status_code == 400
 
     # 流标
-    resp = admin_client.post('/api/admin/bidding/projects', json={'title': '流标案例'})
+    resp = admin_client.post('/api/admin/bidding/projects', json={
+        'title': '流标案例', 'demander_name': '测试企业B', 'org_name': '测试企业B',
+    })
     pid2 = _json(resp)['data']['id']
     for action in ('submit_argument', 'argument_pass', 'publish'):
         payload = {'action': action}
@@ -365,7 +369,9 @@ def test_terminate_flows(admin_client, app):
     assert _json(resp)['data']['current_stage'] == 'failed'
 
     # 任意阶段取消
-    resp = admin_client.post('/api/admin/bidding/projects', json={'title': '取消案例'})
+    resp = admin_client.post('/api/admin/bidding/projects', json={
+        'title': '取消案例', 'demander_name': '测试企业C', 'org_name': '测试企业C',
+    })
     pid3 = _json(resp)['data']['id']
     resp = admin_client.post(f'/api/admin/bidding/projects/{pid3}/transition', json={
         'action': 'cancel', 'reason': '企业撤回需求',

@@ -106,6 +106,7 @@ def _run_auto_migrations(app):
             ('long_term_cooperation', 'TEXT'),
             ('expert_intent', 'VARCHAR(16)'),
             ('expert_names', 'TEXT'),
+            ('enterprise_id', 'INTEGER'),
         ],
         # 后续如有新增字段，在此追加即可
     }

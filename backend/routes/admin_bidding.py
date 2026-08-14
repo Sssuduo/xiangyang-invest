@@ -10,7 +10,7 @@ from flask import request, jsonify
 
 from models import (
     BiddingProject, BiddingBid, BiddingMilestone, BiddingTimeline,
-    BiddingUser, BiddingCategoryDict, Staff,
+    BiddingUser, BiddingEnterprise, BiddingCategoryDict, Staff,
 )
 from extensions import db
 from routes import admin_bidding_bp
@@ -154,6 +154,21 @@ _DECLARATION_FIELDS = [
 # 多选 JSON 字段
 _DECLARATION_JSON_FIELDS = ['enterprise_qualifications', 'short_term_cooperation', 'long_term_cooperation']
 
+# 企业档案字段（BiddingEnterprise 与项目内联企业字段的映射）
+_ENTERPRISE_FIELDS = {
+    'enterprise_address': 'enterprise_address',
+    'enterprise_qualifications': 'enterprise_qualifications',
+    'industry_code': 'industry_code',
+    'registered_capital': 'registered_capital',
+    'founded_year': 'founded_year',
+    'staff_size': 'staff_size',
+    'enterprise_nature': 'enterprise_nature',
+    'main_products': 'main_products',
+    'last_year_revenue': 'last_year_revenue',
+    'contact_name': 'demander_contact',
+    'contact_phone': 'demander_phone',
+}
+
 
 def _apply_declaration_fields(project, data, changes):
     """将申报表字段写入项目并记录变更（供创建/编辑复用）"""
@@ -167,6 +182,48 @@ def _apply_declaration_fields(project, data, changes):
             val = data.get(field)
             changes[field] = ('…', '…')
             setattr(project, field, json.dumps(val, ensure_ascii=False))
+
+
+def _sync_enterprise_to_project(project, enterprise):
+    """把企业档案字段回填到项目内联字段（保持冗余一致，兼容旧查询）"""
+    project.demander_name = enterprise.org_name
+    for ent_field, proj_field in _ENTERPRISE_FIELDS.items():
+        val = getattr(enterprise, ent_field)
+        if ent_field == 'enterprise_qualifications':
+            # 项目列存 TEXT JSON，需序列化
+            q = json.loads(val) if val else []
+            setattr(project, proj_field, json.dumps(q, ensure_ascii=False))
+        else:
+            setattr(project, proj_field, val if val is not None else '')
+
+
+def _resolve_enterprise(data):
+    """根据提交数据解析/创建企业档案，返回 (enterprise 或 None, 是否需要新增到 session)。
+
+    逻辑：
+    - data.enterprise_id 有值 → 关联已有企业档案
+    - 无 enterprise_id 但提供了企业名称 → 新建企业档案（同名企业已存在则复用并更新其字段）
+    """
+    ent_id = data.get('enterprise_id')
+    org_name = (data.get('org_name') or '').strip()
+    if ent_id:
+        ent = db.session.get(BiddingEnterprise, int(ent_id))
+        if ent:
+            return ent, False
+    if not org_name:
+        return None, False
+    # 新建模式：同名企业存在则复用
+    ent = BiddingEnterprise.query.filter_by(org_name=org_name).first()
+    if ent is None:
+        ent = BiddingEnterprise(org_name=org_name)
+    # 用提交的企业字段更新档案
+    for ent_field in _ENTERPRISE_FIELDS:
+        val = data.get(ent_field)
+        if val is not None:
+            setattr(ent, ent_field, val)
+    ent.contact_name = data.get('contact_name') or ent.contact_name
+    ent.contact_phone = data.get('contact_phone') or ent.contact_phone
+    return ent, True
 
 
 @admin_bidding_bp.route('/bidding/projects', methods=['GET'])
@@ -202,18 +259,23 @@ def list_projects():
 @dual_login_required
 @visitor_block
 def create_project():
-    """新建榜单（需求征集登记，含企业需求申报表字段）"""
+    """新建榜单（需求征集登记，含企业需求申报表字段 + 企业档案关联）"""
     data = request.get_json(silent=True) or {}
     title = (data.get('title') or '').strip()
     if not title:
         return jsonify({'code': 1, 'message': '榜单名称不能为空'}), 400
+
+    # 企业档案解析（选择已有 / 新建）
+    enterprise, ent_new = _resolve_enterprise(data)
+    if enterprise is None and not (data.get('demander_name') or '').strip():
+        return jsonify({'code': 1, 'message': '请选择或填写发榜企业名称'}), 400
 
     max_no = db.session.query(db.func.max(BiddingProject.order_no)).scalar() or 0
     project = BiddingProject(
         order_no=max_no + 1,
         title=title,
         category_code=data.get('category_code', ''),
-        demander_name=data.get('demander_name', ''),
+        demander_name=(data.get('demander_name') or '').strip(),
         demander_contact=data.get('demander_contact', ''),
         demander_phone=data.get('demander_phone', ''),
         demand_source=data.get('demand_source', ''),
@@ -224,6 +286,14 @@ def create_project():
         service_leader_ids=json.dumps(data.get('service_leader_ids', []), ensure_ascii=False),
         current_stage='stage1',
     )
+    # 企业档案：新增/更新 + 关联
+    if enterprise is not None:
+        if ent_new:
+            db.session.add(enterprise)
+            db.session.flush()
+        project.enterprise_id = enterprise.id
+        _sync_enterprise_to_project(project, enterprise)
+
     # 申报表字段
     changes = {'title': ('', title)}
     _apply_declaration_fields(project, data, changes)
@@ -263,6 +333,17 @@ def update_project(project_id):
 
     changes = {'title': (project.title, title)}
     project.title = title
+    # 企业档案：允许切换/新建（表单提交 org_name/enterprise_id 时处理）
+    if 'enterprise_id' in data or (data.get('org_name') or '').strip():
+        enterprise, ent_new = _resolve_enterprise(data)
+        if enterprise is not None:
+            if ent_new:
+                db.session.add(enterprise)
+                db.session.flush()
+            if project.enterprise_id != enterprise.id:
+                changes['enterprise_id'] = (project.enterprise_id, enterprise.id)
+            project.enterprise_id = enterprise.id
+            _sync_enterprise_to_project(project, enterprise)
     for field in ('category_code', 'demander_name', 'demander_contact', 'demander_phone',
                   'demand_source', 'requirement_desc'):
         val = data.get(field)
@@ -657,6 +738,69 @@ def update_user(user_id):
         user.contact_phone = data.get('contact_phone')
     db.session.commit()
     return jsonify({'code': 0, 'data': user.to_dict(), 'message': '已保存'})
+
+
+# ============================================================
+# 企业档案管理（1 企业可发布多个需求）
+# ============================================================
+
+@admin_bidding_bp.route('/bidding/enterprises', methods=['GET'])
+@dual_login_required
+def list_enterprises():
+    search = request.args.get('search', '').strip()
+    q = BiddingEnterprise.query
+    if search:
+        q = q.filter(BiddingEnterprise.org_name.ilike(f'%{search}%'))
+    enterprises = q.order_by(BiddingEnterprise.updated_at.desc()).all()
+    return jsonify({'code': 0, 'data': [e.to_dict() for e in enterprises]})
+
+
+@admin_bidding_bp.route('/bidding/enterprises', methods=['POST'])
+@dual_login_required
+@visitor_block
+def create_enterprise():
+    data = request.get_json(silent=True) or {}
+    org_name = (data.get('org_name') or '').strip()
+    if not org_name:
+        return jsonify({'code': 1, 'message': '企业名称不能为空'}), 400
+    existing = BiddingEnterprise.query.filter_by(org_name=org_name).first()
+    if existing:
+        return jsonify({'code': 1, 'message': f'企业「{org_name}」已存在，请直接选择'}), 400
+    ent = BiddingEnterprise(org_name=org_name)
+    for field in _ENTERPRISE_FIELDS:
+        val = data.get(field)
+        if val is not None:
+            setattr(ent, field, val)
+    ent.contact_name = data.get('contact_name', '')
+    ent.contact_phone = data.get('contact_phone', '')
+    db.session.add(ent)
+    db.session.commit()
+    return jsonify({'code': 0, 'data': ent.to_dict(), 'message': '企业档案已创建'})
+
+
+@admin_bidding_bp.route('/bidding/enterprises/<int:ent_id>', methods=['PUT'])
+@dual_login_required
+@visitor_block
+def update_enterprise(ent_id):
+    ent = db.session.get(BiddingEnterprise, ent_id)
+    if not ent:
+        return jsonify({'code': 1, 'message': '企业不存在'}), 404
+    data = request.get_json(silent=True) or {}
+    if data.get('org_name') is not None:
+        org_name = (data.get('org_name') or '').strip()
+        if not org_name:
+            return jsonify({'code': 1, 'message': '企业名称不能为空'}), 400
+        ent.org_name = org_name
+    for field in _ENTERPRISE_FIELDS:
+        val = data.get(field)
+        if val is not None:
+            setattr(ent, field, val)
+    if data.get('contact_name') is not None:
+        ent.contact_name = data.get('contact_name')
+    if data.get('contact_phone') is not None:
+        ent.contact_phone = data.get('contact_phone')
+    db.session.commit()
+    return jsonify({'code': 0, 'data': ent.to_dict(), 'message': '企业档案已更新'})
 
 
 # ============================================================

@@ -66,7 +66,7 @@ defineEmits(['update:modelValue'])
 </script>
 
 <style scoped>
-/* ---- 标题栏：顶住上方与右侧边缘（去除 el-drawer header 默认留白） ---- */
+/* ---- 标题栏：顶住上方与右侧边缘 + 底部横条顶满左右 ---- */
 :deep(.el-drawer__header) {
   padding: 0 !important;
   margin: 0 !important;
@@ -78,6 +78,7 @@ defineEmits(['update:modelValue'])
   display: flex;
   align-items: center;
   gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);   /* 标题栏底部横条：随标题栏顶满左右 */
 }
 .app-drawer-title {
   color: #fff;
@@ -127,18 +128,23 @@ defineEmits(['update:modelValue'])
   padding: 0 20px;
 }
 
-/* ---- 表单 label 对齐：首个汉字对齐，必填星号在左侧不参与对齐 ---- */
+/* ---- 表单 label 对齐：所有 label 文本首个汉字在同一列（必填星号绝对定位在左侧，不参与对齐） ---- */
 :deep(.declare-form .el-form-item) {
   margin-bottom: 16px;
 }
 :deep(.declare-form .el-form-item__label) {
+  position: relative;
   text-align: left !important;
   justify-content: flex-start !important;
   padding-right: 12px;
+  padding-left: 16px;        /* 所有 label 文本统一右移，required/非 required 首字对齐 */
   line-height: 32px;
 }
-:deep(.declare-form .el-form-item__label::before) {
-  margin-right: 4px;  /* 必填星号与文字间距（星号在左侧不参与对齐） */
+:deep(.declare-form .el-form-item.is-required .el-form-item__label::before) {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  margin-right: 0;
 }
 :deep(.declare-form .el-input__count, .declare-form .el-textarea__count) {
   background: transparent;

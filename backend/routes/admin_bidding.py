@@ -198,17 +198,28 @@ def _sync_enterprise_to_project(project, enterprise):
 
 
 def _resolve_enterprise(data):
-    """根据提交数据解析/创建企业档案，返回 (enterprise 或 None, 是否需要新增到 session)。
+    """根据提交数据解析/更新企业档案，返回 (enterprise 或 None, 是否需要新增到 session)。
 
     逻辑：
-    - data.enterprise_id 有值 → 关联已有企业档案
-    - 无 enterprise_id 但提供了企业名称 → 新建企业档案（同名企业已存在则复用并更新其字段）
+    - data.enterprise_id 有值 → 关联已有企业档案，并应用提交的企业字段更新档案（选择模式可编辑）
+    - 无 enterprise_id 但提供了 org_name → 新建企业档案（同名企业已存在则复用并更新其字段）
     """
     ent_id = data.get('enterprise_id')
     org_name = (data.get('org_name') or '').strip()
     if ent_id:
         ent = db.session.get(BiddingEnterprise, int(ent_id))
         if ent:
+            # 选择模式：应用提交字段更新档案（用户可编辑带出字段）
+            if org_name and org_name != ent.org_name:
+                ent.org_name = org_name
+            for ent_field in _ENTERPRISE_FIELDS:
+                val = data.get(ent_field)
+                if val is not None:
+                    setattr(ent, ent_field, val)
+            if data.get('contact_name') is not None:
+                ent.contact_name = data.get('contact_name')
+            if data.get('contact_phone') is not None:
+                ent.contact_phone = data.get('contact_phone')
             return ent, False
     if not org_name:
         return None, False

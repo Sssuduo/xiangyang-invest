@@ -412,43 +412,40 @@
         <el-tabs v-model="declareTab">
           <!-- 企业概况：选择已有企业 或 新建 -->
           <el-tab-pane label="企业概况" name="enterprise">
-            <div class="enterprise-picker">
-              <el-radio-group v-model="enterpriseMode" size="small">
-                <el-radio-button label="select">选择已有企业</el-radio-button>
-                <el-radio-button label="new">新建企业</el-radio-button>
-              </el-radio-group>
-              <el-select
-                v-if="enterpriseMode === 'select'"
-                v-model="basicForm.enterprise_id"
-                filterable
-                placeholder="搜索并选择企业"
-                style="width: 100%; margin-top: 12px;"
-                :loading="enterpriseLoading"
-                @change="onEnterpriseSelected"
-              >
-                <el-option
-                  v-for="e in enterprises"
-                  :key="e.id"
-                  :label="e.org_name"
-                  :value="e.id"
+            <!-- 企业选择行：下拉选择（默认，右侧新建 icon 切换） -->
+            <div class="enterprise-row">
+              <template v-if="!isNewEnterprise">
+                <el-select
+                  v-model="basicForm.enterprise_id"
+                  filterable
+                  placeholder="选择企业名称"
+                  class="enterprise-select"
+                  :loading="enterpriseLoading"
+                  @change="onEnterpriseSelected"
                 >
-                  <span>{{ e.org_name }}</span>
-                  <span style="float: right; color: #909399; font-size: 12px;">{{ e.industry_code || '' }}</span>
-                </el-option>
-              </el-select>
-              <el-alert
-                v-if="enterpriseMode === 'select' && basicForm.enterprise_id && currentEnterprise"
-                type="success" :closable="false" show-icon
-                :title="`已选择：${currentEnterprise.org_name}`"
-                class="enterprise-picked"
-              />
+                  <el-option v-for="e in enterprises" :key="e.id" :label="e.org_name" :value="e.id">
+                    <span>{{ e.org_name }}</span>
+                    <span style="float: right; color: #909399; font-size: 12px;">{{ e.industry_code || '' }}</span>
+                  </el-option>
+                </el-select>
+                <el-tooltip content="新建企业" placement="top">
+                  <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = true">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </template>
+              <template v-else>
+                <el-tooltip content="选择已有企业" placement="top">
+                  <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = false">
+                    <el-icon><Search /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </template>
             </div>
 
-            <el-form
-              v-if="enterpriseMode === 'new'"
-              :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form"
-            >
-              <el-form-item label="企业名称" required>
+            <!-- 企业字段：选择模式带出可编辑；新建模式输入 -->
+            <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form">
+              <el-form-item v-if="isNewEnterprise" label="企业名称" required>
                 <el-input v-model="basicForm.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
               </el-form-item>
               <el-form-item label="企业地址">
@@ -494,8 +491,8 @@
                 <el-input v-model="basicForm.contact_phone" placeholder="手机号码" maxlength="20" />
               </el-form-item>
             </el-form>
-            <el-empty v-else-if="enterpriseMode === 'select' && !basicForm.enterprise_id"
-              description="请选择已有企业，或切换为「新建企业」" :image-size="60" />
+            <el-empty v-if="!isNewEnterprise && !basicForm.enterprise_id"
+              description="请选择企业名称，或点击右侧新建按钮" :image-size="60" />
           </el-tab-pane>
 
           <!-- 需求描述 -->
@@ -850,7 +847,7 @@ const basicForm = reactive({})
 // ===== 企业档案 =====
 const enterprises = ref([])
 const enterpriseLoading = ref(false)
-const enterpriseMode = ref('new')
+const isNewEnterprise = ref(false)   // false=选择已有企业（下拉+带出可编辑）；true=新建企业
 const currentEnterprise = computed(() =>
   enterprises.value.find(e => e.id === basicForm.enterprise_id) || null)
 
@@ -887,7 +884,7 @@ function onDeclareClose(val) {
   // 抽屉关闭（含点击取消/保存后）：重置 tab 与企业模式
   if (!val) {
     declareTab.value = 'enterprise'
-    enterpriseMode.value = 'new'
+    isNewEnterprise.value = false
   }
 }
 
@@ -895,7 +892,7 @@ function openCreate() {
   editingProject.value = null
   Object.assign(basicForm, emptyBasicForm())
   declareTab.value = 'enterprise'
-  enterpriseMode.value = 'new'
+  isNewEnterprise.value = false
   showBasicForm.value = true
 }
 
@@ -940,8 +937,8 @@ function openEditBasic() {
     expert_intent: d.expert_intent || 'no',
     expert_names: d.expert_names || '',
   })
-  // 编辑回显：有关联企业档案 → 选择模式；否则新建模式
-  enterpriseMode.value = d.enterprise_id ? 'select' : 'new'
+  // 编辑回显：有关联企业档案 → 选择模式（下拉回显）；否则新建模式
+  isNewEnterprise.value = !d.enterprise_id
   declareTab.value = 'enterprise'
   showBasicForm.value = true
 }
@@ -958,24 +955,24 @@ function buildDeclarePayload() {
     expert_intent: basicForm.expert_intent,
     expert_names: basicForm.expert_names,
   }
-  if (enterpriseMode.value === 'select' && basicForm.enterprise_id) {
+  // 企业字段：选择模式带 enterprise_id + 可编辑字段（后端更新档案）；新建模式带 org_name + 字段
+  Object.assign(payload, {
+    enterprise_address: basicForm.enterprise_address,
+    enterprise_qualifications: basicForm.enterprise_qualifications,
+    industry_code: basicForm.industry_code,
+    registered_capital: basicForm.registered_capital,
+    founded_year: basicForm.founded_year,
+    staff_size: basicForm.staff_size,
+    enterprise_nature: basicForm.enterprise_nature,
+    main_products: basicForm.main_products,
+    last_year_revenue: basicForm.last_year_revenue,
+    contact_name: basicForm.contact_name,
+    contact_phone: basicForm.contact_phone,
+  })
+  if (!isNewEnterprise.value && basicForm.enterprise_id) {
     payload.enterprise_id = basicForm.enterprise_id
   } else {
-    // 新建企业：企业概况字段 + org_name
-    Object.assign(payload, {
-      org_name: basicForm.org_name,
-      enterprise_address: basicForm.enterprise_address,
-      enterprise_qualifications: basicForm.enterprise_qualifications,
-      industry_code: basicForm.industry_code,
-      registered_capital: basicForm.registered_capital,
-      founded_year: basicForm.founded_year,
-      staff_size: basicForm.staff_size,
-      enterprise_nature: basicForm.enterprise_nature,
-      main_products: basicForm.main_products,
-      last_year_revenue: basicForm.last_year_revenue,
-      contact_name: basicForm.contact_name,
-      contact_phone: basicForm.contact_phone,
-    })
+    payload.org_name = basicForm.org_name
   }
   return payload
 }
@@ -985,12 +982,12 @@ async function saveBasic() {
     ElMessage.warning('请填写需求名称')
     return
   }
-  if (enterpriseMode.value === 'new' && !basicForm.org_name.trim()) {
-    ElMessage.warning('请填写企业名称（或切换为选择已有企业）')
+  if (isNewEnterprise.value && !basicForm.org_name.trim()) {
+    ElMessage.warning('请填写企业名称')
     return
   }
-  if (enterpriseMode.value === 'select' && !basicForm.enterprise_id) {
-    ElMessage.warning('请选择企业（或切换为新建企业）')
+  if (!isNewEnterprise.value && !basicForm.enterprise_id) {
+    ElMessage.warning('请选择企业名称，或点击右侧按钮新建企业')
     return
   }
   saving.value = true
@@ -1308,8 +1305,14 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 
-/* 企业需求申报：企业选择/新建 */
-.enterprise-picker { margin-bottom: 4px; }
-.enterprise-picked { margin-top: 10px; }
-.enterprise-form { margin-top: 4px; }
+/* 企业需求申报：企业选择行（下拉 + 新建 icon）+ 表单 */
+.enterprise-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.enterprise-select { flex: 1; }
+.enterprise-new-btn { flex-shrink: 0; }
+.enterprise-form { margin-top: 2px; }
 </style>

@@ -118,6 +118,12 @@
       <span>知识库管理</span>
     </el-menu-item>
 
+    <!-- 揭榜挂帅管理 -->
+    <el-menu-item index="/admin/bidding">
+      <el-icon><Flag /></el-icon>
+      <span>揭榜挂帅管理</span>
+    </el-menu-item>
+
     <el-menu-item index="/admin/prompts">
       <el-icon><ChatDotSquare /></el-icon>
       <span>提示词管理</span>
@@ -158,7 +164,7 @@ import { useAdminStore } from '@/stores/admin'
 import { useDebug } from '@/utils/debug'
 import { clearAuthCache } from '@/router'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading, Bell, Warning } from '@element-plus/icons-vue'
+import { HomeFilled, Picture, Film, Setting, Download, Upload, Location, Cpu, User, ChatDotSquare, Folder, Notebook, Collection, Avatar, VideoCameraFilled, Printer, Search, Reading, Bell, Warning, Flag } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

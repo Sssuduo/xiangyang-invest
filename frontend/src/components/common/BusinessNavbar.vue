@@ -6,8 +6,19 @@
       </router-link>
       <nav class="nav-menu">
         <router-link to="/national" class="nav-item" active-class="active-item">国家农高区</router-link>
-        <router-link to="/intro" class="nav-item" active-class="active-item">招商宣传图册</router-link>
-        <router-link to="/promo-video" class="nav-item" active-class="active-item">招商宣传视频</router-link>
+        <!-- 招商宣传 下拉菜单 — 图册 + 视频（公开，无需登录） -->
+        <el-dropdown trigger="hover" class="nav-dropdown" @command="handleCommand">
+          <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isPromoRoute }">
+            招商宣传
+            <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="/intro">招商宣传图册</el-dropdown-item>
+              <el-dropdown-item command="/promo-video">招商宣传视频</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <!-- <router-link to="/intro" class="nav-item" active-class="active-item">襄阳农高区介绍</router-link> -->
         <!-- 招商项目库 下拉菜单 — 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
@@ -41,6 +52,20 @@
         </el-dropdown>
         <!-- 工作台账管理 一级菜单 — 仅登录后可见（在建项目库右侧，AI 工具箱左侧） -->
         <router-link v-if="businessAuth.isLoggedIn" to="/investment-activity-ledger" class="nav-item" active-class="active-item">工作台账管理</router-link>
+        <!-- 揭榜挂帅 下拉菜单 — 仅登录后可见 -->
+        <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
+          <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isBiddingRoute }">
+            揭榜挂帅
+            <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="/bidding">平台管理</el-dropdown-item>
+              <el-dropdown-item command="/bidding-dashboard">数据看板</el-dropdown-item>
+              <el-dropdown-item command="/bidding-portal">对外门户（揭榜方）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <!-- AI 工具箱 下拉菜单 — 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isToolboxRoute }">
@@ -209,6 +234,8 @@ function openMessageCenter() {
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge') || route.path.startsWith('/official-doc'))
+const isBiddingRoute = computed(() => route.path.startsWith('/bidding') && !route.path.startsWith('/bidding-portal'))
+const isPromoRoute = computed(() => route.path.startsWith('/intro') || route.path.startsWith('/promo-video'))
 
 function handleCommand(path) {
   if (route.path !== path) {

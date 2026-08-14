@@ -495,6 +495,9 @@ def init_database(app):
     # ---- 在建项目库 - 字典种子数据 ----
     _seed_construction_dicts()
 
+    # ---- 揭榜挂帅 - 技术领域字典 ----
+    _seed_bidding_dicts()
+
     # ---- 在建项目 - 导入字段配置 ----
     _seed_construction_import_fields()
 
@@ -1534,3 +1537,23 @@ def _seed_construction_progress_import_fields():
             ))
     db.session.commit()
     print('[种子数据] 工作进展导入字段配置已初始化')
+
+
+def _seed_bidding_dicts():
+    """初始化揭榜挂帅技术领域字典"""
+    from models import BiddingCategoryDict
+    categories = [
+        ('agri_breeding', '粮油作物育种', 1),
+        ('smart_agri', '智慧农业', 2),
+        ('food_processing', '食品加工', 3),
+        ('agri_machinery', '农机装备', 4),
+        ('bio_breeding', '生物育种', 5),
+        ('facility_agri', '设施农业', 6),
+        ('digital_agri', '数字农业', 7),
+        ('other', '其他', 8),
+    ]
+    for code, name, order in categories:
+        if not BiddingCategoryDict.query.filter_by(code=code).first():
+            db.session.add(BiddingCategoryDict(code=code, name=name, sort_order=order))
+    db.session.commit()
+    print('[种子数据] 揭榜挂帅技术领域字典已初始化')

@@ -207,6 +207,25 @@ const routes = [
     component: () => import('@/views/OfficialDocView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  // ---- 揭榜挂帅 ----
+  {
+    path: '/bidding',
+    name: 'Bidding',
+    component: () => import('@/views/BiddingView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  {
+    path: '/bidding-dashboard',
+    name: 'BiddingDashboard',
+    component: () => import('@/views/BiddingDashboardView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
+  // ---- 揭榜挂帅 对外门户（揭榜方，匿名可浏览）----
+  {
+    path: '/bidding-portal',
+    name: 'BiddingPortal',
+    component: () => import('@/views/BiddingPortal.vue')
+  },
   // ---- 管理后台 ----
   {
     path: '/admin/investment',
@@ -322,6 +341,19 @@ const routes = [
     path: '/admin/knowledge',
     name: 'AdminKnowledge',
     component: () => import('@/views/admin/KnowledgeList.vue'),
+    meta: { requiresAuth: true }
+  },
+  // ---- 管理后台 揭榜挂帅 ----
+  {
+    path: '/admin/bidding',
+    name: 'AdminBidding',
+    component: () => import('@/views/admin/BiddingList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/bidding-users',
+    name: 'AdminBiddingUsers',
+    component: () => import('@/views/admin/BiddingUsers.vue'),
     meta: { requiresAuth: true }
   },
   {

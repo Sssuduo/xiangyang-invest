@@ -14,6 +14,12 @@
       <div class="scroll-hint" v-if="!isScrolled">
         <span class="scroll-arrow">↓</span>
       </div>
+
+      <!-- 揭榜挂帅门户入口 -->
+      <router-link to="/bidding-portal" class="bidding-entry">
+        <el-icon class="bidding-icon"><Flag /></el-icon>
+        <span>揭榜挂帅 · 线上技术对接平台</span>
+      </router-link>
     </div>
 
     <!-- 管理入口 -->
@@ -25,6 +31,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Flag } from '@element-plus/icons-vue'
 import { getHomepageConfig } from '@/api/homepage'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { toWebpUrl } from '@/utils/webp'
@@ -122,6 +129,25 @@ onUnmounted(() => {
   animation: bounce 2s infinite;
 }
 .scroll-arrow { color: rgba(255,255,255,0.4); font-size: 28px; }
+
+/* 揭榜挂帅门户入口 */
+.bidding-entry {
+  position: fixed; bottom: 24px; left: 32px; z-index: 100;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 10px 20px;
+  color: #fff;
+  font-size: 14px;
+  backdrop-filter: blur(6px);
+  transition: background 0.3s, transform 0.3s;
+}
+.bidding-entry:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-2px);
+}
+.bidding-icon { font-size: 16px; }
 
 /* ============================================================
    底部

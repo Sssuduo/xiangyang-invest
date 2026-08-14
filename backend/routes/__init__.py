@@ -69,6 +69,12 @@ admin_knowledge_bp = Blueprint('admin_knowledge', __name__, url_prefix='/api/adm
 # 消息提醒站
 admin_message_bp = Blueprint('admin_message', __name__, url_prefix='/api/admin')
 
+# 揭榜挂帅 — 内部端口（专班/业务用户）
+admin_bidding_bp = Blueprint('admin_bidding', __name__, url_prefix='/api/admin')
+
+# 揭榜挂帅 — 对外端口（揭榜方门户）
+bidding_public_bp = Blueprint('bidding_public', __name__, url_prefix='/api/bidding')
+
 # C 端 App 只读蓝图（内部人员查看 + AI 研判 + 周报）
 client_bp = Blueprint('client', __name__, url_prefix='/api/client')
 
@@ -111,6 +117,8 @@ def register_routes(app):
     from routes import admin_message as _admin_message
     from routes import user_messages as _user_messages
     from routes import official_doc
+    from routes import admin_bidding as _admin_bidding
+    from routes import bidding_public as _bidding_public
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)
@@ -161,6 +169,10 @@ def register_routes(app):
     app.register_blueprint(admin_lead.admin_lead_bp)
     app.register_blueprint(admin_knowledge.admin_knowledge_bp)
     app.register_blueprint(admin_message.admin_message_bp)
+
+    # 揭榜挂帅 — 内部端口 + 对外端口
+    app.register_blueprint(admin_bidding.admin_bidding_bp)
+    app.register_blueprint(bidding_public.bidding_public_bp)
 
     # 注册 C 端 App 只读蓝图（当前禁用：移动端功能暂不上线）
     # from routes import client as _client

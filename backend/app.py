@@ -88,6 +88,25 @@ def _run_auto_migrations(app):
             ('is_read', 'BOOLEAN'),
             ('handled_by', 'VARCHAR(128)'),
         ],
+        # 揭榜挂帅 V2：企业需求申报表字段（企业概况/需求描述三段式/合作意向）
+        'bidding_projects': [
+            ('enterprise_address', 'VARCHAR(255)'),
+            ('enterprise_qualifications', 'TEXT'),
+            ('industry_code', 'VARCHAR(64)'),
+            ('registered_capital', 'VARCHAR(64)'),
+            ('founded_year', 'VARCHAR(16)'),
+            ('staff_size', 'VARCHAR(32)'),
+            ('enterprise_nature', 'VARCHAR(32)'),
+            ('main_products', 'TEXT'),
+            ('last_year_revenue', 'VARCHAR(64)'),
+            ('tech_difficulties', 'TEXT'),
+            ('tech_indicators', 'TEXT'),
+            ('research_content', 'TEXT'),
+            ('short_term_cooperation', 'TEXT'),
+            ('long_term_cooperation', 'TEXT'),
+            ('expert_intent', 'VARCHAR(16)'),
+            ('expert_names', 'TEXT'),
+        ],
         # 后续如有新增字段，在此追加即可
     }
 

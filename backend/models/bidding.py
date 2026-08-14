@@ -73,10 +73,32 @@ class BiddingProject(db.Model):
     demander_contact = db.Column(db.String(64), default='')    # 企业联系人
     demander_phone = db.Column(db.String(32), default='')
     demand_source = db.Column(db.String(32), default='')       # 企业申报/专班征集/部门推荐
-    requirement_desc = db.Column(db.Text, default='')          # 技术需求描述（核心）
+    requirement_desc = db.Column(db.Text, default='')          # 技术需求描述（兼容旧数据，新数据用下方三段式）
     requirement_attachment = db.Column(db.Text, default='[]')  # 需求附件 JSON 数组
     expected_budget = db.Column(db.Float, default=0.0)         # 预期投入（万元）
     expected_deadline = db.Column(db.Date, nullable=True)      # 期望解决时限
+
+    # === 企业概况（企业需求申报表） ===
+    enterprise_address = db.Column(db.String(255), default='')        # 企业地址
+    enterprise_qualifications = db.Column(db.Text, default='[]')      # 资质/荣誉 多选 JSON
+    industry_code = db.Column(db.String(64), default='')              # 所属行业
+    registered_capital = db.Column(db.String(64), default='')         # 注册资本
+    founded_year = db.Column(db.String(16), default='')               # 成立时间
+    staff_size = db.Column(db.String(32), default='')                 # 人员规模
+    enterprise_nature = db.Column(db.String(32), default='')          # 企业性质（国企/民营/其他）
+    main_products = db.Column(db.Text, default='')                    # 主要产品/服务
+    last_year_revenue = db.Column(db.String(64), default='')          # 上年度营业收入
+
+    # === 需求描述（结构化：技术难点/指标/研究内容） ===
+    tech_difficulties = db.Column(db.Text, default='')       # 主要技术难点
+    tech_indicators = db.Column(db.Text, default='')         # 主要技术指标
+    research_content = db.Column(db.Text, default='')        # 主要研究内容
+
+    # === 合作意向 ===
+    short_term_cooperation = db.Column(db.Text, default='[]')  # 拟短期合作方式 多选 JSON
+    long_term_cooperation = db.Column(db.Text, default='[]')   # 拟长期合作方式 多选 JSON
+    expert_intent = db.Column(db.String(16), default='no')     # 是否有意向合作专家 yes/no
+    expert_names = db.Column(db.Text, default='')              # 意向专家及工作单位
 
     # === 流程主控 ===
     current_stage = db.Column(db.String(16), nullable=False, default='stage1')
@@ -150,6 +172,25 @@ class BiddingProject(db.Model):
             'requirement_attachment': json.loads(self.requirement_attachment) if self.requirement_attachment else [],
             'expected_budget': self.expected_budget or 0.0,
             'expected_deadline': self.expected_deadline.isoformat() if self.expected_deadline else None,
+            # 企业概况（申报表）
+            'enterprise_address': self.enterprise_address or '',
+            'enterprise_qualifications': json.loads(self.enterprise_qualifications) if self.enterprise_qualifications else [],
+            'industry_code': self.industry_code or '',
+            'registered_capital': self.registered_capital or '',
+            'founded_year': self.founded_year or '',
+            'staff_size': self.staff_size or '',
+            'enterprise_nature': self.enterprise_nature or '',
+            'main_products': self.main_products or '',
+            'last_year_revenue': self.last_year_revenue or '',
+            # 需求描述（结构化）
+            'tech_difficulties': self.tech_difficulties or '',
+            'tech_indicators': self.tech_indicators or '',
+            'research_content': self.research_content or '',
+            # 合作意向
+            'short_term_cooperation': json.loads(self.short_term_cooperation) if self.short_term_cooperation else [],
+            'long_term_cooperation': json.loads(self.long_term_cooperation) if self.long_term_cooperation else [],
+            'expert_intent': self.expert_intent or 'no',
+            'expert_names': self.expert_names or '',
             'current_stage': self.current_stage,
             'service_leader_ids': json.loads(self.service_leader_ids) if self.service_leader_ids else [],
             'argument_status': self.argument_status or 'pending',

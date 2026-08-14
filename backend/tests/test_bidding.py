@@ -125,7 +125,7 @@ def test_full_flow(admin_client, app):
         from extensions import db
         db.session.commit()
 
-    # 1. 内部登记需求（stage1）
+    # 1. 内部登记需求（stage1，含企业需求申报表字段）
     resp = admin_client.post('/api/admin/bidding/projects', json={
         'title': '水稻抗病分子育种关键技术攻关',
         'category_code': 'agri_breeding',
@@ -136,9 +136,36 @@ def test_full_flow(admin_client, app):
         'requirement_desc': '需要抗稻瘟病的水稻新品种育种关键技术',
         'expected_budget': 200,
         'expected_deadline': '2027-12-31',
+        # 企业概况（申报表）
+        'enterprise_address': '襄州区机场路一号',
+        'enterprise_qualifications': ['高新技术企业', '“专精特新”小巨人'],
+        'industry_code': '农、林、牧、渔业',
+        'registered_capital': '1.44亿',
+        'founded_year': '1996年',
+        'staff_size': '220',
+        'enterprise_nature': '民营',
+        'main_products': '水稻种子选育、加工、销售',
+        'last_year_revenue': '3.61亿',
+        # 需求描述（三段式）
+        'tech_difficulties': '抗病性与高产性状的遗传聚合难；优异种质资源匮乏',
+        'tech_indicators': '育成抗病新品种1-2个，较对照增产5%以上',
+        'research_content': '挖掘抗病关键基因，开发分子标记；创制聚合双优性状的新种质',
+        # 合作意向
+        'short_term_cooperation': ['技术诊断指导', '专题培训'],
+        'long_term_cooperation': ['联合开发', '委托研发'],
+        'expert_intent': 'yes',
+        'expert_names': '李教授（华中农业大学）',
     })
     assert resp.status_code == 200, _json(resp)
     pid = _json(resp)['data']['id']
+
+    # 申报表字段回读校验
+    d = _json(resp)['data']
+    assert d['enterprise_address'] == '襄州区机场路一号'
+    assert '高新技术企业' in d['enterprise_qualifications']
+    assert d['tech_indicators'].startswith('育成抗病新品种')
+    assert d['long_term_cooperation'] == ['联合开发', '委托研发']
+    assert d['expert_intent'] == 'yes'
 
     # 2. 提交论证（stage1 → stage2）
     resp = admin_client.post(f'/api/admin/bidding/projects/{pid}/transition', json={'action': 'submit_argument'})

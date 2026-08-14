@@ -77,6 +77,43 @@ export const DEMAND_SOURCES = ['企业申报', '专班征集', '部门推荐', '
 export const BIDDER_TYPES = ['高校', '科研院所', '企业', '团队']
 export const EVAL_LEVELS = ['优秀', '良好', '合格', '不合格']
 
+// ===== 企业需求申报表选项（对齐《企业需求申报表》word 模板） =====
+export const ENTERPRISE_NATURES = ['国企', '民营', '其他']
+
+export const QUALIFICATION_OPTIONS = [
+  '“专精特新”小巨人',
+  '“专精特新”小巨人入库企业',
+  '现代种业优势特色企业',
+  '高新技术企业',
+  '其他',
+]
+
+export const INDUSTRY_OPTIONS = [
+  '农、林、牧、渔业',
+  '制造业',
+  '科学研究和技术服务业',
+  '信息传输、软件和信息技术服务业',
+  '批发和零售业',
+  '其他',
+]
+
+export const SHORT_TERM_COOPERATION_OPTIONS = [
+  '一线讲学',
+  '专题培训',
+  '技术诊断指导',
+  '其他',
+]
+
+export const LONG_TERM_COOPERATION_OPTIONS = [
+  '技术转让',
+  '技术入股',
+  '联合开发',
+  '委托研发',
+  '共建新研发、生产实体',
+  '委托专家长期技术服务',
+  '其他',
+]
+
 export const BID_STATUS_LABELS = {
   submitted: '已提交',
   reviewing: '评审中',

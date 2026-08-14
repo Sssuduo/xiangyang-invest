@@ -144,6 +144,31 @@ def _build_project_dict(p):
 # 列表 / 创建 / 详情 / 编辑 / 删除
 # ============================================================
 
+# 申报表字段清单（企业概况/需求描述/合作意向）——创建与编辑共用
+_DECLARATION_FIELDS = [
+    'enterprise_address', 'industry_code', 'registered_capital', 'founded_year',
+    'staff_size', 'enterprise_nature', 'main_products', 'last_year_revenue',
+    'tech_difficulties', 'tech_indicators', 'research_content',
+    'expert_intent', 'expert_names',
+]
+# 多选 JSON 字段
+_DECLARATION_JSON_FIELDS = ['enterprise_qualifications', 'short_term_cooperation', 'long_term_cooperation']
+
+
+def _apply_declaration_fields(project, data, changes):
+    """将申报表字段写入项目并记录变更（供创建/编辑复用）"""
+    for field in _DECLARATION_FIELDS:
+        if field in data and data.get(field) is not None:
+            val = data.get(field)
+            changes[field] = (getattr(project, field), val)
+            setattr(project, field, val)
+    for field in _DECLARATION_JSON_FIELDS:
+        if field in data and data.get(field) is not None:
+            val = data.get(field)
+            changes[field] = ('…', '…')
+            setattr(project, field, json.dumps(val, ensure_ascii=False))
+
+
 @admin_bidding_bp.route('/bidding/projects', methods=['GET'])
 @dual_login_required
 def list_projects():
@@ -156,6 +181,8 @@ def list_projects():
             BiddingProject.title.ilike(like),
             BiddingProject.demander_name.ilike(like),
             BiddingProject.requirement_desc.ilike(like),
+            BiddingProject.tech_difficulties.ilike(like),
+            BiddingProject.main_products.ilike(like),
         ))
 
     stage = request.args.get('stage', '').strip()
@@ -175,7 +202,7 @@ def list_projects():
 @dual_login_required
 @visitor_block
 def create_project():
-    """新建榜单（需求征集登记）"""
+    """新建榜单（需求征集登记，含企业需求申报表字段）"""
     data = request.get_json(silent=True) or {}
     title = (data.get('title') or '').strip()
     if not title:
@@ -197,11 +224,15 @@ def create_project():
         service_leader_ids=json.dumps(data.get('service_leader_ids', []), ensure_ascii=False),
         current_stage='stage1',
     )
+    # 申报表字段
+    changes = {'title': ('', title)}
+    _apply_declaration_fields(project, data, changes)
+
     db.session.add(project)
     db.session.flush()
 
     user_info = get_current_user_info()
-    log_changes('bidding_projects', project.id, {'title': ('', title)}, 'create', user_info)
+    log_changes('bidding_projects', project.id, changes, 'create', user_info)
     _add_timeline(project, '【系统】需求征集登记：榜单「%s」已创建' % title, record_type='system')
     db.session.commit()
     return jsonify({'code': 0, 'data': project.to_dict(), 'message': '需求已登记'})
@@ -238,6 +269,8 @@ def update_project(project_id):
         if val is not None:
             changes[field] = (getattr(project, field), val)
             setattr(project, field, val)
+    # 申报表字段（企业概况/需求描述/合作意向）
+    _apply_declaration_fields(project, data, changes)
     if 'requirement_attachment' in data:
         changes['requirement_attachment'] = ('…', '…')
         project.requirement_attachment = json.dumps(data.get('requirement_attachment', []), ensure_ascii=False)

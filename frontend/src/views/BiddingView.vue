@@ -89,10 +89,18 @@
     <el-drawer
       v-model="showDetail"
       size="920px"
-      :title="detail ? detail.title : '榜单详情'"
       destroy-on-close
     >
+      <template #header>
+        <div class="drawer-title-bar">
+          <span class="drawer-title">
+            <el-icon><Flag /></el-icon>
+            {{ detail ? detail.title : '榜单详情' }}
+          </span>
+        </div>
+      </template>
       <template v-if="detail">
+        <div class="drawer-body">
         <div class="detail-head">
           <el-tag :type="stageTagType(detail.current_stage)" size="large">
             {{ stageName(detail.current_stage) }}
@@ -394,131 +402,159 @@
           </el-timeline>
           <el-empty v-else description="暂无跟踪记录" :image-size="60" />
         </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button type="primary" plain @click="showDetail = false">关闭</el-button>
       </template>
     </el-drawer>
 
-    <!-- ==================== 新建/编辑需求（抽屉：企业需求申报表） ==================== -->
+    <!-- ==================== 企业需求申报抽屉 ==================== -->
     <el-drawer
       v-model="showBasicForm"
-      :title="editingProject ? '编辑需求信息' : '登记技术需求（企业需求申报表）'"
       size="720px"
       destroy-on-close
+      @closed="declareTab = 'basic'"
     >
-      <el-form :model="basicForm" label-width="130px" label-position="left">
-        <!-- 一、基本信息 -->
-        <div class="form-section-title">一、基本信息</div>
-        <el-form-item label="榜单/需求名称" required>
-          <el-input v-model="basicForm.title" placeholder="一句话概括（如：耐热高蛋白玉米新品种选育及应用）" />
-        </el-form-item>
-        <el-form-item label="技术领域">
-          <el-select v-model="basicForm.category_code" placeholder="选择领域" style="width: 100%">
-            <el-option v-for="c in dicts.categories" :key="c.code" :label="c.name" :value="c.code" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="需求来源">
-          <el-select v-model="basicForm.demand_source" placeholder="来源" style="width: 100%">
-            <el-option v-for="s in DEMAND_SOURCES" :key="s" :label="s" :value="s" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="预期投入(万元)">
-          <el-input-number v-model="basicForm.expected_budget" :min="0" :precision="2" style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="期望解决时限">
-          <el-date-picker v-model="basicForm.expected_deadline" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="服务专班">
-          <el-select v-model="basicForm.service_leader_ids" multiple placeholder="选择服务专班人员" style="width: 100%">
-            <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
-        </el-form-item>
+      <template #header>
+        <div class="drawer-title-bar">
+          <span class="drawer-title">
+            <el-icon><Document /></el-icon>
+            {{ editingProject ? '编辑企业需求申报' : '企业需求申报' }}
+          </span>
+        </div>
+      </template>
 
-        <!-- 二、企业概况 -->
-        <div class="form-section-title">二、企业概况</div>
-        <el-form-item label="企业名称" required>
-          <el-input v-model="basicForm.demander_name" placeholder="发榜企业名称" />
-        </el-form-item>
-        <el-form-item label="企业地址">
-          <el-input v-model="basicForm.enterprise_address" placeholder="企业地址" />
-        </el-form-item>
-        <el-form-item label="资质/荣誉（可多选）">
-          <el-checkbox-group v-model="basicForm.enterprise_qualifications">
-            <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
-          </el-checkbox-group>
-        </el-form-item>
-        <el-form-item label="所属行业">
-          <el-select v-model="basicForm.industry_code" placeholder="选择行业" style="width: 100%">
-            <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="注册资本">
-          <el-input v-model="basicForm.registered_capital" placeholder="如：1.44亿" style="width: 240px" />
-        </el-form-item>
-        <el-form-item label="成立时间">
-          <el-input v-model="basicForm.founded_year" placeholder="如：1996年" style="width: 240px" />
-        </el-form-item>
-        <el-form-item label="人员规模">
-          <el-input v-model="basicForm.staff_size" placeholder="如：220" style="width: 240px" />
-        </el-form-item>
-        <el-form-item label="企业性质">
-          <el-radio-group v-model="basicForm.enterprise_nature">
-            <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="主要产品或服务">
-          <el-input v-model="basicForm.main_products" type="textarea" :rows="2" placeholder="如：玉米种子选育、加工、销售" />
-        </el-form-item>
-        <el-form-item label="上年度营业收入">
-          <el-input v-model="basicForm.last_year_revenue" placeholder="如：3.61亿" style="width: 240px" />
-        </el-form-item>
-        <el-form-item label="联系人及职务">
-          <el-input v-model="basicForm.demander_contact" placeholder="联系人及职务（如：王勇，市场部总经理）" />
-        </el-form-item>
-        <el-form-item label="手机号码">
-          <el-input v-model="basicForm.demander_phone" placeholder="联系电话" style="width: 240px" />
-        </el-form-item>
+      <div class="drawer-body">
+        <el-tabs v-model="declareTab">
+          <!-- 一、基本信息 -->
+          <el-tab-pane label="基本信息" name="basic">
+            <el-form :model="basicForm" label-width="130px" label-position="left" class="declare-form">
+              <el-form-item label="榜单/需求名称" required>
+                <el-input v-model="basicForm.title" placeholder="一句话概括（如：耐热高蛋白玉米新品种选育及应用）" />
+              </el-form-item>
+              <el-form-item label="技术领域">
+                <el-select v-model="basicForm.category_code" placeholder="选择领域" style="width: 100%">
+                  <el-option v-for="c in dicts.categories" :key="c.code" :label="c.name" :value="c.code" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="需求来源">
+                <el-select v-model="basicForm.demand_source" placeholder="来源" style="width: 100%">
+                  <el-option v-for="s in DEMAND_SOURCES" :key="s" :label="s" :value="s" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="预期投入(万元)">
+                <el-input-number v-model="basicForm.expected_budget" :min="0" :precision="2" style="width: 200px" />
+              </el-form-item>
+              <el-form-item label="期望解决时限">
+                <el-date-picker v-model="basicForm.expected_deadline" type="date" value-format="YYYY-MM-DD" style="width: 200px" />
+              </el-form-item>
+              <el-form-item label="服务专班">
+                <el-select v-model="basicForm.service_leader_ids" multiple placeholder="选择服务专班人员" style="width: 100%">
+                  <el-option v-for="s in dicts.staff" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
 
-        <!-- 三、需求描述 -->
-        <div class="form-section-title">三、需求描述</div>
-        <el-form-item label="主要技术难点">
-          <el-input v-model="basicForm.tech_difficulties" type="textarea" :rows="3"
-            placeholder="具体难题及需求、现有基础和研发能力" />
-        </el-form-item>
-        <el-form-item label="主要技术指标">
-          <el-input v-model="basicForm.tech_indicators" type="textarea" :rows="3"
-            placeholder="预期目标与量化指标（如：较对照增产5%以上、含量≥12%）" />
-        </el-form-item>
-        <el-form-item label="主要研究内容">
-          <el-input v-model="basicForm.research_content" type="textarea" :rows="3"
-            placeholder="拟开展的研究内容与技术路线" />
-        </el-form-item>
-        <el-form-item label="需求描述（兼容）">
-          <el-input v-model="basicForm.requirement_desc" type="textarea" :rows="2"
-            placeholder="可选：整体描述技术需求（新录入建议使用上方三段式字段）" />
-        </el-form-item>
+          <!-- 二、企业概况 -->
+          <el-tab-pane label="企业概况" name="enterprise">
+            <el-form :model="basicForm" label-width="130px" label-position="left" class="declare-form">
+              <el-form-item label="企业名称" required>
+                <el-input v-model="basicForm.demander_name" placeholder="发榜企业名称" />
+              </el-form-item>
+              <el-form-item label="企业地址">
+                <el-input v-model="basicForm.enterprise_address" placeholder="企业地址" />
+              </el-form-item>
+              <el-form-item label="资质/荣誉（可多选）">
+                <el-checkbox-group v-model="basicForm.enterprise_qualifications">
+                  <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
+                </el-checkbox-group>
+              </el-form-item>
+              <el-form-item label="所属行业">
+                <el-select v-model="basicForm.industry_code" placeholder="选择行业" style="width: 100%">
+                  <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="注册资本">
+                <el-input v-model="basicForm.registered_capital" placeholder="如：1.44亿" style="width: 240px" />
+              </el-form-item>
+              <el-form-item label="成立时间">
+                <el-input v-model="basicForm.founded_year" placeholder="如：1996年" style="width: 240px" />
+              </el-form-item>
+              <el-form-item label="人员规模">
+                <el-input v-model="basicForm.staff_size" placeholder="如：220" style="width: 240px" />
+              </el-form-item>
+              <el-form-item label="企业性质">
+                <el-radio-group v-model="basicForm.enterprise_nature">
+                  <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="主要产品或服务">
+                <el-input v-model="basicForm.main_products" type="textarea" :rows="2" placeholder="如：玉米种子选育、加工、销售" />
+              </el-form-item>
+              <el-form-item label="上年度营业收入">
+                <el-input v-model="basicForm.last_year_revenue" placeholder="如：3.61亿" style="width: 240px" />
+              </el-form-item>
+              <el-form-item label="联系人及职务">
+                <el-input v-model="basicForm.demander_contact" placeholder="联系人及职务（如：王勇，市场部总经理）" />
+              </el-form-item>
+              <el-form-item label="手机号码">
+                <el-input v-model="basicForm.demander_phone" placeholder="联系电话" style="width: 240px" />
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
 
-        <!-- 四、合作意向 -->
-        <div class="form-section-title">四、合作意向</div>
-        <el-form-item label="拟短期合作方式（多选）">
-          <el-checkbox-group v-model="basicForm.short_term_cooperation">
-            <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-          </el-checkbox-group>
-        </el-form-item>
-        <el-form-item label="拟长期合作方式（多选）">
-          <el-checkbox-group v-model="basicForm.long_term_cooperation">
-            <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-          </el-checkbox-group>
-        </el-form-item>
-        <el-form-item label="是否有意向合作专家">
-          <el-radio-group v-model="basicForm.expert_intent">
-            <el-radio label="yes">有</el-radio>
-            <el-radio label="no">无</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="basicForm.expert_intent === 'yes'" label="意向专家及单位">
-          <el-input v-model="basicForm.expert_names" type="textarea" :rows="2"
-            placeholder="如：严建兵、邱法展（华中农业大学）" />
-        </el-form-item>
-      </el-form>
+          <!-- 三、需求描述 -->
+          <el-tab-pane label="需求描述" name="demand">
+            <el-form :model="basicForm" label-width="130px" label-position="left" class="declare-form">
+              <el-form-item label="主要技术难点">
+                <el-input v-model="basicForm.tech_difficulties" type="textarea" :rows="3"
+                  placeholder="具体难题及需求、现有基础和研发能力" />
+              </el-form-item>
+              <el-form-item label="主要技术指标">
+                <el-input v-model="basicForm.tech_indicators" type="textarea" :rows="3"
+                  placeholder="预期目标与量化指标（如：较对照增产5%以上、含量≥12%）" />
+              </el-form-item>
+              <el-form-item label="主要研究内容">
+                <el-input v-model="basicForm.research_content" type="textarea" :rows="3"
+                  placeholder="拟开展的研究内容与技术路线" />
+              </el-form-item>
+              <el-form-item label="需求描述（兼容）">
+                <el-input v-model="basicForm.requirement_desc" type="textarea" :rows="2"
+                  placeholder="可选：整体描述技术需求（新录入建议使用上方三段式字段）" />
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+
+          <!-- 四、合作意向 -->
+          <el-tab-pane label="合作意向" name="coop">
+            <el-form :model="basicForm" label-width="130px" label-position="left" class="declare-form">
+              <el-form-item label="拟短期合作方式（多选）">
+                <el-checkbox-group v-model="basicForm.short_term_cooperation">
+                  <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+                </el-checkbox-group>
+              </el-form-item>
+              <el-form-item label="拟长期合作方式（多选）">
+                <el-checkbox-group v-model="basicForm.long_term_cooperation">
+                  <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+                </el-checkbox-group>
+              </el-form-item>
+              <el-form-item label="是否有意向合作专家">
+                <el-radio-group v-model="basicForm.expert_intent">
+                  <el-radio label="yes">有</el-radio>
+                  <el-radio label="no">无</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item v-if="basicForm.expert_intent === 'yes'" label="意向专家及单位">
+                <el-input v-model="basicForm.expert_names" type="textarea" :rows="2"
+                  placeholder="如：严建兵、邱法展（华中农业大学）" />
+              </el-form-item>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+
       <template #footer>
         <el-button @click="showBasicForm = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveBasic">保存</el-button>
@@ -723,7 +759,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, Flag, Document } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { biddingApi } from '@/api/bidding'
 import {
@@ -809,6 +845,7 @@ function refreshDetail() {
 
 // ==================== 新建/编辑需求 ====================
 const showBasicForm = ref(false)
+const declareTab = ref('basic')
 const editingProject = ref(null)
 const basicForm = reactive({})
 
@@ -1191,11 +1228,26 @@ onMounted(async () => {
   align-items: center;
   margin-bottom: 8px;
 }
-.form-section-title {
+
+/* ---- 抽屉标准风格（与系统其他抽屉一致） ---- */
+.drawer-title-bar {
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  margin: 0 -20px 0 -20px;
+  padding: 20px 20px 20px 40px;
+}
+.drawer-title {
+  color: #fff;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--primary-color);
-  border-left: 3px solid var(--primary-color);
-  padding-left: 10px;
-  margin: 8px 0 16px;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.drawer-body {
+  padding: 4px 0 20px;
+}
+.declare-form {
+  max-width: 640px;
 }
 </style>

@@ -134,7 +134,15 @@
           <el-descriptions-item label="期望时限">{{ currentBoard.expected_deadline || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div class="block-title">技术需求描述</div>
-        <div class="block-text">{{ currentBoard.requirement_desc || '（未填写）' }}</div>
+        <template v-if="currentBoard.tech_difficulties || currentBoard.tech_indicators || currentBoard.research_content">
+          <div class="block-sub-title">主要技术难点</div>
+          <div class="block-text">{{ currentBoard.tech_difficulties || '（未填写）' }}</div>
+          <div class="block-sub-title">主要技术指标</div>
+          <div class="block-text">{{ currentBoard.tech_indicators || '（未填写）' }}</div>
+          <div class="block-sub-title">主要研究内容</div>
+          <div class="block-text">{{ currentBoard.research_content || '（未填写）' }}</div>
+        </template>
+        <div v-else class="block-text">{{ currentBoard.requirement_desc || '（未填写）' }}</div>
         <div class="block-title">揭榜条件</div>
         <div class="block-text">{{ currentBoard.accept_conditions || '（未说明）' }}</div>
 
@@ -653,6 +661,7 @@ onMounted(() => {
 .app-table { cursor: pointer; }
 
 .block-title { font-weight: 600; margin: 16px 0 8px; color: var(--text-primary); }
+.block-sub-title { font-size: 13px; color: var(--text-secondary); margin: 8px 0 4px; }
 .block-text {
   white-space: pre-wrap;
   line-height: 1.8;

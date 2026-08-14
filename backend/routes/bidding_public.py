@@ -50,6 +50,10 @@ def _board_public_dict(p, user=None):
         'category_code': p.category_code or '',
         'demander_name': p.demander_name or '',
         'requirement_desc': p.requirement_desc or '',
+        # 三段式需求描述（新申报表数据）
+        'tech_difficulties': p.tech_difficulties or '',
+        'tech_indicators': p.tech_indicators or '',
+        'research_content': p.research_content or '',
         'bounty_amount': p.bounty_amount or 0.0,
         'deadline_date': p.deadline_date.isoformat() if p.deadline_date else None,
         'publish_date': p.publish_date.isoformat() if p.publish_date else None,

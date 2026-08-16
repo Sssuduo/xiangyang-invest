@@ -165,7 +165,6 @@ _ENTERPRISE_FIELDS = {
     'enterprise_nature': 'enterprise_nature',
     'main_products': 'main_products',
     'last_year_revenue': 'last_year_revenue',
-    'contact_name': 'demander_contact',
     'contact_phone': 'demander_phone',
 }
 
@@ -195,6 +194,8 @@ def _sync_enterprise_to_project(project, enterprise):
             setattr(project, proj_field, json.dumps(q, ensure_ascii=False))
         else:
             setattr(project, proj_field, val if val is not None else '')
+    # 联系人（姓名）单独映射（职务不进项目内联）
+    project.demander_contact = enterprise.contact_name or ''
 
 
 def _resolve_enterprise(data):
@@ -218,6 +219,8 @@ def _resolve_enterprise(data):
                     setattr(ent, ent_field, val)
             if data.get('contact_name') is not None:
                 ent.contact_name = data.get('contact_name')
+            if data.get('contact_position') is not None:
+                ent.contact_position = data.get('contact_position')
             if data.get('contact_phone') is not None:
                 ent.contact_phone = data.get('contact_phone')
             return ent, False
@@ -233,6 +236,7 @@ def _resolve_enterprise(data):
         if val is not None:
             setattr(ent, ent_field, val)
     ent.contact_name = data.get('contact_name') or ent.contact_name
+    ent.contact_position = data.get('contact_position') or ent.contact_position
     ent.contact_phone = data.get('contact_phone') or ent.contact_phone
     return ent, True
 
@@ -783,6 +787,7 @@ def create_enterprise():
         if val is not None:
             setattr(ent, field, val)
     ent.contact_name = data.get('contact_name', '')
+    ent.contact_position = data.get('contact_position', '')
     ent.contact_phone = data.get('contact_phone', '')
     db.session.add(ent)
     db.session.commit()
@@ -808,6 +813,8 @@ def update_enterprise(ent_id):
             setattr(ent, field, val)
     if data.get('contact_name') is not None:
         ent.contact_name = data.get('contact_name')
+    if data.get('contact_position') is not None:
+        ent.contact_position = data.get('contact_position')
     if data.get('contact_phone') is not None:
         ent.contact_phone = data.get('contact_phone')
     db.session.commit()

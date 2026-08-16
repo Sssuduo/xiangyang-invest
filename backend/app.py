@@ -108,6 +108,10 @@ def _run_auto_migrations(app):
             ('expert_names', 'TEXT'),
             ('enterprise_id', 'INTEGER'),
         ],
+        # 企业档案：联系人职务（联系人/职务拆分）
+        'bidding_enterprises': [
+            ('contact_position', 'VARCHAR(64)'),
+        ],
         # 后续如有新增字段，在此追加即可
     }
 

@@ -443,8 +443,11 @@
               </template>
             </div>
 
-            <!-- 企业字段：选择模式带出可编辑；新建模式输入 -->
-            <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form">
+            <!-- 企业字段：选择模式带出可编辑；新建模式输入（未选择企业时不显示字段区） -->
+            <el-form
+              v-if="isNewEnterprise || basicForm.enterprise_id"
+              :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form"
+            >
               <el-form-item v-if="isNewEnterprise" label="企业名称" required>
                 <el-input v-model="basicForm.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
               </el-form-item>
@@ -491,7 +494,7 @@
                 <el-input v-model="basicForm.contact_phone" placeholder="手机号码" maxlength="20" />
               </el-form-item>
             </el-form>
-            <el-empty v-if="!isNewEnterprise && !basicForm.enterprise_id"
+            <el-empty v-else
               description="请选择企业名称，或点击右侧新建按钮" :image-size="60" />
           </el-tab-pane>
 

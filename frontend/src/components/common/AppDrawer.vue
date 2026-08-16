@@ -78,14 +78,19 @@ defineEmits(['update:modelValue'])
   margin: 0 !important;
 }
 
-/* ---- 标题栏：顶住上/左/右边缘，零留白（覆盖 Element Plus 默认 header padding 20px）---- */
+/* ---- 标题栏：渐变铺满整个 header（含关闭按钮区域），顶住上/左/右边缘 ---- */
 .app-drawer-root .el-drawer__header {
   padding: 0 !important;
   margin: 0 !important;
   border-bottom: none !important;
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);   /* 蓝色背景覆盖关闭按钮区域 */
+}
+/* 关闭按钮：白字，与蓝色标题栏融合 */
+.app-drawer-root .el-drawer__close-btn {
+  color: #fff;
 }
 .app-drawer-title-bar {
-  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+  background: transparent;   /* 渐变已由 header 承载 */
   padding: 18px 24px;
   margin: 0 !important;
   width: 100%;
@@ -155,6 +160,7 @@ defineEmits(['update:modelValue'])
   padding-right: 12px;
   padding-left: 16px;        /* 所有 label 文本统一右移，required/非 required 首字对齐 */
   line-height: 32px;
+  white-space: nowrap;       /* 字段描述不换行 */
 }
 .app-drawer-root .declare-form .el-form-item.is-required .el-form-item__label::before {
   position: absolute;
@@ -165,6 +171,17 @@ defineEmits(['update:modelValue'])
 .app-drawer-root .declare-form .el-input__count,
 .app-drawer-root .declare-form .el-textarea__count {
   background: transparent;
+}
+
+/* ---- 多选字段：自适应铺满右侧空间 ---- */
+.app-drawer-root .declare-form .el-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  width: 100%;
+}
+.app-drawer-root .declare-form .el-checkbox {
+  margin-right: 24px;
 }
 
 /* ---- 分段标题（section-header）：全站抽屉通用 ---- */

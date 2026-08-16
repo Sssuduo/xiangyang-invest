@@ -26,8 +26,9 @@ AppDrawer.vue — 系统统一侧滑抽屉（UI 风格固化，禁止各页面�
     :size="size"
     :destroy-on-close="destroyOnClose"
     :close-on-click-modal="closeOnClickModal"
+    class="app-drawer-root"
   >
-    <!-- 标题栏：渐变 + icon，顶住上/右边缘 -->
+    <!-- 标题栏：渐变 + icon，顶住上/左/右边缘 -->
     <template #header>
       <div class="app-drawer-title-bar">
         <span class="app-drawer-title">
@@ -65,13 +66,20 @@ defineProps({
 defineEmits(['update:modelValue'])
 </script>
 
-<style scoped>
-/* ---- 标题栏：顶住上/左/右边缘，零留白 ---- */
-:deep(.el-drawer) {
+<style>
+/* ============================================================
+   AppDrawer 全局样式（非 scoped：el-drawer 可能 teleport 到 body，
+   scoped :deep 会失效，必须用唯一 class .app-drawer-root 限定）
+   ============================================================ */
+
+/* ---- 抽屉根：零内边距 ---- */
+.app-drawer-root {
   padding: 0 !important;
   margin: 0 !important;
 }
-:deep(.el-drawer__header) {
+
+/* ---- 标题栏：顶住上/左/右边缘，零留白（覆盖 Element Plus 默认 header padding 20px）---- */
+.app-drawer-root .el-drawer__header {
   padding: 0 !important;
   margin: 0 !important;
   border-bottom: none !important;
@@ -104,7 +112,7 @@ defineEmits(['update:modelValue'])
 }
 
 /* ---- 主体 ---- */
-:deep(.el-drawer__body) {
+.app-drawer-root .el-drawer__body {
   padding: 0 !important;
   overflow-y: auto;
 }
@@ -113,7 +121,7 @@ defineEmits(['update:modelValue'])
 }
 
 /* ---- 底部按钮区：居中 + 分隔横条 ---- */
-:deep(.el-drawer__footer) {
+.app-drawer-root .el-drawer__footer {
   padding: 0 !important;
   border-top: 1px solid #ebeef5;
 }
@@ -127,7 +135,7 @@ defineEmits(['update:modelValue'])
 }
 
 /* ---- tab 冻结（使用时在外层包 .sticky-tabs）---- */
-:deep(.sticky-tabs .el-tabs__header) {
+.app-drawer-root .sticky-tabs .el-tabs__header {
   position: sticky;
   top: 0;
   z-index: 10;
@@ -137,10 +145,10 @@ defineEmits(['update:modelValue'])
 }
 
 /* ---- 表单 label 对齐：所有 label 文本首个汉字在同一列（必填星号绝对定位在左侧，不参与对齐） ---- */
-:deep(.declare-form .el-form-item) {
+.app-drawer-root .declare-form .el-form-item {
   margin-bottom: 16px;
 }
-:deep(.declare-form .el-form-item__label) {
+.app-drawer-root .declare-form .el-form-item__label {
   position: relative;
   text-align: left !important;
   justify-content: flex-start !important;
@@ -148,19 +156,18 @@ defineEmits(['update:modelValue'])
   padding-left: 16px;        /* 所有 label 文本统一右移，required/非 required 首字对齐 */
   line-height: 32px;
 }
-:deep(.declare-form .el-form-item.is-required .el-form-item__label::before) {
+.app-drawer-root .declare-form .el-form-item.is-required .el-form-item__label::before {
   position: absolute;
   left: 2px;
   top: 0;
   margin-right: 0;
 }
-:deep(.declare-form .el-input__count, .declare-form .el-textarea__count) {
+.app-drawer-root .declare-form .el-input__count,
+.app-drawer-root .declare-form .el-textarea__count {
   background: transparent;
 }
-</style>
 
-<!-- 分段标题（section-header）：全站抽屉通用，非 scoped 以便任意页面使用 -->
-<style>
+/* ---- 分段标题（section-header）：全站抽屉通用 ---- */
 .section-header {
   display: flex;
   align-items: center;

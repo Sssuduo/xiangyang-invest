@@ -187,38 +187,80 @@
                   <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
                 </el-checkbox-group>
               </el-tooltip>
+              <el-input
+                v-if="form.enterprise_qualifications.includes('其他')"
+                v-model="form.qualification_other"
+                placeholder="请输入其他资质/荣誉"
+                maxlength="100" show-word-limit
+                style="margin-top: 8px; max-width: 420px;"
+              />
             </el-form-item>
-            <el-form-item label="所属行业">
-              <el-select v-model="form.industry_code" placeholder="选择行业" style="width: 100%">
-                <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="注册资本">
-              <el-input v-model="form.registered_capital" placeholder="如：1.44亿" maxlength="32" />
-            </el-form-item>
-            <el-form-item label="成立时间">
-              <el-input v-model="form.founded_year" placeholder="如：1996年" maxlength="16" />
-            </el-form-item>
-            <el-form-item label="人员规模">
-              <el-input v-model="form.staff_size" placeholder="如：220" maxlength="16" />
-            </el-form-item>
-            <el-form-item label="企业性质">
-              <el-radio-group v-model="form.enterprise_nature">
-                <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
-              </el-radio-group>
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="注册资本">
+                  <el-input v-model="form.registered_capital" placeholder="如：1.44亿" maxlength="32">
+                    <template #append>万元</template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="成立时间">
+                  <el-input v-model="form.founded_year" placeholder="如：1996" maxlength="16">
+                    <template #append>年</template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="人员规模">
+                  <el-input v-model="form.staff_size" placeholder="如：220" maxlength="16">
+                    <template #append>人</template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="企业性质">
+                  <el-radio-group v-model="form.enterprise_nature">
+                    <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
+                  </el-radio-group>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="所属行业">
+                  <el-select v-model="form.industry_code" placeholder="选择行业" style="width: 100%">
+                    <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="上年度营业收入">
+                  <el-input v-model="form.last_year_revenue" placeholder="如：3.61亿" maxlength="32">
+                    <template #append>万元</template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="联系人">
+                  <el-input v-model="form.contact_name" placeholder="如：王勇" maxlength="64" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="联系人职务">
+                  <el-input v-model="form.contact_position" placeholder="如：市场部总经理" maxlength="64" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="手机号码">
+              <el-input v-model="form.contact_phone" placeholder="手机号码" maxlength="20" style="max-width: 240px;" />
             </el-form-item>
             <el-form-item label="主要产品或服务">
               <el-input v-model="form.main_products" type="textarea" :rows="3" maxlength="300" show-word-limit
                 placeholder="如：玉米种子选育、加工、销售" />
-            </el-form-item>
-            <el-form-item label="上年度营业收入">
-              <el-input v-model="form.last_year_revenue" placeholder="如：3.61亿" maxlength="32" />
-            </el-form-item>
-            <el-form-item label="联系人及职务">
-              <el-input v-model="form.contact_name" placeholder="联系人及职务（如：王勇，市场部总经理）" maxlength="64" />
-            </el-form-item>
-            <el-form-item label="手机号码">
-              <el-input v-model="form.contact_phone" placeholder="手机号码" maxlength="20" />
             </el-form-item>
           </el-form>
           <el-empty v-else
@@ -439,12 +481,34 @@ async function fetchEnterprises() {
   }
 }
 
+// ===== 资质荣誉"其他"打包/解包 =====
+function packQualifications(list, other) {
+  const arr = [...(list || [])]
+  const idx = arr.indexOf('其他')
+  if (idx >= 0) arr.splice(idx, 1)
+  if (other && other.trim()) arr.push('其他：' + other.trim())
+  return arr
+}
+function unpackQualifications(arr) {
+  const list = [...(arr || [])]
+  let other = ''
+  const idx = list.findIndex(x => x.startsWith('其他：'))
+  if (idx >= 0) {
+    other = list[idx].slice(3)
+    list.splice(idx, 1)
+  }
+  if (!list.includes('其他') && other) list.push('其他')
+  return { list, other }
+}
+
 function onEnterpriseSelected() {
   const e = currentEnterprise.value
   if (e) {
     form.org_name = e.org_name
     form.enterprise_address = e.enterprise_address
-    form.enterprise_qualifications = [...e.enterprise_qualifications]
+    const q = unpackQualifications(e.enterprise_qualifications)
+    form.enterprise_qualifications = q.list
+    form.qualification_other = q.other
     form.industry_code = e.industry_code
     form.registered_capital = e.registered_capital
     form.founded_year = e.founded_year
@@ -453,6 +517,7 @@ function onEnterpriseSelected() {
     form.main_products = e.main_products
     form.last_year_revenue = e.last_year_revenue
     form.contact_name = e.contact_name
+    form.contact_position = e.contact_position
     form.contact_phone = e.contact_phone
   }
 }
@@ -467,9 +532,10 @@ function emptyForm() {
   return {
     title: '',
     enterprise_id: null, org_name: '',
-    enterprise_address: '', enterprise_qualifications: [], industry_code: '',
+    enterprise_address: '', enterprise_qualifications: [], qualification_other: '', industry_code: '',
     registered_capital: '', founded_year: '', staff_size: '', enterprise_nature: '',
-    main_products: '', last_year_revenue: '', contact_name: '', contact_phone: '',
+    main_products: '', last_year_revenue: '',
+    contact_name: '', contact_position: '', contact_phone: '',
     tech_difficulties: '', tech_indicators: '', research_content: '',
     short_term_cooperation: [], long_term_cooperation: [], expert_intent: 'no', expert_names: '',
   }
@@ -483,12 +549,14 @@ function openCreate() {
 }
 function openEdit(row) {
   editing.value = row
+  const q = unpackQualifications(row.enterprise_qualifications)
   Object.assign(form, {
     title: row.title,
     enterprise_id: row.enterprise_id || null,
     org_name: row.demander_name || '',
     enterprise_address: row.enterprise_address || '',
-    enterprise_qualifications: [...(row.enterprise_qualifications || [])],
+    enterprise_qualifications: q.list,
+    qualification_other: q.other,
     industry_code: row.industry_code || '',
     registered_capital: row.registered_capital || '',
     founded_year: row.founded_year || '',
@@ -497,6 +565,7 @@ function openEdit(row) {
     main_products: row.main_products || '',
     last_year_revenue: row.last_year_revenue || '',
     contact_name: row.demander_contact || '',
+    contact_position: row.enterprise_contact_position || '',
     contact_phone: row.demander_phone || '',
     tech_difficulties: row.tech_difficulties || '',
     tech_indicators: row.tech_indicators || '',
@@ -524,7 +593,7 @@ function buildDeclarePayload() {
   // 企业字段：选择模式带 enterprise_id + 可编辑字段（后端更新档案）；新建模式带 org_name + 字段
   Object.assign(payload, {
     enterprise_address: form.enterprise_address,
-    enterprise_qualifications: form.enterprise_qualifications,
+    enterprise_qualifications: packQualifications(form.enterprise_qualifications, form.qualification_other),
     industry_code: form.industry_code,
     registered_capital: form.registered_capital,
     founded_year: form.founded_year,
@@ -533,6 +602,7 @@ function buildDeclarePayload() {
     main_products: form.main_products,
     last_year_revenue: form.last_year_revenue,
     contact_name: form.contact_name,
+    contact_position: form.contact_position,
     contact_phone: form.contact_phone,
   })
   if (!isNewEnterprise.value && form.enterprise_id) {

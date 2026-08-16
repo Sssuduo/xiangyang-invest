@@ -74,7 +74,8 @@ class BiddingEnterprise(db.Model):
     enterprise_nature = db.Column(db.String(32), default='')       # 企业性质
     main_products = db.Column(db.Text, default='')                 # 主要产品/服务
     last_year_revenue = db.Column(db.String(64), default='')       # 上年度营业收入
-    contact_name = db.Column(db.String(64), default='')            # 联系人及职务
+    contact_name = db.Column(db.String(64), default='')            # 联系人
+    contact_position = db.Column(db.String(64), default='')        # 联系人职务
     contact_phone = db.Column(db.String(32), default='')           # 手机号码
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -93,6 +94,7 @@ class BiddingEnterprise(db.Model):
             'main_products': self.main_products or '',
             'last_year_revenue': self.last_year_revenue or '',
             'contact_name': self.contact_name or '',
+            'contact_position': self.contact_position or '',
             'contact_phone': self.contact_phone or '',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
         }
@@ -215,6 +217,7 @@ class BiddingProject(db.Model):
             'expected_deadline': self.expected_deadline.isoformat() if self.expected_deadline else None,
             'enterprise_id': self.enterprise_id,
             'enterprise_name': self.enterprise.org_name if self.enterprise else (self.demander_name or ''),
+            'enterprise_contact_position': self.enterprise.contact_position if self.enterprise else '',
             # 企业概况（申报表）
             'enterprise_address': self.enterprise_address or '',
             'enterprise_qualifications': json.loads(self.enterprise_qualifications) if self.enterprise_qualifications else [],

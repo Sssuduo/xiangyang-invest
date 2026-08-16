@@ -1077,6 +1077,8 @@ async function saveBasic() {
     } else {
       ElMessage.error(res.message)
     }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败，请重试')
   } finally {
     saving.value = false
   }

@@ -198,6 +198,13 @@ def _sync_enterprise_to_project(project, enterprise):
     project.demander_contact = enterprise.contact_name or ''
 
 
+def _ent_set_field(ent, ent_field, val):
+    """写入企业档案字段：enterprise_qualifications 需 JSON 序列化（TEXT 列不接受 list）"""
+    if ent_field == 'enterprise_qualifications' and isinstance(val, list):
+        val = json.dumps(val, ensure_ascii=False)
+    setattr(ent, ent_field, val)
+
+
 def _resolve_enterprise(data):
     """根据提交数据解析/更新企业档案，返回 (enterprise 或 None, 是否需要新增到 session)。
 
@@ -216,7 +223,7 @@ def _resolve_enterprise(data):
             for ent_field in _ENTERPRISE_FIELDS:
                 val = data.get(ent_field)
                 if val is not None:
-                    setattr(ent, ent_field, val)
+                    _ent_set_field(ent, ent_field, val)
             if data.get('contact_name') is not None:
                 ent.contact_name = data.get('contact_name')
             if data.get('contact_position') is not None:
@@ -234,7 +241,7 @@ def _resolve_enterprise(data):
     for ent_field in _ENTERPRISE_FIELDS:
         val = data.get(ent_field)
         if val is not None:
-            setattr(ent, ent_field, val)
+            _ent_set_field(ent, ent_field, val)
     ent.contact_name = data.get('contact_name') or ent.contact_name
     ent.contact_position = data.get('contact_position') or ent.contact_position
     ent.contact_phone = data.get('contact_phone') or ent.contact_phone
@@ -785,7 +792,7 @@ def create_enterprise():
     for field in _ENTERPRISE_FIELDS:
         val = data.get(field)
         if val is not None:
-            setattr(ent, field, val)
+            _ent_set_field(ent, field, val)
     ent.contact_name = data.get('contact_name', '')
     ent.contact_position = data.get('contact_position', '')
     ent.contact_phone = data.get('contact_phone', '')
@@ -810,7 +817,7 @@ def update_enterprise(ent_id):
     for field in _ENTERPRISE_FIELDS:
         val = data.get(field)
         if val is not None:
-            setattr(ent, field, val)
+            _ent_set_field(ent, field, val)
     if data.get('contact_name') is not None:
         ent.contact_name = data.get('contact_name')
     if data.get('contact_position') is not None:

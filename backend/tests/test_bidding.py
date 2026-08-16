@@ -13,6 +13,7 @@ import tempfile
 _TMPDIR = tempfile.mkdtemp(prefix='bidding_test_')
 os.environ['DATABASE_URL'] = f"sqlite:///{os.path.join(_TMPDIR, 'test.db')}"
 os.environ['FLASK_ENV'] = 'production'
+os.environ['SECRET_KEY'] = 'test-secret-key'   # 生产配置强制要求 SECRET_KEY
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -125,11 +126,12 @@ def test_full_flow(admin_client, app):
         from extensions import db
         db.session.commit()
 
-    # 1. 内部登记需求（stage1，含企业需求申报表字段）
+    # 1. 内部登记需求（stage1，新建企业模式：org_name + 资质数组 → 企业档案创建路径）
     resp = admin_client.post('/api/admin/bidding/projects', json={
         'title': '水稻抗病分子育种关键技术攻关',
         'category_code': 'agri_breeding',
         'demander_name': '湖北某某种业有限公司',
+        'org_name': '湖北某某种业有限公司',
         'demander_contact': '张工',
         'demander_phone': '0710-1234567',
         'demand_source': '企业申报',

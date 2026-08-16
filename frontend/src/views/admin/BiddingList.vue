@@ -634,7 +634,11 @@ async function saveForm() {
       showForm.value = false
       fetchData()
       fetchEnterprises()
+    } else {
+      ElMessage.error(res.message)
     }
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败，请重试')
   } finally { saving.value = false }
 }
 function handleDelete(row) {

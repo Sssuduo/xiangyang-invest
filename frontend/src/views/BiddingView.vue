@@ -400,7 +400,7 @@
       </template>
     </AppDrawer>
 
-    <!-- ==================== 企业需求申报抽屉（固化风格 AppDrawer + 3 tab） ==================== -->
+    <!-- ==================== 企业需求申报抽屉（单页分节，参考招商项目规范） ==================== -->
     <AppDrawer
       v-model="showBasicForm"
       :title="editingProject ? '编辑企业需求申报' : '企业需求申报'"
@@ -408,149 +408,150 @@
       size="720px"
       @update:model-value="onDeclareClose"
     >
-      <div class="sticky-tabs">
-        <el-tabs v-model="declareTab">
-          <!-- 企业概况：选择已有企业 或 新建 -->
-          <el-tab-pane label="企业概况" name="enterprise">
-            <!-- 企业选择行：下拉选择（默认，右侧新建 icon 切换） -->
-            <div class="enterprise-row">
-              <template v-if="!isNewEnterprise">
-                <el-select
-                  v-model="basicForm.enterprise_id"
-                  filterable
-                  placeholder="选择企业名称"
-                  class="enterprise-select"
-                  :loading="enterpriseLoading"
-                  @change="onEnterpriseSelected"
-                >
-                  <el-option v-for="e in enterprises" :key="e.id" :label="e.org_name" :value="e.id">
-                    <span>{{ e.org_name }}</span>
-                    <span style="float: right; color: #909399; font-size: 12px;">{{ e.industry_code || '' }}</span>
-                  </el-option>
-                </el-select>
-                <el-tooltip content="新建企业" placement="top">
-                  <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = true">
-                    <el-icon><Plus /></el-icon>
-                  </el-button>
-                </el-tooltip>
-              </template>
-              <template v-else>
-                <el-tooltip content="选择已有企业" placement="top">
-                  <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = false">
-                    <el-icon><Search /></el-icon>
-                  </el-button>
-                </el-tooltip>
-              </template>
-            </div>
-
-            <!-- 企业字段：选择模式带出可编辑；新建模式输入（未选择企业时不显示字段区） -->
-            <el-form
-              v-if="isNewEnterprise || basicForm.enterprise_id"
-              :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form"
-            >
-              <el-form-item v-if="isNewEnterprise" label="企业名称" required>
-                <el-input v-model="basicForm.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
-              </el-form-item>
-              <el-form-item label="企业地址">
-                <el-input v-model="basicForm.enterprise_address" placeholder="企业地址" maxlength="120" show-word-limit />
-              </el-form-item>
-              <el-form-item label="资质荣誉">
-                <el-tooltip content="资质/荣誉，可多选" placement="top">
-                  <el-checkbox-group v-model="basicForm.enterprise_qualifications">
-                    <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
-                  </el-checkbox-group>
-                </el-tooltip>
-              </el-form-item>
-              <el-form-item label="所属行业">
-                <el-select v-model="basicForm.industry_code" placeholder="选择行业" style="width: 100%">
-                  <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="注册资本">
-                <el-input v-model="basicForm.registered_capital" placeholder="如：1.44亿" maxlength="32" />
-              </el-form-item>
-              <el-form-item label="成立时间">
-                <el-input v-model="basicForm.founded_year" placeholder="如：1996年" maxlength="16" />
-              </el-form-item>
-              <el-form-item label="人员规模">
-                <el-input v-model="basicForm.staff_size" placeholder="如：220" maxlength="16" />
-              </el-form-item>
-              <el-form-item label="企业性质">
-                <el-radio-group v-model="basicForm.enterprise_nature">
-                  <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item label="主要产品或服务">
-                <el-input v-model="basicForm.main_products" type="textarea" :rows="3" maxlength="300" show-word-limit
-                  placeholder="如：玉米种子选育、加工、销售" />
-              </el-form-item>
-              <el-form-item label="上年度营业收入">
-                <el-input v-model="basicForm.last_year_revenue" placeholder="如：3.61亿" maxlength="32" />
-              </el-form-item>
-              <el-form-item label="联系人及职务">
-                <el-input v-model="basicForm.contact_name" placeholder="联系人及职务（如：王勇，市场部总经理）" maxlength="64" />
-              </el-form-item>
-              <el-form-item label="手机号码">
-                <el-input v-model="basicForm.contact_phone" placeholder="手机号码" maxlength="20" />
-              </el-form-item>
-            </el-form>
-            <el-empty v-else
-              description="请选择企业名称，或点击右侧新建按钮" :image-size="60" />
-          </el-tab-pane>
-
-          <!-- 需求描述 -->
-          <el-tab-pane label="需求描述" name="demand">
-            <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
-              <el-form-item label="需求名称" required>
-                <el-input v-model="basicForm.title" maxlength="80" show-word-limit
-                  placeholder="一句话概括（如：耐热高蛋白玉米新品种选育及应用）" />
-              </el-form-item>
-              <el-form-item label="主要技术难点">
-                <el-input v-model="basicForm.tech_difficulties" type="textarea" :rows="5" maxlength="1000" show-word-limit
-                  placeholder="具体难题及需求、现有基础和研发能力" />
-              </el-form-item>
-              <el-form-item label="主要技术指标">
-                <el-input v-model="basicForm.tech_indicators" type="textarea" :rows="5" maxlength="1000" show-word-limit
-                  placeholder="预期目标与量化指标（如：较对照增产5%以上、含量≥12%）" />
-              </el-form-item>
-              <el-form-item label="主要研究内容">
-                <el-input v-model="basicForm.research_content" type="textarea" :rows="5" maxlength="1000" show-word-limit
-                  placeholder="拟开展的研究内容与技术路线" />
-              </el-form-item>
-            </el-form>
-          </el-tab-pane>
-
-          <!-- 合作意向 -->
-          <el-tab-pane label="合作意向" name="coop">
-            <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
-              <el-form-item label="拟短期合作方式">
-                <el-tooltip content="拟短期合作方式，可多选" placement="top">
-                  <el-checkbox-group v-model="basicForm.short_term_cooperation">
-                    <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-                  </el-checkbox-group>
-                </el-tooltip>
-              </el-form-item>
-              <el-form-item label="拟长期合作方式">
-                <el-tooltip content="拟长期合作方式，可多选" placement="top">
-                  <el-checkbox-group v-model="basicForm.long_term_cooperation">
-                    <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
-                  </el-checkbox-group>
-                </el-tooltip>
-              </el-form-item>
-              <el-form-item label="意向合作专家">
-                <el-radio-group v-model="basicForm.expert_intent">
-                  <el-radio label="yes">有</el-radio>
-                  <el-radio label="no">无</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item v-if="basicForm.expert_intent === 'yes'" label="专家及单位">
-                <el-input v-model="basicForm.expert_names" type="textarea" :rows="3" maxlength="300" show-word-limit
-                  placeholder="如：严建兵、邱法展（华中农业大学）" />
-              </el-form-item>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
+      <!-- 一、企业概况 -->
+      <div class="section-header">
+        <span class="section-icon"><el-icon><OfficeBuilding /></el-icon></span>
+        <span class="section-title">企业概况</span>
       </div>
+      <!-- 企业选择行：下拉选择（默认，右侧新建 icon 切换） -->
+      <div class="enterprise-row">
+        <template v-if="!isNewEnterprise">
+          <el-select
+            v-model="basicForm.enterprise_id"
+            filterable
+            placeholder="选择企业名称"
+            class="enterprise-select"
+            :loading="enterpriseLoading"
+            @change="onEnterpriseSelected"
+          >
+            <el-option v-for="e in enterprises" :key="e.id" :label="e.org_name" :value="e.id">
+              <span>{{ e.org_name }}</span>
+              <span style="float: right; color: #909399; font-size: 12px;">{{ e.industry_code || '' }}</span>
+            </el-option>
+          </el-select>
+          <el-tooltip content="新建企业" placement="top">
+            <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = true">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+          </el-tooltip>
+        </template>
+        <template v-else>
+          <el-tooltip content="选择已有企业" placement="top">
+            <el-button circle class="enterprise-new-btn" @click="isNewEnterprise = false">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </el-tooltip>
+        </template>
+      </div>
+      <!-- 企业字段：选择模式带出可编辑；新建模式输入（未选择企业时不显示字段区） -->
+      <el-form
+        v-if="isNewEnterprise || basicForm.enterprise_id"
+        :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form"
+      >
+        <el-form-item v-if="isNewEnterprise" label="企业名称" required>
+          <el-input v-model="basicForm.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
+        </el-form-item>
+        <el-form-item label="企业地址">
+          <el-input v-model="basicForm.enterprise_address" placeholder="企业地址" maxlength="120" show-word-limit />
+        </el-form-item>
+        <el-form-item label="资质荣誉">
+          <el-tooltip content="资质/荣誉，可多选" placement="top">
+            <el-checkbox-group v-model="basicForm.enterprise_qualifications">
+              <el-checkbox v-for="q in QUALIFICATION_OPTIONS" :key="q" :label="q" />
+            </el-checkbox-group>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="所属行业">
+          <el-select v-model="basicForm.industry_code" placeholder="选择行业" style="width: 100%">
+            <el-option v-for="i in INDUSTRY_OPTIONS" :key="i" :label="i" :value="i" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="注册资本">
+          <el-input v-model="basicForm.registered_capital" placeholder="如：1.44亿" maxlength="32" />
+        </el-form-item>
+        <el-form-item label="成立时间">
+          <el-input v-model="basicForm.founded_year" placeholder="如：1996年" maxlength="16" />
+        </el-form-item>
+        <el-form-item label="人员规模">
+          <el-input v-model="basicForm.staff_size" placeholder="如：220" maxlength="16" />
+        </el-form-item>
+        <el-form-item label="企业性质">
+          <el-radio-group v-model="basicForm.enterprise_nature">
+            <el-radio v-for="n in ENTERPRISE_NATURES" :key="n" :label="n" />
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="主要产品或服务">
+          <el-input v-model="basicForm.main_products" type="textarea" :rows="3" maxlength="300" show-word-limit
+            placeholder="如：玉米种子选育、加工、销售" />
+        </el-form-item>
+        <el-form-item label="上年度营业收入">
+          <el-input v-model="basicForm.last_year_revenue" placeholder="如：3.61亿" maxlength="32" />
+        </el-form-item>
+        <el-form-item label="联系人及职务">
+          <el-input v-model="basicForm.contact_name" placeholder="联系人及职务（如：王勇，市场部总经理）" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="手机号码">
+          <el-input v-model="basicForm.contact_phone" placeholder="手机号码" maxlength="20" />
+        </el-form-item>
+      </el-form>
+      <el-empty v-else
+        description="请选择企业名称，或点击右侧新建按钮" :image-size="60" />
+
+      <!-- 二、需求描述 -->
+      <div class="section-header">
+        <span class="section-icon"><el-icon><Document /></el-icon></span>
+        <span class="section-title">需求描述</span>
+      </div>
+      <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
+        <el-form-item label="需求名称" required>
+          <el-input v-model="basicForm.title" maxlength="80" show-word-limit
+            placeholder="一句话概括（如：耐热高蛋白玉米新品种选育及应用）" />
+        </el-form-item>
+        <el-form-item label="主要技术难点">
+          <el-input v-model="basicForm.tech_difficulties" type="textarea" :rows="5" maxlength="1000" show-word-limit
+            placeholder="具体难题及需求、现有基础和研发能力" />
+        </el-form-item>
+        <el-form-item label="主要技术指标">
+          <el-input v-model="basicForm.tech_indicators" type="textarea" :rows="5" maxlength="1000" show-word-limit
+            placeholder="预期目标与量化指标（如：较对照增产5%以上、含量≥12%）" />
+        </el-form-item>
+        <el-form-item label="主要研究内容">
+          <el-input v-model="basicForm.research_content" type="textarea" :rows="5" maxlength="1000" show-word-limit
+            placeholder="拟开展的研究内容与技术路线" />
+        </el-form-item>
+      </el-form>
+
+      <!-- 三、合作意向 -->
+      <div class="section-header">
+        <span class="section-icon"><el-icon><ChatDotSquare /></el-icon></span>
+        <span class="section-title">合作意向</span>
+      </div>
+      <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
+        <el-form-item label="拟短期合作方式">
+          <el-tooltip content="拟短期合作方式，可多选" placement="top">
+            <el-checkbox-group v-model="basicForm.short_term_cooperation">
+              <el-checkbox v-for="c in SHORT_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+            </el-checkbox-group>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="拟长期合作方式">
+          <el-tooltip content="拟长期合作方式，可多选" placement="top">
+            <el-checkbox-group v-model="basicForm.long_term_cooperation">
+              <el-checkbox v-for="c in LONG_TERM_COOPERATION_OPTIONS" :key="c" :label="c" />
+            </el-checkbox-group>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="意向合作专家">
+          <el-radio-group v-model="basicForm.expert_intent">
+            <el-radio label="yes">有</el-radio>
+            <el-radio label="no">无</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="basicForm.expert_intent === 'yes'" label="专家及单位">
+          <el-input v-model="basicForm.expert_names" type="textarea" :rows="3" maxlength="300" show-word-limit
+            placeholder="如：严建兵、邱法展（华中农业大学）" />
+        </el-form-item>
+      </el-form>
 
       <template #footer>
         <el-button @click="showBasicForm = false">取消</el-button>
@@ -756,7 +757,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Delete, Flag, Document } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, Flag, Document, OfficeBuilding, ChatDotSquare } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import AppDrawer from '@/components/common/AppDrawer.vue'
 import { biddingApi } from '@/api/bidding'
@@ -843,7 +844,6 @@ function refreshDetail() {
 
 // ==================== 新建/编辑需求 ====================
 const showBasicForm = ref(false)
-const declareTab = ref('enterprise')
 const editingProject = ref(null)
 const basicForm = reactive({})
 
@@ -884,9 +884,8 @@ function onEnterpriseSelected() {
 }
 
 function onDeclareClose(val) {
-  // 抽屉关闭（含点击取消/保存后）：重置 tab 与企业模式
+  // 抽屉关闭（含点击取消/保存后）：重置企业模式
   if (!val) {
-    declareTab.value = 'enterprise'
     isNewEnterprise.value = false
   }
 }
@@ -894,7 +893,6 @@ function onDeclareClose(val) {
 function openCreate() {
   editingProject.value = null
   Object.assign(basicForm, emptyBasicForm())
-  declareTab.value = 'enterprise'
   isNewEnterprise.value = false
   showBasicForm.value = true
 }
@@ -942,7 +940,6 @@ function openEditBasic() {
   })
   // 编辑回显：有关联企业档案 → 选择模式（下拉回显）；否则新建模式
   isNewEnterprise.value = !d.enterprise_id
-  declareTab.value = 'enterprise'
   showBasicForm.value = true
 }
 

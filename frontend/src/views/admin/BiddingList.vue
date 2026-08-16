@@ -171,7 +171,10 @@
                   </template>
                 </div>
 
-                <el-form :model="form" label-width="120px" label-position="left" class="declare-form enterprise-form">
+                <el-form
+                  v-if="isNewEnterprise || form.enterprise_id"
+                  :model="form" label-width="120px" label-position="left" class="declare-form enterprise-form"
+                >
                   <el-form-item v-if="isNewEnterprise" label="企业名称" required>
                     <el-input v-model="form.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
                   </el-form-item>
@@ -218,7 +221,7 @@
                     <el-input v-model="form.contact_phone" placeholder="手机号码" maxlength="20" />
                   </el-form-item>
                 </el-form>
-                <el-empty v-if="!isNewEnterprise && !form.enterprise_id"
+                <el-empty v-else
                   description="请选择企业名称，或点击右侧新建按钮" :image-size="60" />
               </el-tab-pane>
 

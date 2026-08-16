@@ -66,17 +66,25 @@ defineEmits(['update:modelValue'])
 </script>
 
 <style scoped>
-/* ---- 标题栏：顶住上方与右侧边缘 + 底部横条顶满左右 ---- */
+/* ---- 标题栏：顶住上/左/右边缘，零留白 ---- */
+:deep(.el-drawer) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
 :deep(.el-drawer__header) {
   padding: 0 !important;
   margin: 0 !important;
-  border-bottom: none;
+  border-bottom: none !important;
 }
 .app-drawer-title-bar {
   background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
   padding: 18px 24px;
+  margin: 0 !important;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.45);   /* 标题栏底部横条：随标题栏顶满左右 */
 }
@@ -148,5 +156,33 @@ defineEmits(['update:modelValue'])
 }
 :deep(.declare-form .el-input__count, .declare-form .el-textarea__count) {
   background: transparent;
+}
+</style>
+
+<!-- 分段标题（section-header）：全站抽屉通用，非 scoped 以便任意页面使用 -->
+<style>
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 8px 0 14px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border-left: 3px solid #1a3a5c;
+}
+.section-header:first-child {
+  margin-top: 0;
+}
+.section-icon {
+  color: #1a3a5c;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
 }
 </style>

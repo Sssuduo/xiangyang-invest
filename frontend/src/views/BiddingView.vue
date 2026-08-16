@@ -446,7 +446,7 @@
       <!-- 企业字段：选择模式带出可编辑；新建模式输入（未选择企业时不显示字段区） -->
       <el-form
         v-if="isNewEnterprise || basicForm.enterprise_id"
-        :model="basicForm" label-width="120px" label-position="left" class="declare-form enterprise-form"
+        :model="basicForm" label-width="140px" label-position="left" class="declare-form enterprise-form"
       >
         <el-form-item v-if="isNewEnterprise" label="企业名称" required>
           <el-input v-model="basicForm.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
@@ -502,7 +502,7 @@
         <span class="section-icon"><el-icon><Document /></el-icon></span>
         <span class="section-title">需求描述</span>
       </div>
-      <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
+      <el-form :model="basicForm" label-width="140px" label-position="left" class="declare-form">
         <el-form-item label="需求名称" required>
           <el-input v-model="basicForm.title" maxlength="80" show-word-limit
             placeholder="一句话概括（如：耐热高蛋白玉米新品种选育及应用）" />
@@ -526,7 +526,7 @@
         <span class="section-icon"><el-icon><ChatDotSquare /></el-icon></span>
         <span class="section-title">合作意向</span>
       </div>
-      <el-form :model="basicForm" label-width="120px" label-position="left" class="declare-form">
+      <el-form :model="basicForm" label-width="140px" label-position="left" class="declare-form">
         <el-form-item label="拟短期合作方式">
           <el-tooltip content="拟短期合作方式，可多选" placement="top">
             <el-checkbox-group v-model="basicForm.short_term_cooperation">

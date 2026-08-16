@@ -173,7 +173,7 @@
 
           <el-form
             v-if="isNewEnterprise || form.enterprise_id"
-            :model="form" label-width="120px" label-position="left" class="declare-form enterprise-form"
+            :model="form" label-width="140px" label-position="left" class="declare-form enterprise-form"
           >
             <el-form-item v-if="isNewEnterprise" label="企业名称" required>
               <el-input v-model="form.org_name" placeholder="企业名称" maxlength="100" show-word-limit />
@@ -229,7 +229,7 @@
             <span class="section-icon"><el-icon><Document /></el-icon></span>
             <span class="section-title">需求描述</span>
           </div>
-          <el-form :model="form" label-width="120px" label-position="left" class="declare-form">
+          <el-form :model="form" label-width="140px" label-position="left" class="declare-form">
             <el-form-item label="需求名称" required>
               <el-input v-model="form.title" maxlength="80" show-word-limit placeholder="一句话概括" />
             </el-form-item>
@@ -249,7 +249,7 @@
             <span class="section-icon"><el-icon><ChatDotSquare /></el-icon></span>
             <span class="section-title">合作意向</span>
           </div>
-          <el-form :model="form" label-width="120px" label-position="left" class="declare-form">
+          <el-form :model="form" label-width="140px" label-position="left" class="declare-form">
             <el-form-item label="拟短期合作方式">
               <el-tooltip content="拟短期合作方式，可多选" placement="top">
                 <el-checkbox-group v-model="form.short_term_cooperation">

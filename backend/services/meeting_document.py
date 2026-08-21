@@ -1,7 +1,10 @@
 """
 活动台账录音 Word 文档生成
 
-为已识别的活动台账生成包含「分段原文 + 清洁版 + 摘要版」三部分的 Word 文档。
+提供两种生成方式：
+- generate_meeting_docx：三件套（分段原文 + 清洁版 + 摘要版）固定生成（总结完成后自动存档）
+- generate_meeting_word：按选中版本（versions）生成（用户导出时选择，与 PDF 导出对等）
+
 复用 backend/services/word_service.py 的 markdown → docx 解析风格。
 """
 import os
@@ -16,6 +19,13 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 
 logger = logging.getLogger(__name__)
+
+# 版本定义（与 pdf_service.VERSIONS 对齐）
+VERSIONS = {
+    'segmented': {'label': '分段原文', 'section_title': '一、发言分段原文'},
+    'clean': {'label': '清洁版', 'section_title': '二、清洁版'},
+    'summary': {'label': '摘要版', 'section_title': '三、摘要版'},
+}
 
 
 def _ensure_dir():
@@ -38,26 +48,8 @@ def _strip_markdown(text):
     return text
 
 
-def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_text=''):
-    """为活动台账生成三件套 docx: 发言分段 + 清洁版 + 摘要版。
-
-    Args:
-        activity: ActivityLedger 实例
-        segmented_text: 分段后原文
-        clean_text: 清洁版文本
-        summary_text: 摘要版文本
-
-    Returns:
-        tuple: (static_url 相对路径如 '/static/meetings/xxx.docx', file_name)
-    """
-    out_dir = _ensure_dir()
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_name = re.sub(r'[\\/:*?"<>|]', '_', (activity.content or '活动台账')[:30])
-    file_name = f'{safe_name}_会议总结_{timestamp}.docx'
-    file_path = os.path.join(out_dir, file_name)
-
-    doc = Document()
-
+def _build_cover(doc, activity, title):
+    """封面：标题 + 副标题 + 生成信息 + 分隔线（两个生成函数共用）"""
     # ---- 页面设置 (A4) ----
     section = doc.sections[0]
     section.page_height = Cm(29.7)
@@ -73,10 +65,10 @@ def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_te
     font.size = Pt(12)
     style.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
-    # ---- 封面标题 ----
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run('活动台账 会议录音总结')
+    # 标题
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = title_p.add_run(title)
     run.bold = True
     run.font.size = Pt(22)
     run.font.name = 'SimHei'
@@ -95,7 +87,7 @@ def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_te
 
     info = doc.add_paragraph()
     info.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    activity_date = activity.date.strftime('%Y年%m月%d日') if activity.date else '未知日期'
+    activity_date = activity.date.strftime('%Y年%m月%d日') if getattr(activity, 'date', None) else '未知日期'
     run = info.add_run(f'活动时间: {activity_date}    生成时间: {datetime.now().strftime("%Y年%m月%d日 %H:%M")}')
     run.font.size = Pt(10)
     run.font.color.rgb = RGBColor(0x90, 0x93, 0x99)
@@ -108,137 +100,113 @@ def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_te
     run.font.color.rgb = RGBColor(0xc8, 0xda, 0xf0)
     doc.add_paragraph()
 
-    # ---- 解析 Markdown → docx 的辅助 ----
-    def _add_markdown_content(text, doc):
-        """将 Markdown 文本解析后写入 Document"""
+
+def _add_section_title(doc, text):
+    """添加一级分节标题（黑体 16pt）"""
+    h1 = doc.add_paragraph()
+    run = h1.add_run(text)
+    run.bold = True
+    run.font.size = Pt(16)
+    run.font.name = 'SimHei'
+    run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
+    run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
+    h1.paragraph_format.space_before = Pt(18)
+    h1.paragraph_format.space_after = Pt(8)
+
+
+def _add_markdown_content(doc, text):
+    """将 Markdown 文本解析后写入 Document"""
+    in_table = False
+    table = None
+    lines = text.strip().split('\n')
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_table:
+                in_table = False
+                table = None
+            doc.add_paragraph()
+            continue
+
+        # 分隔线
+        if re.match(r'^[━═]{5,}', stripped):
+            continue
+
+        # 表格行
+        if stripped.startswith('|') and stripped.endswith('|') and stripped.count('|') >= 2:
+            if not re.match(r'^\|[-: ]+\|', stripped):
+                cells = [c.strip() for c in stripped.split('|')[1:-1]]
+                if len(cells) >= 2:
+                    if not in_table:
+                        table = doc.add_table(rows=0, cols=len(cells))
+                        table.style = 'Table Grid'
+                        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        in_table = True
+                    row = table.add_row()
+                    for i, cell_text in enumerate(cells):
+                        row.cells[i].text = _strip_markdown(cell_text)
+                        for paragraph in row.cells[i].paragraphs:
+                            for run in paragraph.runs:
+                                run.font.size = Pt(10)
+                    continue
+
         in_table = False
         table = None
-        lines = text.strip().split('\n')
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                if in_table:
-                    in_table = False
-                    table = None
-                doc.add_paragraph()
-                continue
 
-            # 分隔线
-            if re.match(r'^[━═]{5,}', stripped):
-                continue
-
-            # 表格行
-            if stripped.startswith('|') and stripped.endswith('|') and stripped.count('|') >= 2:
-                if not re.match(r'^\|[-: ]+\|', stripped):
-                    cells = [c.strip() for c in stripped.split('|')[1:-1]]
-                    if len(cells) >= 2:
-                        if not in_table:
-                            table = doc.add_table(rows=0, cols=len(cells))
-                            table.style = 'Table Grid'
-                            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                            in_table = True
-                        row = table.add_row()
-                        for i, cell_text in enumerate(cells):
-                            row.cells[i].text = _strip_markdown(cell_text)
-                            for paragraph in row.cells[i].paragraphs:
-                                for run in paragraph.runs:
-                                    run.font.size = Pt(10)
-                        continue
-
-            in_table = False
-            table = None
-
-            # 一级标题 一、 / # /
-            if re.match(r'^[一二三四五六七八九十]、', stripped) or (stripped.startswith('# ') and not stripped.startswith('## ')):
-                text_clean = re.sub(r'^#\s*', '', stripped)
-                text_clean = _strip_markdown(text_clean)
-                p = doc.add_paragraph()
-                run = p.add_run(text_clean)
-                run.bold = True
-                run.font.size = Pt(16)
-                run.font.name = 'SimHei'
-                run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
-                run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
-                p.paragraph_format.space_before = Pt(18)
-                p.paragraph_format.space_after = Pt(8)
-                continue
-
-            # 二级标题 ## / 1. ** / 1、
-            if stripped.startswith('## ') or re.match(r'^\d+[\.\、]\s*\*\*', stripped):
-                text_clean = re.sub(r'^##\s*', '', stripped)
-                text_clean = _strip_markdown(text_clean)
-                p = doc.add_paragraph()
-                run = p.add_run(text_clean)
-                run.bold = True
-                run.font.size = Pt(13)
-                run.font.name = 'SimSun'
-                run.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-                run.font.color.rgb = RGBColor(0x30, 0x31, 0x33)
-                p.paragraph_format.space_before = Pt(12)
-                p.paragraph_format.space_after = Pt(4)
-                continue
-
-            # 列表项
-            if re.match(r'^[-*]\s', stripped) or re.match(r'^\d+[\.\、]\s', stripped):
-                text_clean = re.sub(r'^[-*]\s*|^\d+[\.\、]\s*', '', stripped)
-                text_clean = _strip_markdown(text_clean)
-                p = doc.add_paragraph(style='List Bullet')
-                run = p.add_run(text_clean)
-                run.font.size = Pt(11)
-                run.font.name = 'SimSun'
-                run.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-                continue
-
-            # 普通段落
-            text_clean = _strip_markdown(stripped)
+        # 一级标题 一、 / # /
+        if re.match(r'^[一二三四五六七八九十]、', stripped) or (stripped.startswith('# ') and not stripped.startswith('## ')):
+            text_clean = re.sub(r'^#\s*', '', stripped)
+            text_clean = _strip_markdown(text_clean)
             p = doc.add_paragraph()
             run = p.add_run(text_clean)
-            run.font.size = Pt(12)
+            run.bold = True
+            run.font.size = Pt(16)
+            run.font.name = 'SimHei'
+            run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
+            run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
+            p.paragraph_format.space_before = Pt(18)
+            p.paragraph_format.space_after = Pt(8)
+            continue
+
+        # 二级标题 ## / 1. ** / 1、
+        if stripped.startswith('## ') or re.match(r'^\d+[\.\、]\s*\*\*', stripped):
+            text_clean = re.sub(r'^##\s*', '', stripped)
+            text_clean = _strip_markdown(text_clean)
+            p = doc.add_paragraph()
+            run = p.add_run(text_clean)
+            run.bold = True
+            run.font.size = Pt(13)
             run.font.name = 'SimSun'
             run.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-            p.paragraph_format.first_line_indent = Cm(0.74)
-            p.paragraph_format.line_spacing = 1.5
+            run.font.color.rgb = RGBColor(0x30, 0x31, 0x33)
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(4)
+            continue
 
-    # ---- 第一部分: 发言分段 ----
-    if segmented_text and segmented_text.strip():
-        h1 = doc.add_paragraph()
-        run = h1.add_run('一、发言分段原文')
-        run.bold = True
-        run.font.size = Pt(16)
-        run.font.name = 'SimHei'
-        run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
-        run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
-        h1.paragraph_format.space_before = Pt(18)
-        h1.paragraph_format.space_after = Pt(8)
-        _add_markdown_content(segmented_text, doc)
+        # 列表项
+        if re.match(r'^[-*]\s', stripped) or re.match(r'^\d+[\.\、]\s', stripped):
+            text_clean = re.sub(r'^[-*]\s*|^\d+[\.\、]\s*', '', stripped)
+            text_clean = _strip_markdown(text_clean)
+            p = doc.add_paragraph(style='List Bullet')
+            run = p.add_run(text_clean)
+            run.font.size = Pt(11)
+            run.font.name = 'SimSun'
+            run.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            continue
 
-    # ---- 第二部分: 清洁版 ----
-    if clean_text and clean_text.strip():
-        h1 = doc.add_paragraph()
-        run = h1.add_run('二、清洁版')
-        run.bold = True
-        run.font.size = Pt(16)
-        run.font.name = 'SimHei'
-        run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
-        run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
-        h1.paragraph_format.space_before = Pt(18)
-        h1.paragraph_format.space_after = Pt(8)
-        _add_markdown_content(clean_text, doc)
+        # 普通段落
+        text_clean = _strip_markdown(stripped)
+        p = doc.add_paragraph()
+        run = p.add_run(text_clean)
+        run.font.size = Pt(12)
+        run.font.name = 'SimSun'
+        run.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        p.paragraph_format.first_line_indent = Cm(0.74)
+        p.paragraph_format.line_spacing = 1.5
 
-    # ---- 第三部分: 摘要版 ----
-    if summary_text and summary_text.strip():
-        h1 = doc.add_paragraph()
-        run = h1.add_run('三、摘要版')
-        run.bold = True
-        run.font.size = Pt(16)
-        run.font.name = 'SimHei'
-        run.element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
-        run.font.color.rgb = RGBColor(0x1a, 0x3a, 0x5c)
-        h1.paragraph_format.space_before = Pt(18)
-        h1.paragraph_format.space_after = Pt(8)
-        _add_markdown_content(summary_text, doc)
 
-    # ---- 页脚 ----
+def _add_footer(doc):
+    """页脚"""
     doc.add_paragraph()
     footer = doc.add_paragraph()
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -247,6 +215,90 @@ def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_te
     run.font.color.rgb = RGBColor(0x90, 0x93, 0x99)
     run.italic = True
 
+
+def _version_text(activity, version):
+    """取某版本文本（含旧字段回退）"""
+    if version == 'segmented':
+        return activity.audio_transcript_segmented or activity.audio_transcript or ''
+    if version == 'clean':
+        return activity.audio_transcript_clean or ''
+    if version == 'summary':
+        return activity.audio_summary_structured or activity.audio_summary or ''
+    return ''
+
+
+def generate_meeting_word(activity, versions, title='活动台账 会议录音总结'):
+    """按选中版本生成 Word 文档（用户导出时选择，与 PDF 导出对等）。
+
+    Args:
+        activity: ActivityLedger / InvestmentActivity 实例
+        versions: ['segmented', 'clean', 'summary'] 子集
+        title: 文档大标题
+
+    Returns:
+        tuple: (static_url 相对路径如 '/static/meetings/xxx.docx', file_path 绝对路径)
+    """
+    out_dir = _ensure_dir()
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_name = re.sub(r'[\\/:*?"<>|]', '_', (activity.content or '活动台账')[:30])
+    file_name = f'{safe_name}_会议总结_{timestamp}.docx'
+    file_path = os.path.join(out_dir, file_name)
+
+    doc = Document()
+    _build_cover(doc, activity, title)
+
+    for v in versions:
+        if v not in VERSIONS:
+            continue
+        text = _version_text(activity, v)
+        if text and text.strip():
+            _add_section_title(doc, VERSIONS[v]['section_title'])
+            _add_markdown_content(doc, text)
+
+    _add_footer(doc)
+    doc.save(file_path)
+
+    static_url = f'/static/meetings/{file_name}'
+    return static_url, file_path
+
+
+def generate_meeting_docx(activity, segmented_text='', clean_text='', summary_text=''):
+    """为活动台账生成三件套 docx: 发言分段 + 清洁版 + 摘要版（总结完成后自动存档）。
+
+    Args:
+        activity: ActivityLedger 实例
+        segmented_text: 分段后原文
+        clean_text: 清洁版文本
+        summary_text: 摘要版文本
+
+    Returns:
+        tuple: (static_url 相对路径如 '/static/meetings/xxx.docx', file_path 绝对路径)
+    """
+    out_dir = _ensure_dir()
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_name = re.sub(r'[\\/:*?"<>|]', '_', (activity.content or '活动台账')[:30])
+    file_name = f'{safe_name}_会议总结_{timestamp}.docx'
+    file_path = os.path.join(out_dir, file_name)
+
+    doc = Document()
+    _build_cover(doc, activity, '活动台账 会议录音总结')
+
+    # ---- 第一部分: 发言分段 ----
+    if segmented_text and segmented_text.strip():
+        _add_section_title(doc, '一、发言分段原文')
+        _add_markdown_content(doc, segmented_text)
+
+    # ---- 第二部分: 清洁版 ----
+    if clean_text and clean_text.strip():
+        _add_section_title(doc, '二、清洁版')
+        _add_markdown_content(doc, clean_text)
+
+    # ---- 第三部分: 摘要版 ----
+    if summary_text and summary_text.strip():
+        _add_section_title(doc, '三、摘要版')
+        _add_markdown_content(doc, summary_text)
+
+    _add_footer(doc)
     doc.save(file_path)
 
     static_url = f'/static/meetings/{file_name}'

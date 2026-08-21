@@ -200,9 +200,18 @@
                       <el-button size="small" type="primary" plain @click="handleViewCopyCurrent">
                         <el-icon><CopyDocument /></el-icon> 一键复制
                       </el-button>
-                      <el-button size="small" type="success" plain @click="handleViewExportPdf">
-                        <el-icon><Document /></el-icon> 导出 PDF
-                      </el-button>
+                      <el-dropdown trigger="click" @command="openViewExportDialog">
+                        <el-button size="small" type="success" plain>
+                          <el-icon><Document /></el-icon> 导出
+                          <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item command="pdf">导出 PDF</el-dropdown-item>
+                            <el-dropdown-item command="word">导出 Word</el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
                     </div>
                   </div>
                   <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
@@ -450,9 +459,18 @@
                         <el-button size="small" type="primary" plain @click="handleCopyCurrentVersion">
                           <el-icon><CopyDocument /></el-icon> 一键复制
                         </el-button>
-                        <el-button size="small" type="success" plain @click="handleExportPdf">
-                          <el-icon><Document /></el-icon> 导出 PDF
-                        </el-button>
+                        <el-dropdown trigger="click" @command="openExportDialog">
+                          <el-button size="small" type="success" plain>
+                            <el-icon><Document /></el-icon> 导出
+                            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                          </el-button>
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item command="pdf">导出 PDF</el-dropdown-item>
+                              <el-dropdown-item command="word">导出 Word</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
                       </div>
                     </div>
                     <el-tabs v-model="audioActiveTab" class="audio-version-tabs">
@@ -508,9 +526,18 @@
                   <el-button size="small" plain @click="openTermDrawer">
                     <el-icon><Edit /></el-icon> 术语管理
                   </el-button>
-                  <el-button size="small" type="success" plain @click="handleExportPdf">
-                    <el-icon><Document /></el-icon> 导出 PDF
-                  </el-button>
+                  <el-dropdown trigger="click" @command="openExportDialog">
+                    <el-button size="small" type="success" plain>
+                      <el-icon><Document /></el-icon> 导出
+                      <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="pdf">导出 PDF</el-dropdown-item>
+                        <el-dropdown-item command="word">导出 Word</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                 </div>
               </div>
             </el-form-item>
@@ -591,10 +618,10 @@
       </div>
     </el-drawer>
 
-    <!-- 导出 PDF 版本选择弹窗 -->
-    <el-dialog v-model="pdfExportDialogVisible" title="导出 PDF" width="420px">
+    <!-- 导出版本选择弹窗（PDF / Word） -->
+    <el-dialog v-model="pdfExportDialogVisible" :title="'导出 ' + (pdfExportType === 'word' ? 'Word' : 'PDF')" width="420px">
       <div class="pdf-export-dialog">
-        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个 PDF）：</p>
+        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个文件）：</p>
         <el-checkbox-group v-model="pdfExportVersions">
           <el-checkbox label="segmented">分段原文</el-checkbox>
           <el-checkbox label="clean">清洁版</el-checkbox>
@@ -607,10 +634,10 @@
       </template>
     </el-dialog>
 
-    <!-- 查看抽屉 PDF 导出版本选择弹窗 -->
-    <el-dialog v-model="viewPdfDialogVisible" title="导出 PDF" width="420px">
+    <!-- 查看抽屉导出版本选择弹窗（PDF / Word） -->
+    <el-dialog v-model="viewPdfDialogVisible" :title="'导出 ' + (viewExportType === 'word' ? 'Word' : 'PDF')" width="420px">
       <div class="pdf-export-dialog">
-        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个 PDF）：</p>
+        <p class="pdf-export-tip">选择要导出的版本（可多选，合并为一个文件）：</p>
         <el-checkbox-group v-model="viewPdfVersions">
           <el-checkbox label="segmented">分段原文</el-checkbox>
           <el-checkbox label="clean">清洁版</el-checkbox>
@@ -629,11 +656,11 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture, CopyDocument } from '@element-plus/icons-vue'
+import { Search, Document, Plus, Delete, UploadFilled, InfoFilled, PriceTag, Connection, View, Close, Edit, Headset, Loading, WarningFilled, Star, RefreshRight, Download, Picture, CopyDocument, ArrowDown } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import ProjectDrawer from '@/components/investment/ProjectDrawer.vue'
 import { useAudioRecording } from '@/composables/useAudioRecording'
-import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, linkToConstruction, unlinkFromConstruction, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels, exportAudioPdf } from '@/api/activityLedger'
+import { getLedgerList, createLedger, updateLedger, getLedger, deleteLedger, batchDeleteLedger, linkToProject, unlinkFromProject, linkToConstruction, unlinkFromConstruction, uploadAudio, getAudioDetail, deleteAudio, deleteAudioFile, updateAudioTranscript, retryAudioRecognition, retryAudioSummary, getAudioVersions, getAudioDocxUrl, getTermCorrections, createTermCorrection, updateTermCorrection, deleteTermCorrection, applyTermCorrections, cancelAudioProcessing, getLLMModels, exportAudioPdf, exportAudioWord } from '@/api/activityLedger'
 import { getProjects as getConstructionProjects } from '@/api/construction'
 import { getPublicProjectsLite, getProject } from '@/api/investment'
 import { getDictItems } from '@/api/dict'
@@ -893,12 +920,14 @@ async function handleViewCopyCurrent() {
   }
 }
 
-// ---- 查看抽屉：导出 PDF ----
+// ---- 查看抽屉：导出（PDF / Word，弹窗多选版本） ----
 const viewPdfDialogVisible = ref(false)
 const viewPdfVersions = ref(['summary'])
 const viewPdfLoading = ref(false)
+const viewExportType = ref('pdf')
 
-function handleViewExportPdf() {
+function openViewExportDialog(type) {
+  viewExportType.value = type
   viewPdfVersions.value = ['summary']
   viewPdfDialogVisible.value = true
 }
@@ -915,16 +944,17 @@ async function confirmViewExportPdf() {
   }
   viewPdfLoading.value = true
   try {
-    const res = await exportAudioPdf(item.id, viewPdfVersions.value)
+    const apiFn = viewExportType.value === 'word' ? exportAudioWord : exportAudioPdf
+    const res = await apiFn(item.id, viewPdfVersions.value)
     if (res.code === 0) {
       window.open(res.data.url, '_blank')
-      ElMessage.success('PDF 已生成')
+      ElMessage.success(viewExportType.value === 'word' ? 'Word 已生成' : 'PDF 已生成')
       viewPdfDialogVisible.value = false
     } else {
       ElMessage.error(res.message || '导出失败')
     }
   } catch (err) {
-    ElMessage.error(err.message || '导出 PDF 失败')
+    ElMessage.error(err.message || '导出失败')
   } finally {
     viewPdfLoading.value = false
   }
@@ -1155,12 +1185,14 @@ async function handleCopyCurrentVersion() {
   }
 }
 
-// ---- 导出 PDF（弹窗多选版本） ----
+// ---- 导出（PDF / Word，弹窗多选版本） ----
 const pdfExportDialogVisible = ref(false)
 const pdfExportVersions = ref(['summary'])
 const pdfExportLoading = ref(false)
+const pdfExportType = ref('pdf')
 
-function handleExportPdf() {
+function openExportDialog(type) {
+  pdfExportType.value = type
   pdfExportVersions.value = ['summary']
   pdfExportDialogVisible.value = true
 }
@@ -1176,17 +1208,18 @@ async function confirmExportPdf() {
   }
   pdfExportLoading.value = true
   try {
-    const res = await exportAudioPdf(editingId.value, pdfExportVersions.value)
+    const apiFn = pdfExportType.value === 'word' ? exportAudioWord : exportAudioPdf
+    const res = await apiFn(editingId.value, pdfExportVersions.value)
     if (res.code === 0) {
-      // 新标签页打开 PDF
+      // 新标签页打开
       window.open(res.data.url, '_blank')
-      ElMessage.success('PDF 已生成')
+      ElMessage.success(pdfExportType.value === 'word' ? 'Word 已生成' : 'PDF 已生成')
       pdfExportDialogVisible.value = false
     } else {
       ElMessage.error(res.message || '导出失败')
     }
   } catch (err) {
-    ElMessage.error(err.message || '导出 PDF 失败')
+    ElMessage.error(err.message || '导出失败')
   } finally {
     pdfExportLoading.value = false
   }

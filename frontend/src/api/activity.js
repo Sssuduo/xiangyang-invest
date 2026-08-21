@@ -88,6 +88,11 @@ export function exportActivityAudioPdf(id, versions) {
   return api.post(`/admin/activity/${id}/audio/pdf`, { versions })
 }
 
+// 导出招商动态录音总结 Word（多版本合并）
+export function exportActivityAudioWord(id, versions) {
+  return api.post(`/admin/activity/${id}/audio/word`, { versions })
+}
+
 export function getLLMModels() {
   // LLM 模型列表（对齐 activityLedger.js:82，共用 /llm-models）
   return api.get('/llm-models')

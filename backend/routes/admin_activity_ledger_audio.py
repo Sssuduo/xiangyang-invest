@@ -450,3 +450,29 @@ def export_audio_pdf(item_id):
     except Exception as e:
         logger.error(f'PDF 导出失败: {e}', exc_info=True)
         return jsonify({'code': 1, 'message': f'PDF 导出失败：{str(e)[:200]}'}), 500
+
+
+@admin_activity_ledger_audio_bp.route('/activity-ledger/<int:item_id>/audio/word', methods=['POST'])
+@dual_login_required
+@visitor_block
+def export_audio_word(item_id):
+    """导出录音总结 Word（支持多版本合并：分段原文/清洁版/摘要版）"""
+    item = ActivityLedger.query.filter_by(id=item_id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    versions = data.get('versions') or ['summary']
+    valid = [v for v in versions if v in ('segmented', 'clean', 'summary')]
+    if not valid:
+        return jsonify({'code': 1, 'message': '请至少选择一个版本'}), 400
+
+    try:
+        from services.meeting_document import generate_meeting_word
+
+        docx_url, docx_path = generate_meeting_word(item, valid)
+        return jsonify({'code': 0, 'data': {
+            'url': docx_url,
+            'name': os.path.basename(docx_path),
+            'size': os.path.getsize(docx_path) if os.path.exists(docx_path) else 0,
+        }})
+    except Exception as e:
+        logger.error(f'Word 导出失败: {e}', exc_info=True)
+        return jsonify({'code': 1, 'message': f'Word 导出失败：{str(e)[:200]}'}), 500

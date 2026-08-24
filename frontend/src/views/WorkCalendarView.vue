@@ -443,15 +443,16 @@ function openEditor(data, eventId = null) {
   
   // 计算编辑器位置（在选择区域旁边弹出）
   nextTick(() => {
+    // $el 可能是组件代理而非 DOM 元素，先做 Element 判定，失败则按窗口居中兜底
     const calendarEl = calendarRef.value?.$el
-    if (calendarEl) {
+    let left = window.innerWidth / 2 - 210
+    let top = 100
+    if (calendarEl instanceof Element) {
       const rect = calendarEl.getBoundingClientRect()
-      // 居中显示
-      selectionRect.value = {
-        left: rect.left + rect.width / 2 - 200,
-        top: rect.top + 100
-      }
+      left = rect.left + rect.width / 2 - 200
+      top = rect.top + 100
     }
+    selectionRect.value = { left, top }
   })
 }
 

@@ -50,10 +50,21 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <!-- 工作台账管理 一级菜单 — 仅登录后可见（在建项目库右侧，AI 工具箱左侧） -->
-        <router-link v-if="businessAuth.isLoggedIn" to="/investment-activity-ledger" class="nav-item" active-class="active-item">工作台账管理</router-link>
-        <!-- 揭榜挂帅 下拉菜单 — 仅登录后可见 -->
+        <!-- 工作台账管理 下拉菜单（一级菜单；下设[工作大事记][工作日历]两个二级菜单）— 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
+          <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isLedgerRoute }">
+            工作台账管理
+            <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="/investment-activity-ledger">工作大事记</el-dropdown-item>
+              <el-dropdown-item command="/work-calendar">工作日历</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <!-- 揭榜挂帅 下拉菜单 — 已屏蔽 -->
+        <!-- <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isBiddingRoute }">
             揭榜挂帅
             <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
@@ -65,7 +76,7 @@
               <el-dropdown-item command="/bidding-portal">对外门户（揭榜方）</el-dropdown-item>
             </el-dropdown-menu>
           </template>
-        </el-dropdown>
+        </el-dropdown> -->
         <!-- AI 工具箱 下拉菜单 — 仅登录后可见 -->
         <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isToolboxRoute }">
@@ -234,7 +245,9 @@ function openMessageCenter() {
 const isInvestmentRoute = computed(() => route.path.startsWith('/investment'))
 const isConstructionRoute = computed(() => route.path.startsWith('/construction'))
 const isToolboxRoute = computed(() => route.path.startsWith('/lead') || route.path.startsWith('/knowledge') || route.path.startsWith('/official-doc'))
-const isBiddingRoute = computed(() => route.path.startsWith('/bidding') && !route.path.startsWith('/bidding-portal'))
+// 工作台账管理（一级菜单）：工作大事记 + 工作日历
+const isLedgerRoute = computed(() => route.path.startsWith('/investment-activity-ledger') || route.path.startsWith('/work-calendar'))
+// const isBiddingRoute = computed(() => route.path.startsWith('/bidding') && !route.path.startsWith('/bidding-portal')) // 已屏蔽揭榜挂帅菜单
 const isPromoRoute = computed(() => route.path.startsWith('/intro') || route.path.startsWith('/promo-video'))
 
 function handleCommand(path) {

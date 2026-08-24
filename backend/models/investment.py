@@ -1,7 +1,19 @@
 """招商业务模型：项目 / 线索 / 诉求 / 动态 / 台账 / 研判"""
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from extensions import db
+
+# 业务时区（东八区，无夏令时）：存储统一 UTC，对外展示转本地时间
+_LOCAL_TZ = timezone(timedelta(hours=8))
+
+
+def _to_local_str(dt):
+    """UTC datetime → 东八区字符串；naive 视为 UTC。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
 class InvestmentProject(db.Model):
@@ -414,3 +426,55 @@ class ActivityLedger(db.Model):
         d['audio_docx_path'] = self.audio_docx_path
         d['audio_docx_size'] = self.audio_docx_size
         return d
+
+
+class WorkCalendarEntry(db.Model):
+    """工作日历条目（工作留痕）"""
+    __tablename__ = 'work_calendar_entries'
+
+    # 列表/导出高频按 (user_id, start_datetime) 过滤，建复合索引
+    __table_args__ = (
+        db.Index('ix_work_calendar_user_start', 'user_id', 'start_datetime'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('business_users.id'), nullable=False, index=True)
+    
+    # 时间范围
+    start_datetime = db.Column(db.DateTime, nullable=False, index=True)
+    end_datetime = db.Column(db.DateTime, nullable=False)
+    
+    # 工作时段标识
+    time_period = db.Column(db.String(10), nullable=True)  # 'morning' | 'afternoon' | 'custom'
+    
+    # 工作内容
+    work_item = db.Column(db.String(200), nullable=False)  # 工作事项（标题）
+    work_content = db.Column(db.Text, nullable=True)       # 工作内容详情
+    participants = db.Column(db.Text, default='[]')        # JSON数组：参加人员姓名列表
+    
+    # 附件
+    attachments = db.Column(db.Text, default='[]')         # JSON数组：[{url, name, size}, ...]
+    
+    # 元数据
+    created_by = db.Column(db.Integer, db.ForeignKey('business_users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = db.relationship('BusinessUser', foreign_keys=[user_id])
+    creator = db.relationship('BusinessUser', foreign_keys=[created_by])
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'start_datetime': self.start_datetime.isoformat() if self.start_datetime else None,
+            'end_datetime': self.end_datetime.isoformat() if self.end_datetime else None,
+            'time_period': self.time_period,
+            'work_item': self.work_item,
+            'work_content': self.work_content,
+            'participants': json.loads(self.participants) if self.participants else [],
+            'attachments': json.loads(self.attachments) if self.attachments else [],
+            'created_by': self.created_by,
+            'created_at': _to_local_str(self.created_at),
+            'updated_at': _to_local_str(self.updated_at)
+        }

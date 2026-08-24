@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import request, jsonify, session
+from flask import request, jsonify, session, g
 from models import BusinessUser
 from extensions import db
 from routes import business_auth_bp
@@ -16,6 +16,7 @@ def business_login_required(f):
         if not user or not user.is_active:
             session.pop('business_user_id', None)
             return jsonify({'code': 1, 'message': '用户不存在或已禁用'}), 401
+        g.user = user  # 供路由内使用（如按 user_id 做数据隔离）
         return f(*args, **kwargs)
     return decorated
 

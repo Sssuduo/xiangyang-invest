@@ -115,8 +115,26 @@ def _run_auto_migrations(app):
         # 后续如有新增字段，在此追加即可
     }
 
+    # 需要自动创建的表列表（如果不存在）
+    AUTO_CREATE_TABLES = [
+        'work_calendar_entries',
+    ]
+
     with app.app_context():
         inspector = inspect(_db.engine)
+        
+        # 先创建缺失的表
+        for table_name in AUTO_CREATE_TABLES:
+            if not inspector.has_table(table_name):
+                try:
+                    # 使用 db.create_all() 只创建该表
+                    from models.investment import WorkCalendarEntry
+                    WorkCalendarEntry.__table__.create(_db.engine, checkfirst=True)
+                    app.logger.info(f'[自动迁移] 已创建新表 {table_name}')
+                except Exception as exc:
+                    app.logger.warning(f'[自动迁移] 创建表失败 ({table_name}): {exc}')
+        
+        # 再检查已有表的缺失列
         for table_name, cols in MIGRATIONS.items():
             try:
                 existing_cols = {c['name'] for c in inspector.get_columns(table_name)}

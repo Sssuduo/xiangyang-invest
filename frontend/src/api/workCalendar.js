@@ -9,7 +9,8 @@ export const workCalendarApi = {
    * @param {Object} params - { start: ISO日期字符串, end: ISO日期字符串 }
    */
   getList(params) {
-    return request.get('/api/work-calendar', { params })
+    // 注意：axios 实例 baseURL 为 '/api'，此处用相对路径，避免拼成 /api/api/...
+    return request.get('/work-calendar', { params })
   },
 
   /**
@@ -17,7 +18,7 @@ export const workCalendarApi = {
    * @param {Object} data - 工作日历数据
    */
   create(data) {
-    return request.post('/api/work-calendar', data)
+    return request.post('/work-calendar', data)
   },
 
   /**
@@ -26,7 +27,7 @@ export const workCalendarApi = {
    * @param {Object} data - 更新数据
    */
   update(id, data) {
-    return request.put(`/api/work-calendar/${id}`, data)
+    return request.put(`/work-calendar/${id}`, data)
   },
 
   /**
@@ -34,7 +35,7 @@ export const workCalendarApi = {
    * @param {Number} id - 条目ID
    */
   delete(id) {
-    return request.delete(`/api/work-calendar/${id}`)
+    return request.delete(`/work-calendar/${id}`)
   },
 
   /**

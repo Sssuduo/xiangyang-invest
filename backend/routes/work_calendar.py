@@ -256,6 +256,12 @@ def export_word():
     except ValueError:
         return jsonify({'code': 400, 'message': '日期格式错误'}), 400
 
+    # 导出字段过滤：fields 可选（time/work_content/participants/attachments），缺省/空 = 全输出
+    EXPORT_FIELDS = {'time', 'work_content', 'participants', 'attachments'}
+    fields = set(data.get('fields') or []) & EXPORT_FIELDS
+    if not fields:
+        fields = set(EXPORT_FIELDS)
+
     # 重叠语义查询该时间段内有交集的条目
     entries = WorkCalendarEntry.query.filter(
         WorkCalendarEntry.user_id == g.user.id,
@@ -307,69 +313,73 @@ def export_word():
             _para(doc, f'{idx + 1}. {entry.work_item}', size=14, bold=True)
 
             # 时间（东八区）
-            start_local = _to_local(entry.start_datetime)
-            end_local = _to_local(entry.end_datetime)
-            time_str = f"{start_local.strftime('%H:%M')} - {end_local.strftime('%H:%M')}"
-            period_label = {'morning': '(上午)', 'afternoon': '(下午)'}.get(entry.time_period, '')
-            time_para = doc.add_paragraph()
-            _fmt(time_para.add_run('工作时段：'), size=11, bold=True)
-            _fmt(time_para.add_run(f"{time_str} {period_label}"), size=11)
+            if 'time' in fields:
+                start_local = _to_local(entry.start_datetime)
+                end_local = _to_local(entry.end_datetime)
+                time_str = f"{start_local.strftime('%H:%M')} - {end_local.strftime('%H:%M')}"
+                period_label = {'morning': '(上午)', 'afternoon': '(下午)'}.get(entry.time_period, '')
+                time_para = doc.add_paragraph()
+                _fmt(time_para.add_run('工作时段：'), size=11, bold=True)
+                _fmt(time_para.add_run(f"{time_str} {period_label}"), size=11)
 
             # 工作内容
-            content_para = doc.add_paragraph()
-            _fmt(content_para.add_run('工作内容：'), size=11, bold=True)
-            _fmt(content_para.add_run(entry.work_content or '无'), size=11)
+            if 'work_content' in fields:
+                content_para = doc.add_paragraph()
+                _fmt(content_para.add_run('工作内容：'), size=11, bold=True)
+                _fmt(content_para.add_run(entry.work_content or '无'), size=11)
 
             # 参加人员
-            participants = json.loads(entry.participants) if entry.participants else []
-            participants_para = doc.add_paragraph()
-            _fmt(participants_para.add_run('参加人员：'), size=11, bold=True)
-            _fmt(participants_para.add_run('、'.join(participants) if participants else '无'), size=11)
+            if 'participants' in fields:
+                participants = json.loads(entry.participants) if entry.participants else []
+                participants_para = doc.add_paragraph()
+                _fmt(participants_para.add_run('参加人员：'), size=11, bold=True)
+                _fmt(participants_para.add_run('、'.join(participants) if participants else '无'), size=11)
 
             # 附件（仅嵌入本站图片附件，外部链接只列文件名不下载）
-            attachments = json.loads(entry.attachments) if entry.attachments else []
-            image_attachments = [att for att in attachments if _is_image(att.get('url', ''))]
+            if 'attachments' in fields:
+                attachments = json.loads(entry.attachments) if entry.attachments else []
+                image_attachments = [att for att in attachments if _is_image(att.get('url', ''))]
 
-            attachments_para = doc.add_paragraph()
-            _fmt(attachments_para.add_run('附件：'), size=11, bold=True)
+                attachments_para = doc.add_paragraph()
+                _fmt(attachments_para.add_run('附件：'), size=11, bold=True)
 
-            if image_attachments:
-                _fmt(attachments_para.add_run(f'共 {len(image_attachments)} 张图片（已嵌入文档）'), size=11)
+                if image_attachments:
+                    _fmt(attachments_para.add_run(f'共 {len(image_attachments)} 张图片（已嵌入文档）'), size=11)
 
-                # 嵌入每张图片（仅读取本站 uploads 目录内文件）
-                for att in image_attachments:
-                    url = att.get('url', '')
-                    name = att.get('name', '图片')
-                    local_path = _resolve_local_image(url)
-                    try:
-                        if not local_path or not os.path.isfile(local_path):
-                            raise OSError('附件不在本站上传目录或文件不存在')
-                        if os.path.getsize(local_path) > MAX_IMAGE_BYTES:
-                            raise OSError('图片超过 10MB，已跳过')
-                        with open(local_path, 'rb') as f:
-                            image_data = f.read()
-                        if not image_data:
-                            raise OSError('图片内容为空')
+                    # 嵌入每张图片（仅读取本站 uploads 目录内文件）
+                    for att in image_attachments:
+                        url = att.get('url', '')
+                        name = att.get('name', '图片')
+                        local_path = _resolve_local_image(url)
+                        try:
+                            if not local_path or not os.path.isfile(local_path):
+                                raise OSError('附件不在本站上传目录或文件不存在')
+                            if os.path.getsize(local_path) > MAX_IMAGE_BYTES:
+                                raise OSError('图片超过 10MB，已跳过')
+                            with open(local_path, 'rb') as f:
+                                image_data = f.read()
+                            if not image_data:
+                                raise OSError('图片内容为空')
 
-                        doc.add_picture(io.BytesIO(image_data), width=Inches(4))
+                            doc.add_picture(io.BytesIO(image_data), width=Inches(4))
 
-                        caption_para = doc.add_paragraph()
-                        caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        _fmt(caption_para.add_run(f'图：{name}'), size=9,
-                             color=RGBColor(0x80, 0x80, 0x80))
-                    except Exception as e:
-                        current_app.logger.warning('加载图片失败: %s, 错误: %s', url, e)
-                        error_para = doc.add_paragraph()
-                        error_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        _fmt(error_para.add_run(f'[图片加载失败: {name}]'), size=9,
-                             color=RGBColor(0x80, 0x80, 0x80))
-            elif attachments:
-                # 有附件但没有本站图片
-                non_image_names = [att.get('name', '附件') for att in attachments
-                                   if not _is_image(att.get('url', ''))]
-                _fmt(attachments_para.add_run(f'非图片附件：{", ".join(non_image_names)}（未嵌入）'), size=11)
-            else:
-                _fmt(attachments_para.add_run('无'), size=11)
+                            caption_para = doc.add_paragraph()
+                            caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            _fmt(caption_para.add_run(f'图：{name}'), size=9,
+                                 color=RGBColor(0x80, 0x80, 0x80))
+                        except Exception as e:
+                            current_app.logger.warning('加载图片失败: %s, 错误: %s', url, e)
+                            error_para = doc.add_paragraph()
+                            error_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            _fmt(error_para.add_run(f'[图片加载失败: {name}]'), size=9,
+                                 color=RGBColor(0x80, 0x80, 0x80))
+                elif attachments:
+                    # 有附件但没有本站图片
+                    non_image_names = [att.get('name', '附件') for att in attachments
+                                       if not _is_image(att.get('url', ''))]
+                    _fmt(attachments_para.add_run(f'非图片附件：{", ".join(non_image_names)}（未嵌入）'), size=11)
+                else:
+                    _fmt(attachments_para.add_run('无'), size=11)
 
             # 记录之间的分隔线
             doc.add_paragraph('─' * 40)

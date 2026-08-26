@@ -121,31 +121,24 @@
         <div
           v-if="showInlineEditor"
           class="inline-editor-overlay"
-          @click.self="closeEditor"
+          @click.self="handleCloseEditor"
         >
           <div class="inline-editor-card" :style="editorPosition" @mousedown.stop>
             <div class="editor-header">
               <span class="editor-title">{{ isEditing ? '编辑工作记录' : '新建工作记录' }}</span>
-              <el-icon class="close-btn" @click="closeEditor"><Close /></el-icon>
+              <el-icon class="close-btn" @click="handleCloseEditor"><Close /></el-icon>
             </div>
 
             <el-form :model="formData" label-position="top" size="small" class="editor-form">
               <el-form-item label="工作日期">
+                <!-- 单日期：不跨天，直接展示选中格子的日期 -->
                 <el-date-picker
                   v-model="formData.start_date"
                   type="date"
                   value-format="YYYY-MM-DD"
-                  placeholder="开始日期"
-                  style="width: 48%; margin-right: 4px;"
-                  @change="onStartDateChange"
-                />
-                <el-date-picker
-                  v-model="formData.end_date"
-                  type="date"
-                  value-format="YYYY-MM-DD"
-                  placeholder="结束日期"
-                  style="width: 48%;"
-                  @change="onEndDateChange"
+                  placeholder="选择日期"
+                  style="width: 100%"
+                  @change="onWorkDateChange"
                 />
               </el-form-item>
 
@@ -153,22 +146,26 @@
                 <div class="time-range-display">
                   {{ formatTimeRange(formData.start_datetime, formData.end_datetime) }}
                 </div>
-                <el-time-picker
-                  v-model="formData.start_time"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  placeholder="开始时间"
-                  style="width: 48%; margin-right: 4px;"
-                  @change="onStartTimeChange"
-                />
-                <el-time-picker
-                  v-model="formData.end_time"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  placeholder="结束时间"
-                  style="width: 48%;"
-                  @change="onEndTimeChange"
-                />
+                <!-- 两个时间编辑框在同一行 -->
+                <div class="time-range-row">
+                  <el-time-picker
+                    v-model="formData.start_time"
+                    format="HH:mm"
+                    value-format="HH:mm"
+                    placeholder="开始时间"
+                    class="time-picker-item"
+                    @change="onStartTimeChange"
+                  />
+                  <span class="time-range-sep">至</span>
+                  <el-time-picker
+                    v-model="formData.end_time"
+                    format="HH:mm"
+                    value-format="HH:mm"
+                    placeholder="结束时间"
+                    class="time-picker-item"
+                    @change="onEndTimeChange"
+                  />
+                </div>
               </el-form-item>
 
               <el-form-item label="工作事项" required>
@@ -213,49 +210,52 @@
               </el-form-item>
 
               <el-form-item label="附件">
-                <!-- 上传区 + Ctrl+V 粘贴（复用工作大事记抽屉的交互） -->
-                <div class="upload-wrapper" @paste="handleClipboardPaste">
-                  <el-upload
-                    :action="uploadUrl"
-                    :on-success="handleUploadSuccess"
-                    :on-error="handleUploadError"
-                    :show-file-list="false"
-                    multiple
-                    drag
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
-                  >
-                    <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                    <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
-                  </el-upload>
-                  <!-- 文件缩略图网格 -->
-                  <div v-if="fileList.length > 0" class="file-thumbnail-grid">
-                    <div v-for="(file, idx) in fileList" :key="file.uid || idx" class="file-thumb-card">
-                      <div class="thumb-preview">
-                        <el-image
-                          v-if="isImageFile(file)"
-                          :src="getFilePreviewUrl(file)"
-                          :preview-src-list="fileList.filter(isImageFile).map(getFilePreviewUrl)"
-                          :initial-index="fileList.filter(isImageFile).indexOf(file)"
-                          fit="cover"
-                          class="thumb-img"
-                          preview-teleported
-                        />
-                        <div v-else class="thumb-generic">
-                          <el-icon :size="28"><Document /></el-icon>
-                          <span>{{ getFileExt(file) }}</span>
+                <div class="attach-layout">
+                  <!-- 上传区（半宽半高、向左对齐）+ Ctrl+V 粘贴（复用工作大事记抽屉的交互） -->
+                  <div class="upload-wrapper" @paste="handleClipboardPaste">
+                    <el-upload
+                      :action="uploadUrl"
+                      :on-success="handleUploadSuccess"
+                      :on-error="handleUploadError"
+                      :show-file-list="false"
+                      multiple
+                      drag
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
+                    >
+                      <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                      <div class="el-upload__text">拖动文件到此处 或 <em>点击上传</em></div>
+                    </el-upload>
+                    <!-- 文件缩略图网格 -->
+                    <div v-if="fileList.length > 0" class="file-thumbnail-grid">
+                      <div v-for="(file, idx) in fileList" :key="file.uid || idx" class="file-thumb-card">
+                        <div class="thumb-preview">
+                          <el-image
+                            v-if="isImageFile(file)"
+                            :src="getFilePreviewUrl(file)"
+                            :preview-src-list="fileList.filter(isImageFile).map(getFilePreviewUrl)"
+                            :initial-index="fileList.filter(isImageFile).indexOf(file)"
+                            fit="cover"
+                            class="thumb-img"
+                            preview-teleported
+                          />
+                          <div v-else class="thumb-generic">
+                            <el-icon :size="28"><Document /></el-icon>
+                            <span>{{ getFileExt(file) }}</span>
+                          </div>
+                          <div class="thumb-remove" @click="handleThumbRemove(idx)">
+                            <el-icon><Close /></el-icon>
+                          </div>
                         </div>
-                        <div class="thumb-remove" @click="handleThumbRemove(idx)">
-                          <el-icon><Close /></el-icon>
-                        </div>
+                        <div class="thumb-name" :title="getFileName(file)">{{ getFileName(file) }}</div>
                       </div>
-                      <div class="thumb-name" :title="getFileName(file)">{{ getFileName(file) }}</div>
                     </div>
                   </div>
-                </div>
-                <div class="paste-zone" @paste="handleClipboardPaste" tabindex="0" title="点击此处后按 Ctrl+V 粘贴图片">
-                  <span class="paste-icon"><el-icon><Picture /></el-icon></span>
-                  <span class="paste-label">粘贴图片</span>
-                  <span class="paste-hint">点击此处 · 按 <kbd>Ctrl+V</kbd> 插入图片</span>
+                  <!-- 粘贴图片组件：放在右侧空出的区域，高度与附件框一致 -->
+                  <div class="paste-zone" @paste="handleClipboardPaste" tabindex="0" title="点击此处后按 Ctrl+V 粘贴图片">
+                    <span class="paste-icon"><el-icon><Picture /></el-icon></span>
+                    <span class="paste-label">粘贴图片</span>
+                    <span class="paste-hint">点击此处 · 按 <kbd>Ctrl+V</kbd> 插入图片</span>
+                  </div>
                 </div>
               </el-form-item>
             </el-form>
@@ -382,10 +382,21 @@ const calendarOptions = ref({
   slotMinTime: '08:30:00',
   slotMaxTime: '18:00:00',
   slotDuration: '00:30:00', // 30分钟一格
+  slotLabelInterval: '00:30:00', // 每半小时都标注
   allDaySlot: false,
   height: 'auto',
   contentHeight: 640,
   expandRows: true,
+
+  // 日列表头（纵列标题）：周视图显示 X月X日 周X（中间一个空格），月视图保持仅周几
+  dayHeaderContent: (arg) => {
+    const d = arg.date
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+    if (arg.view?.type === 'dayGridMonth') {
+      return `周${weekdays[d.getDay()]}`
+    }
+    return `${d.getMonth() + 1}月${d.getDate()}日 周${weekdays[d.getDay()]}`
+  },
 
   // 启用时间选择
   selectable: true,
@@ -393,21 +404,18 @@ const calendarOptions = ref({
 
   eventOverlap: true,
 
-  // 纵轴时间标签 + 午休段：完全由 slotLabelContent 输出
+  // 纵轴时间标签：完全由 slotLabelContent 输出
   // （不设 slotLabelFormat 字符串，core 6.1 ESM 下 cmdFormatter 为空会抛错）
   slotLabelContent: (arg) => {
     const d = arg.date
-    if (isRestSlot(d)) {
-      const span = document.createElement('span')
-      span.className = 'fc-rest-label'
-      span.textContent = '午休'
-      return { domNodes: [span] }
-    }
+    if (isRestSlot(d)) return '' // 午休段不展示文字（该行已压缩到一半高度）
     const h = d.getHours()
     const m = String(d.getMinutes()).padStart(2, '0')
     return `${h}:${m}`
   },
-  slotLaneClassNames: (arg) => (isRestSlot(arg.date) ? ['fc-rest-lane'] : []),
+  // 午休段：标签格 + 时间格同时打标，用于把对应 5 行压缩为一半高度
+  slotLabelClassNames: (arg) => (isRestSlot(arg.date) ? ['fc-rest-slot'] : []),
+  slotLaneClassNames: (arg) => (isRestSlot(arg.date) ? ['fc-rest-slot', 'fc-rest-lane'] : []),
 
   // 选择事件（拖拽选择时间段后触发）
   select: (info) => {
@@ -565,10 +573,10 @@ function updateDateLabel(dateInfo) {
   const end = new Date(dateInfo.end)
 
   if (currentView.value === 'timeGridWeek') {
-    const sameMonth = start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()
-    currentDateLabel.value = sameMonth
-      ? `${formatDate(start, 'YYYY年MM月DD日')} - ${end.getDate()}日`
-      : `${formatDate(start, 'YYYY年MM月DD日')} - ${formatDate(end, 'YYYY年MM月DD日')}`
+    // 周视图标题：2026-08-24 - 08-31日（结束只展示 月-日）
+    const mm = String(end.getMonth() + 1).padStart(2, '0')
+    const dd = String(end.getDate()).padStart(2, '0')
+    currentDateLabel.value = `${formatDate(start, 'YYYY-MM-DD')} - ${mm}-${dd}日`
   } else {
     currentDateLabel.value = `${start.getFullYear()}年${start.getMonth() + 1}月`
   }
@@ -605,8 +613,9 @@ function openEditor(data, eventId = null) {
     attachments: Array.isArray(data.attachments) ? data.attachments : [],
     start_datetime: data.start_datetime,
     end_datetime: data.end_datetime,
+    // 工作日期不跨天：统一以开始日期为准
     start_date: startDate && !isNaN(startDate) ? formatDate(startDate, 'YYYY-MM-DD') : '',
-    end_date: endDate && !isNaN(endDate) ? formatDate(endDate, 'YYYY-MM-DD') : '',
+    end_date: startDate && !isNaN(startDate) ? formatDate(startDate, 'YYYY-MM-DD') : '',
     start_time: data.start_time || '',
     end_time: data.end_time || '',
     time_period: data.time_period || ''
@@ -638,6 +647,38 @@ function closeEditor() {
   selectionRect.value = null
 }
 
+// 是否存在未保存内容
+function hasFormContent() {
+  const f = formData.value
+  return !!(
+    (f.work_item && f.work_item.trim()) ||
+    (f.work_content && f.work_content.trim()) ||
+    (Array.isArray(f.participants) && f.participants.length > 0) ||
+    fileList.value.length > 0 ||
+    f.start_date || f.start_time || f.end_time
+  )
+}
+
+// 点击 × / 遮罩 / Esc 关闭：有内容时先弹窗提示保存
+async function handleCloseEditor() {
+  if (!hasFormContent()) {
+    closeEditor()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('当前记录尚未保存，是否保存？', '提示', {
+      confirmButtonText: '保存',
+      cancelButtonText: '不保存',
+      type: 'warning',
+      distinguishCancelAndClose: true
+    })
+    await saveEntry() // 确认保存（校验失败时 saveEntry 内部提示且不关闭）
+  } catch (action) {
+    if (action === 'cancel') closeEditor() // 选择不保存 → 丢弃
+    // 点击弹窗右上角 X（'close'）→ 保持编辑
+  }
+}
+
 // 日期 + 时间 → UTC ISO（与后端/FullCalendar 的存储基准一致）
 function buildISODateTime(dateStr, timeStr) {
   if (!dateStr || !timeStr) return ''
@@ -652,13 +693,12 @@ function refreshTimePeriod() {
   }
 }
 
-function onStartDateChange(val) {
+function onWorkDateChange(val) {
+  formData.value.start_date = val
+  formData.value.end_date = val // 不跨天
   formData.value.start_datetime = buildISODateTime(val, formData.value.start_time)
-  refreshTimePeriod()
-}
-
-function onEndDateChange(val) {
   formData.value.end_datetime = buildISODateTime(val, formData.value.end_time)
+  refreshTimePeriod()
 }
 
 function onStartTimeChange(val) {
@@ -935,7 +975,7 @@ async function loadStaffList() {
 
 function onKeydown(e) {
   if (e.key === 'Escape' && showInlineEditor.value) {
-    closeEditor()
+    handleCloseEditor()
   }
 }
 
@@ -1020,16 +1060,46 @@ onUnmounted(() => {
   font-weight: 600;
   color: #2b3350;
   border: none;
+  text-align: center;
 }
 
 .work-calendar :deep(.fc-timegrid-slot) {
   height: 34px;
 }
 
+/* 午休段 5 行（12:00-14:00）：行高压缩为目前的一半 */
+.work-calendar :deep(.fc-timegrid-slot.fc-rest-slot) {
+  height: 17px !important;
+}
+
+/* 时间轴标签：骑在网格线上展示，每半小时一个 */
 .work-calendar :deep(.fc-timegrid-slot-label) {
   font-size: 11px;
   color: #8a93a8;
   font-variant-numeric: tabular-nums;
+}
+.work-calendar :deep(.fc-timegrid-slot-label-frame) {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;   /* 标签在单元格顶部，再上移一半即骑在网格线上 */
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+.work-calendar :deep(.fc-timegrid-slot-label-cushion) {
+  transform: translateY(-50%);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* 首个时间标签（08:30）避免骑出日历顶部 */
+.work-calendar :deep(.fc-timegrid-slot[data-time="08:30:00"] .fc-timegrid-slot-label-cushion) {
+  transform: none;
+}
+
+/* 第一列（时间轴）去掉格子边框与底色，只保留骑线的时间文字 */
+.work-calendar :deep(.fc-timegrid-slot-label) {
+  border: none !important;
+  background: transparent !important;
 }
 
 .work-calendar :deep(.fc-scrollgrid) {
@@ -1048,14 +1118,6 @@ onUnmounted(() => {
 }
 
 /* 午休段弱化 */
-.work-calendar :deep(.fc-rest-label) {
-  font-size: 10px;
-  color: #b3bacb;
-  letter-spacing: 1px;
-  display: inline-block;
-  writing-mode: vertical-lr;
-  padding: 4px 1px;
-}
 .work-calendar :deep(.fc-timegrid-slot-lane.fc-rest-lane) {
   background: repeating-linear-gradient(
     -45deg,
@@ -1273,9 +1335,25 @@ onUnmounted(() => {
   padding: 6px 10px;
 }
 
+/* 工作时段的两个时间编辑框放在同一行 */
+.time-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.time-picker-item {
+  flex: 1;
+  min-width: 0;
+}
+.time-range-sep {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #8a93a8;
+}
+
 .editor-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid #eceef6;
@@ -1283,9 +1361,40 @@ onUnmounted(() => {
   border-radius: 0 0 14px 14px;
 }
 
-/* ===== 附件：上传 + 粘贴 + 缩略图（复用工作大事记抽屉风格） ===== */
+/* ===== 附件：上传（半尺寸左对齐）+ 粘贴（右置等高）+ 缩略图 ===== */
+.attach-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
 .upload-wrapper {
+  width: 180px; /* 默认拖拽框 360px 宽，压缩为一半 */
+  flex-shrink: 0;
+}
+.upload-wrapper :deep(.el-upload),
+.upload-wrapper :deep(.el-upload-dragger) {
   width: 100%;
+}
+.upload-wrapper :deep(.el-upload-dragger) {
+  height: 90px; /* 默认拖拽框 180px 高，压缩为一半 */
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+.upload-wrapper :deep(.el-upload-dragger .el-icon--upload) {
+  font-size: 20px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+.upload-wrapper :deep(.el-upload-dragger .el-upload__text) {
+  font-size: 12px;
+  line-height: 1.3;
+  color: #6b7490;
 }
 
 .file-thumbnail-grid {
@@ -1358,11 +1467,12 @@ onUnmounted(() => {
 }
 
 .paste-zone {
+  flex: 1;
+  height: 90px; /* 与压缩后的附件框高度一致 */
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 6px 12px;
   border: 1.5px dashed #b9c3e8;
   border-radius: 10px;
   color: #5f6eb5;
@@ -1437,6 +1547,15 @@ onUnmounted(() => {
   }
   .toolbar-spacer {
     display: none;
+  }
+  .attach-layout {
+    flex-direction: column;
+  }
+  .upload-wrapper {
+    width: 100%;
+  }
+  .paste-zone {
+    width: 100%;
   }
 }
 </style>

@@ -69,6 +69,76 @@
 
       <!-- 图表区域 -->
       <div class="charts-grid">
+        <!-- 招商项目动态标签统计（到访接待 / 外出考察）：大数字 + 明细表格 -->
+        <div class="chart-panel chart-panel-full activity-tag-panel">
+          <div class="chart-panel-header">
+            <h3>招商项目动态标签统计</h3>
+            <span class="activity-total-hint">共 {{ investmentStats.activity_tags.total ?? 0 }} 条动态</span>
+          </div>
+
+          <!-- 大数字区 -->
+          <div class="activity-big-cards">
+            <div
+              v-for="g in investmentStats.activity_tags.groups"
+              :key="g.code"
+              class="activity-big-card"
+              :class="g.code === 'visit' ? 'is-visit' : 'is-outreach'"
+              :style="g.code === activityActiveCode ? { boxShadow: '0 6px 18px rgba(64,158,255,0.25)' } : {}"
+              @click="switchActivityTab(g.code)"
+            >
+              <div class="activity-big-icon">
+                <el-icon><OfficeBuilding v-if="g.code === 'visit'" /><Position v-else /></el-icon>
+              </div>
+              <div class="activity-big-body">
+                <div class="activity-big-value">{{ g.count }}</div>
+                <div class="activity-big-label">{{ g.label }}</div>
+                <div class="activity-big-meta">涉及项目 {{ g.project_count }} 个 · 占比 {{ pctOf(g.count) }}%</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 明细表格 -->
+          <el-tabs v-model="activityActiveCode" class="activity-tabs" @tab-change="onActivityTabChange">
+            <el-tab-pane
+              v-for="g in investmentStats.activity_tags.groups"
+              :key="g.code"
+              :label="`${g.label}明细（${g.count}）`"
+              :name="g.code"
+            >
+              <el-table :data="pagedActivityItems" border stripe size="small" empty-text="暂无数据">
+                <el-table-column prop="date" label="日期" width="110" align="center" />
+                <el-table-column prop="project_name" label="关联项目" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">{{ mn(row.project_name) }}</template>
+                </el-table-column>
+                <el-table-column prop="content" label="动态内容" min-width="320" show-overflow-tooltip />
+                <el-table-column label="标签" width="200">
+                  <template #default="{ row }">
+                    <span
+                      v-for="t in row.tags"
+                      :key="t"
+                      class="tag-chip"
+                      :class="{ 'tag-main': t === activeActivityGroup?.label }"
+                    >
+                      {{ t }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div v-if="activeActivityItems.length > 10" class="overdue-pager">
+                <el-pagination
+                  small
+                  layout="prev, pager, next"
+                  :total="activeActivityItems.length"
+                  :page-size="10"
+                  v-model:current-page="activityPage"
+                />
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+
+          <div class="resize-handle" @mousedown="onResizeStart"></div>
+        </div>
+
         <!-- 招商项目按类型分布（饼状图） -->
         <div class="chart-panel">
           <div class="chart-panel-header">
@@ -275,7 +345,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import echarts from '@/utils/echarts'
-import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back } from '@element-plus/icons-vue'
+import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back, OfficeBuilding, Position } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { getDemandStats, getInvestmentStats, getOverdueAlerts } from '@/api/dashboard'
@@ -313,8 +383,36 @@ let unitChart = null
 const investmentStats = reactive({
   total_projects: 0,
   by_project_type: [],
-  by_team_leader: []
+  by_team_leader: [],
+  activity_tags: { total: 0, groups: [] }
 })
+
+// ===== 招商项目动态标签统计（到访接待 / 外出考察）=====
+const activityActiveCode = ref('visit')
+const activityPage = ref(1)
+
+const activeActivityGroup = computed(() => {
+  const groups = investmentStats.activity_tags.groups || []
+  return groups.find(g => g.code === activityActiveCode.value) || groups[0] || null
+})
+const activeActivityItems = computed(() => activeActivityGroup.value?.items || [])
+const pagedActivityItems = computed(() => {
+  const start = (activityPage.value - 1) * 10
+  return activeActivityItems.value.slice(start, start + 10)
+})
+
+function pctOf(count) {
+  const total = investmentStats.activity_tags.total || 0
+  if (!total) return '0.0'
+  return ((count / total) * 100).toFixed(1)
+}
+function switchActivityTab(code) {
+  activityActiveCode.value = code
+  activityPage.value = 1
+}
+function onActivityTabChange() {
+  activityPage.value = 1
+}
 
 // 饼状图筛选
 const pieFollowStatus = ref([])
@@ -832,6 +930,7 @@ async function fetchInvestmentStats() {
       investmentStats.total_projects = res.data.total_projects || 0
       investmentStats.by_project_type = res.data.by_project_type || []
       investmentStats.by_team_leader = res.data.by_team_leader || []
+      investmentStats.activity_tags = res.data.activity_tags || { total: 0, groups: [] }
       await nextTick()
       renderPieChart()
       renderTeamPieChart()
@@ -1156,6 +1255,103 @@ onUnmounted(() => {
   box-shadow: 0 2px 12px rgba(64,158,255,0.18);
   outline: 2px solid #409eff;
   outline-offset: -1px;
+}
+
+/* 招商项目动态标签统计 */
+.activity-tag-panel {
+  min-height: 360px;
+}
+.activity-total-hint {
+  font-size: 13px;
+  color: #909399;
+  font-weight: 500;
+}
+
+.activity-big-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 8px 0 16px;
+}
+@media (max-width: 768px) {
+  .activity-big-cards { grid-template-columns: 1fr; }
+}
+
+.activity-big-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 26px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid transparent;
+}
+.activity-big-card:hover {
+  transform: translateY(-2px);
+}
+.activity-big-card.is-visit {
+  background: linear-gradient(135deg, #ecf5ff 0%, #e3f0ff 100%);
+  border-color: #d1e6ff;
+}
+.activity-big-card.is-outreach {
+  background: linear-gradient(135deg, #fdf6ec 0%, #fef1e0 100%);
+  border-color: #fbe4c8;
+}
+.activity-big-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.is-visit .activity-big-icon { background: #d9ecff; color: #409eff; }
+.is-outreach .activity-big-icon { background: #fde8cd; color: #e6a23c; }
+.activity-big-body {
+  display: flex;
+  flex-direction: column;
+}
+.activity-big-value {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #303133;
+  font-variant-numeric: tabular-nums;
+}
+.is-visit .activity-big-value { color: #2f7fe8; }
+.is-outreach .activity-big-value { color: #d98a1b; }
+.activity-big-label {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.activity-big-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.activity-tabs :deep(.el-tabs__header) {
+  margin-bottom: 10px;
+}
+
+.tag-chip {
+  display: inline-block;
+  font-size: 11px;
+  color: #606266;
+  background: #f0f2f7;
+  border-radius: 4px;
+  padding: 1px 7px;
+  margin-right: 5px;
+  line-height: 18px;
+}
+.tag-chip.tag-main {
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 600;
 }
 
 /* 超期提醒表格 */

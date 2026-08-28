@@ -662,12 +662,63 @@ def investment_stats():
         })
     by_team_leader.sort(key=lambda x: x['count'], reverse=True)
 
+    # ===== 招商项目动态标签统计（到访接待 / 外出考察）=====
+    activities = InvestmentActivity.query.outerjoin(
+        InvestmentProject, InvestmentActivity.project_id == InvestmentProject.id
+    ).with_entities(
+        InvestmentActivity.id,
+        InvestmentActivity.project_id,
+        InvestmentActivity.date,
+        InvestmentActivity.content,
+        InvestmentActivity.tags,
+        InvestmentProject.project_name
+    ).order_by(InvestmentActivity.date.asc(), InvestmentActivity.id.asc()).all()
+
+    def _parse_tags(raw):
+        try:
+            tags = json.loads(raw or '[]')
+            return tags if isinstance(tags, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    tag_groups = []
+    # 标签存 code（如 activity_tag_daofang），用字典表映射 code->中文名
+    tag_name_map = {d.code: d.name for d in ActivityTagDict.query.all()}
+    for label in ('到访接待', '外出考察'):
+        tag_code = next((c for c, n in tag_name_map.items() if n == label), None)
+        items = []
+        project_ids = set()
+        for a in activities:
+            tags = _parse_tags(a.tags)
+            if not (tag_code and tag_code in tags):
+                continue
+            project_ids.add(a.project_id)
+            items.append({
+                'id': a.id,
+                'date': a.date.strftime('%Y-%m-%d') if a.date else '',
+                'project_id': a.project_id,
+                'project_name': a.project_name or '',
+                'content': a.content or '',
+                'tags': [tag_name_map.get(t, t) for t in tags],
+            })
+        tag_groups.append({
+            'code': label,
+            'label': label,
+            'count': len(items),
+            'project_count': len(project_ids),
+            'items': items,
+        })
+
     return jsonify({
         'code': 0,
         'data': {
             'total_projects': total_projects,
             'by_project_type': by_project_type,
             'by_team_leader': by_team_leader,
+            'activity_tags': {
+                'total': len(activities),
+                'groups': tag_groups,
+            }
         }
     })
 

@@ -662,10 +662,33 @@ def investment_stats():
         })
     by_team_leader.sort(key=lambda x: x['count'], reverse=True)
 
-    # ===== 招商项目动态标签统计（到访接待 / 外出考察）=====
-    activities = InvestmentActivity.query.outerjoin(
+    return jsonify({
+        'code': 0,
+        'data': {
+            'total_projects': total_projects,
+            'by_project_type': by_project_type,
+            'by_team_leader': by_team_leader,
+            'activity_tags': _build_activity_tag_stats(),
+        }
+    })
+
+
+def _build_activity_tag_stats(start_date=None, end_date=None):
+    """招商项目动态标签统计（到访接待 / 外出考察）
+
+    - 标签存 code（如 activity_tag_daofang），经 activity_tag_dict 映射为中文名
+    - 支持日期范围过滤（含 start/end 当天）；不传则统计全部
+    返回 {'total': ?, 'groups': [{'code','label','count','project_count','items'}, ...]}
+    """
+    q = InvestmentActivity.query.outerjoin(
         InvestmentProject, InvestmentActivity.project_id == InvestmentProject.id
-    ).with_entities(
+    )
+    if start_date:
+        q = q.filter(InvestmentActivity.date >= datetime.combine(start_date, datetime.min.time()))
+    if end_date:
+        q = q.filter(InvestmentActivity.date < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+
+    activities = q.with_entities(
         InvestmentActivity.id,
         InvestmentActivity.project_id,
         InvestmentActivity.date,
@@ -681,9 +704,8 @@ def investment_stats():
         except (json.JSONDecodeError, TypeError):
             return []
 
-    tag_groups = []
-    # 标签存 code（如 activity_tag_daofang），用字典表映射 code->中文名
     tag_name_map = {d.code: d.name for d in ActivityTagDict.query.all()}
+    tag_groups = []
     for label in ('到访接待', '外出考察'):
         tag_code = next((c for c, n in tag_name_map.items() if n == label), None)
         items = []
@@ -709,18 +731,16 @@ def investment_stats():
             'items': items,
         })
 
-    return jsonify({
-        'code': 0,
-        'data': {
-            'total_projects': total_projects,
-            'by_project_type': by_project_type,
-            'by_team_leader': by_team_leader,
-            'activity_tags': {
-                'total': len(activities),
-                'groups': tag_groups,
-            }
-        }
-    })
+    return {'total': len(activities), 'groups': tag_groups}
+
+
+@admin_investment_bp.route('/investment/activity-tags', methods=['GET'])
+@dual_login_required
+def investment_activity_tags():
+    """招商项目动态标签统计（独立接口，支持 ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD）"""
+    start_date = _parse_date(request.args.get('start_date', '').strip())
+    end_date = _parse_date(request.args.get('end_date', '').strip())
+    return jsonify({'code': 0, 'data': _build_activity_tag_stats(start_date, end_date)})
 
 
 # ============================================================

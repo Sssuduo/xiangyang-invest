@@ -8,6 +8,10 @@ export function getInvestmentStats(params = {}) {
   return api.get('/admin/investment-stats', { params })
 }
 
+export function getActivityTags(params = {}) {
+  return api.get('/admin/investment/activity-tags', { params })
+}
+
 export function getOverdueAlerts(params = {}) {
   return api.get('/admin/investment/overdue-alerts', { params })
 }

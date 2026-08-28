@@ -69,11 +69,27 @@
 
       <!-- 图表区域 -->
       <div class="charts-grid">
-        <!-- 招商项目动态标签统计（到访接待 / 外出考察）：大数字 + 明细表格 -->
+        <!-- 招商项目动态标签统计（到访接待 / 外出考察）：大数字 + 明细表格 + 日期筛选 -->
         <div class="chart-panel chart-panel-full activity-tag-panel">
           <div class="chart-panel-header">
             <h3>招商项目动态标签统计</h3>
-            <span class="activity-total-hint">共 {{ investmentStats.activity_tags.total ?? 0 }} 条动态</span>
+            <div class="chart-panel-actions">
+              <el-date-picker
+                v-model="activityDateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="YYYY-MM-DD"
+                size="small"
+                clearable
+                style="width: 260px;"
+                @change="onActivityDateChange"
+              />
+              <span class="activity-total-hint">
+                共 {{ investmentStats.activity_tags.total ?? 0 }} 条动态
+              </span>
+            </div>
           </div>
 
           <!-- 大数字区 -->
@@ -348,7 +364,7 @@ import echarts from '@/utils/echarts'
 import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back, OfficeBuilding, Position } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
-import { getDemandStats, getInvestmentStats, getOverdueAlerts } from '@/api/dashboard'
+import { getDemandStats, getInvestmentStats, getActivityTags, getOverdueAlerts } from '@/api/dashboard'
 import { getDicts } from '@/api/investment'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName } from '@/utils/mask'
@@ -938,6 +954,29 @@ async function fetchInvestmentStats() {
   } catch { /* ignore */ }
 }
 
+// ===== 动态标签统计：日期范围筛选（独立接口）=====
+const activityDateRange = ref([])
+
+async function fetchActivityTags() {
+  try {
+    const params = {}
+    if (activityDateRange.value && activityDateRange.value.length === 2) {
+      params.start_date = activityDateRange.value[0]
+      params.end_date = activityDateRange.value[1]
+    }
+    const res = await getActivityTags(params)
+    if (res?.code === 0) {
+      investmentStats.activity_tags = res.data || { total: 0, groups: [] }
+      activityActiveCode.value = investmentStats.activity_tags.groups?.[0]?.code || 'visit'
+      activityPage.value = 1
+    }
+  } catch { /* ignore */ }
+}
+
+function onActivityDateChange() {
+  fetchActivityTags()
+}
+
 // 监听下钻状态变化
 watch(drilldownParent, () => {
   renderTypeChart()
@@ -1075,6 +1114,7 @@ onMounted(() => {
   fetchDicts()
   fetchStats()
   fetchInvestmentStats()
+  fetchActivityTags()
   fetchOverdueAlerts()
 })
 

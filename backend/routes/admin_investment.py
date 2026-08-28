@@ -1,6 +1,7 @@
+import io
 import json
 from datetime import date, datetime, timedelta
-from flask import request, jsonify
+from flask import request, jsonify, send_file
 from models import InvestmentProject, InvestmentActivity, EnterpriseDemand
 from models import FollowStatusDict, MeetingStatusDict, OrganizationDict, ProjectTypeDict, DemandTypeDict, ProjectTagDict, ActivityTagDict, Staff
 from extensions import db
@@ -741,6 +742,73 @@ def investment_activity_tags():
     start_date = _parse_date(request.args.get('start_date', '').strip())
     end_date = _parse_date(request.args.get('end_date', '').strip())
     return jsonify({'code': 0, 'data': _build_activity_tag_stats(start_date, end_date)})
+
+
+@admin_investment_bp.route('/investment/activity-tags/export', methods=['GET'])
+@dual_login_required
+def export_activity_tags():
+    """导出招商项目动态标签统计（到访接待 / 外出考察两个 sheet），遵循同一日期筛选"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    start_date = _parse_date(request.args.get('start_date', '').strip())
+    end_date = _parse_date(request.args.get('end_date', '').strip())
+    data = _build_activity_tag_stats(start_date, end_date)
+
+    headers = ['序号', '日期', '关联项目', '动态内容', '全部标签']
+    widths = [8, 13, 28, 60, 24]
+    head_fill = PatternFill('solid', fgColor='4472C4')
+    head_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
+    body_font = Font(name='微软雅黑', size=10)
+    wrap = Alignment(wrap_text=True, vertical='top')
+    center = Alignment(horizontal='center', vertical='top')
+
+    wb = Workbook()
+    for gi, g in enumerate(data['groups']):
+        ws = wb.active if gi == 0 else wb.create_sheet()
+        ws.title = g['label']
+        ws.append(headers)
+        for c in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=c)
+            cell.fill = head_fill
+            cell.font = head_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            ws.column_dimensions[get_column_letter(c)].width = widths[c - 1]
+        ws.freeze_panes = 'A2'
+        ws.row_dimensions[1].height = 24
+
+        for idx, it in enumerate(g['items'], 1):
+            ws.append([idx, it['date'], it['project_name'],
+                       it['content'], '、'.join(it['tags'])])
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, max_col=len(headers)):
+            for cell in row:
+                cell.font = body_font
+                cell.alignment = center if cell.column in (1, 2) else wrap
+        # 行高粗算（按内容列换行估计）
+        for i in range(2, ws.max_row + 1):
+            text = str(ws.cell(row=i, column=4).value or '')
+            lines = max(1, (len(text) // 96) + 1)
+            ws.row_dimensions[i].height = min(max(18, lines * 15), 300)
+
+    if start_date and end_date:
+        range_str = f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")}'
+    elif start_date:
+        range_str = f'{start_date.strftime("%Y%m%d")}-至今'
+    elif end_date:
+        range_str = f'截至{end_date.strftime("%Y%m%d")}'
+    else:
+        range_str = '全部'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f'招商动态标签统计_{range_str}.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 # ============================================================

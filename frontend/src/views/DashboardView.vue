@@ -89,6 +89,15 @@
               <span class="activity-total-hint">
                 共 {{ investmentStats.activity_tags.total ?? 0 }} 条动态
               </span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="exportingTags"
+                @click="handleExportActivityTags"
+              >
+                <el-icon><Download /></el-icon> 导出Excel
+              </el-button>
             </div>
           </div>
 
@@ -361,10 +370,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import echarts from '@/utils/echarts'
-import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back, OfficeBuilding, Position } from '@element-plus/icons-vue'
+import { Document, Clock, Loading, CircleCheck, Folder, TrendCharts, Back, OfficeBuilding, Position, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
-import { getDemandStats, getInvestmentStats, getActivityTags, getOverdueAlerts } from '@/api/dashboard'
+import { getDemandStats, getInvestmentStats, getActivityTags, exportActivityTags, getOverdueAlerts } from '@/api/dashboard'
 import { getDicts } from '@/api/investment'
 import { useBusinessAuthStore } from '@/stores/businessAuth'
 import { maskName } from '@/utils/mask'
@@ -975,6 +984,40 @@ async function fetchActivityTags() {
 
 function onActivityDateChange() {
   fetchActivityTags()
+}
+
+// 导出统计（到访接待/外出考察 → 两个 sheet），遵循当前日期筛选
+const exportingTags = ref(false)
+
+async function handleExportActivityTags() {
+  exportingTags.value = true
+  try {
+    const params = {}
+    if (activityDateRange.value && activityDateRange.value.length === 2) {
+      params.start_date = activityDateRange.value[0]
+      params.end_date = activityDateRange.value[1]
+    }
+    const res = await exportActivityTags(params)
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const rangeText = params.start_date
+      ? `${params.start_date}_至_${params.end_date}`
+      : '全部'
+    a.href = url
+    a.download = `招商动态标签统计_${rangeText}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('导出失败:', e)
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exportingTags.value = false
+  }
 }
 
 // 监听下钻状态变化

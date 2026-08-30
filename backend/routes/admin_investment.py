@@ -696,7 +696,7 @@ def _build_activity_tag_stats(start_date=None, end_date=None):
         InvestmentActivity.content,
         InvestmentActivity.tags,
         InvestmentProject.project_name
-    ).order_by(InvestmentActivity.date.asc(), InvestmentActivity.id.asc()).all()
+    ).order_by(InvestmentActivity.date.desc(), InvestmentActivity.id.desc()).all()
 
     def _parse_tags(raw):
         try:

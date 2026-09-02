@@ -387,8 +387,14 @@ CLEAN_MAX_TOKENS = 4000       # 清洁阶段单块输出上限（整理型输出
 CLEAN_CHUNK_SIZE_MAX = 10000  # 清洁阶段单块字符硬上限
 
 # 摘要阶段：理解/总结类任务，输出短，块可较大；块间重叠提升跨块连贯
-SUMMARY_CHUNK_CHARS = 30000
+# V16.14(id=35实证)：summary 单块上限过大时，DeepSeek V4 Flash 对超长单次生成(clean+seg 双输入)
+# 会在写完整场纪要前中断，仅输出开头(7%)即截断丢尾部。故单块上限收敛到 clean 阶段已验证
+# 可稳定完整输出的量级(~8000字符)，超长 clean 切成多块各出局部纪要再合并，规避单次超长截断。
+SUMMARY_CHUNK_CHARS = 8000
 SUMMARY_OVERLAP_CHARS = 1000
+# 摘要块级截断安全网：某块 clean 输入相对该块输出明显过短(疑似被 provider 截断/中断)时，
+# 对该块做更细的二级分块逐块总结再合并，避免静默丢内容。阈值取 clean 阶段的 15% 判据同源。
+SUMMARY_MIN_RATIO = 0.15
 
 
 def _tail_chars(text, n):
@@ -731,7 +737,31 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
     logger.info(f'阶段3/3: 摘要版 (clean={len(clean)} 字, {len(clean_chunks)} 块)')
     summary_parts = []
     for ci, (clean_c, seg_c) in enumerate(phase3_pairs, 1):
-        summary_parts.append(summarize_meeting_inner(clean_c, seg_c, knowledge_block, model_id))
+        one = summarize_meeting_inner(clean_c, seg_c, knowledge_block, model_id)
+        # 块级截断安全网(id=35 实证)：单块 clean 非空但该块 summary 异常过短时，
+        # 判定为 provider 端长输入截断/中断，将该块 clean 再细分为更小二级块逐块总结后合并。
+        # 避免把"只写了开头的局部纪要"误当整段，静默丢失该块后续内容。
+        if clean_c and clean_c.strip() and len(one.strip()) < len(clean_c.strip()) * SUMMARY_MIN_RATIO:
+            logger.warning(
+                f'阶段3块{ci}摘要过短疑似截断：clean {len(clean_c)} 字 → 摘要 {len(one)} 字 '
+                f'(<{SUMMARY_MIN_RATIO:.0%})，对该块做二级细分重试'
+            )
+            # 二级分块（更小），同样按 clean/seg 两路切分后逐块局部总结再合并
+            sub_clean = _chunk_text(clean_c, SUMMARY_CHUNK_CHARS // 2, overlap=SUMMARY_OVERLAP_CHARS)
+            sub_seg = _chunk_text(seg_c or clean_c, SUMMARY_CHUNK_CHARS // 2, overlap=SUMMARY_OVERLAP_CHARS)
+            nsub = max(len(sub_clean), len(sub_seg))
+            sub_pairs = [
+                (sub_clean[i] if i < len(sub_clean) else '',
+                 sub_seg[i] if i < len(sub_seg) else '')
+                for i in range(nsub)
+            ]
+            sub_parts = []
+            for s_clean, s_seg in sub_pairs:
+                s_one = summarize_meeting_inner(s_clean, s_seg, knowledge_block, model_id)
+                if s_one and s_one.strip():
+                    sub_parts.append(s_one)
+            one = _merge_summaries(sub_parts, knowledge_block, model_id)
+        summary_parts.append(one)
         _report('智能摘要', 3, ci, phase3_blocks)
     summary = _merge_summaries(summary_parts, knowledge_block, model_id)
     _report('智能摘要', 3, phase3_blocks, phase3_blocks)  # 合并完成

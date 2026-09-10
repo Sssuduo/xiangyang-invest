@@ -28,6 +28,7 @@
 """
 import os
 import logging
+import subprocess
 import tempfile
 import shutil
 import uuid
@@ -105,6 +106,7 @@ def _get_audio_duration(filepath):
     FFPROBE_CANDIDATES = [
         os.environ.get('FFPROBE', ''),
         r'C:\Program Files\ffmpeg\bin\ffprobe.exe',
+        '/usr/local/bin/ffprobe',   # 生产 CentOS 系服务器
         'ffprobe',
     ]
     ffprobe = None
@@ -211,6 +213,13 @@ def _post_single_with_retry(seg_path, url, timeout, language='zh'):
 def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
     """将音频文件转换为文字（纯 HTTP 客户端，不引 funasr-onnx）。
 
+    策略（v16.16.10 起不再依赖 duration 探测）：
+      一律先用 ffmpeg 按 SEGMENT_DURATION=30s 预切 → 逐段 POST 到笔记本；
+      切分失败才回退整段单 POST。
+      原因：生产环境 ffprobe 探测在部分运行环境下失败（返回 0s），导致旧逻辑
+      误走"整段单 POST"，触发笔记本端内部分割+并发推理的已知 bug
+      （长音频尾部段静默丢失 + 质量劣化）。30s 预切逐段是实测可靠的路径。
+
     Args:
         audio_file_path: 音频文件绝对路径
         base_url: ASR 服务基础 URL；None 时取 Config.ASR_API_URL
@@ -232,51 +241,38 @@ def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
 
     logger.info(f'ASR 开始：{os.path.basename(audio_file_path)}，{duration:.0f}s，endpoint={url}')
 
+    tmp = tempfile.mkdtemp(prefix='asr_seg_')
     try:
-        if duration <= SEGMENT_DURATION:
+        segs = _split_audio_ffmpeg(audio_file_path, tmp, SEGMENT_DURATION)
+        if not segs:
+            logger.warning('切片失败，回退到整段请求')
             text = _post_single(audio_file_path, url, timeout)
             if on_slice_done:
                 on_slice_done(1, 1)
             logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
             return {'success': True, 'text': text, 'duration': duration,
                     'slices': 1, 'failed_slices': 0}
-        else:
-            logger.info(f'长音频（{duration:.0f}s），按 {SEGMENT_DURATION}s/段预切后逐段 ASR')
-            tmp = tempfile.mkdtemp(prefix='asr_seg_')
-            try:
-                segs = _split_audio_ffmpeg(audio_file_path, tmp, SEGMENT_DURATION)
-                if not segs:
-                    logger.warning('切片失败，回退到整段请求')
-                    text = _post_single(audio_file_path, url, timeout)
-                    if on_slice_done:
-                        on_slice_done(1, 1)
-                    logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
-                    return {'success': True, 'text': text, 'duration': duration,
-                            'slices': 1, 'failed_slices': 0}
-                else:
-                    parts = []
-                    failed = 0
-                    total_slices = len(segs)
-                    for i, seg in enumerate(segs):
-                        logger.info(f'ASR 段 [{i + 1}/{total_slices}]: {os.path.basename(seg)}')
-                        text, was_retried = _post_single_with_retry(seg, url, timeout)
-                        if not text:
-                            failed += 1
-                            text = f'【第{i + 1}段识别失败】'
-                            logger.error(f'ASR 段 [{i + 1}/{total_slices}] 重试后仍为空，已打标记')
-                        elif was_retried:
-                            logger.info(f'ASR 段 [{i + 1}/{total_slices}] 重试成功')
-                        parts.append(text)
-                        if on_slice_done:
-                            on_slice_done(i + 1, total_slices)
-                    full = '\n'.join(parts)
-                    logger.info(f'ASR 完成：{len(full)} 字 / {duration:.0f}s，'
-                                f'共 {total_slices} 段，失败 {failed} 段')
-                    return {'success': True, 'text': full, 'duration': duration,
-                            'slices': total_slices, 'failed_slices': failed}
-            finally:
-                shutil.rmtree(tmp, ignore_errors=True)
 
+        parts = []
+        failed = 0
+        total_slices = len(segs)
+        for i, seg in enumerate(segs):
+            logger.info(f'ASR 段 [{i + 1}/{total_slices}]: {os.path.basename(seg)}')
+            text, was_retried = _post_single_with_retry(seg, url, timeout)
+            if not text:
+                failed += 1
+                text = f'【第{i + 1}段识别失败】'
+                logger.error(f'ASR 段 [{i + 1}/{total_slices}] 重试后仍为空，已打标记')
+            elif was_retried:
+                logger.info(f'ASR 段 [{i + 1}/{total_slices}] 重试成功')
+            parts.append(text)
+            if on_slice_done:
+                on_slice_done(i + 1, total_slices)
+        full = '\n'.join(parts)
+        logger.info(f'ASR 完成：{len(full)} 字 / {duration:.0f}s，'
+                    f'共 {total_slices} 段，失败 {failed} 段')
+        return {'success': True, 'text': full, 'duration': duration,
+                'slices': total_slices, 'failed_slices': failed}
     except (requests.ConnectionError, requests.Timeout) as e:
         raise RuntimeError(
             f'{_UNREACHABLE_HINT}（ASR 服务 {url} 不可达，{type(e).__name__}）'
@@ -293,3 +289,5 @@ def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
         raise RuntimeError(
             f'{_UNREACHABLE_HINT}（未知错误：{type(e).__name__}: {str(e)[:200]}）'
         ) from e
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

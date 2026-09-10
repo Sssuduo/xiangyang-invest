@@ -121,6 +121,7 @@
     size="420px"
     :close-on-click-modal="true"
     append-to-body
+    class="message-drawer"
   >
     <template #header>
       <div class="drawer-title-bar">
@@ -447,11 +448,16 @@ async function handleChangePassword() {
 .nav-message-btn { border-color: transparent; background: transparent; }
 .nav-message-btn:hover { background: rgba(0,0,0,0.04); }
 
-/* 抽屉标题栏（与系统其他抽屉统一：渐变底 + 白色加粗） */
+/* 抽屉标题栏：渐变底由全局 .message-drawer .el-drawer__header 承载（含关闭按钮区域），
+   此处只负责文字排版，透明背景 + 铺满宽度，顶住上/左/右边缘 */
 .drawer-title-bar {
-  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
-  margin: 0 -20px 0 -20px;
-  padding: 20px 20px 20px 40px;
+  background: transparent;
+  padding: 18px 24px;
+  margin: 0 !important;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
 }
 .drawer-title {
   color: #fff;
@@ -555,14 +561,23 @@ async function handleChangePassword() {
 .nav-contact .nav-user { color: #1a3a5c; font-weight: 500; }
 </style>
 
-<!-- 非 scoped：消息中心抽屉 append-to-body，需全局归一化 header/body 内边距，
-     否则蓝色标题栏上边留白、右边对不齐（与系统其他抽屉统一） -->
+<!-- 非 scoped：消息中心抽屉 append-to-body，用唯一 class .message-drawer 限定，
+     蓝色渐变背景由 header 承载（覆盖到关闭按钮 × 区域），彻底消除上边/右边白色空缺 -->
 <style>
-.el-drawer__header {
-  margin-bottom: 0 !important;
+.message-drawer {
   padding: 0 !important;
+  margin: 0 !important;
 }
-.el-drawer__body {
+.message-drawer .el-drawer__header {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-bottom: none !important;
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
+}
+.message-drawer .el-drawer__close-btn {
+  color: #fff;
+}
+.message-drawer .el-drawer__body {
   padding: 12px 20px 20px !important;
 }
 </style>

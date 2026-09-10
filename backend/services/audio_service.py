@@ -192,7 +192,10 @@ def run_async_processing(app, model_class: type, item_id: int):
                 # 续传优化：已识别成功且转写内容已落盘（本地 audio_files）的录音，
                 # 直接复用其已保存文本，不再重复调用 ASR。
                 # 因此「重新识别」只会重跑失败/未完成的录音，已成功的录音内容从本地读取。
-                if af.get('status') == 'ok' and af.get('transcript'):
+                # 注意：含【第N段识别失败】标记的 transcript 视为不完整，不可复用，
+                # 重新识别时必须重转，避免"末尾静默缺失"的旧数据被续传跳过。
+                if af.get('status') == 'ok' and af.get('transcript') \
+                        and '[识别失败' not in af['transcript']:
                     slices_completed += file_slice_counts[i]
                     all_texts.append(af['transcript'])
                     total_ok += 1
@@ -210,12 +213,16 @@ def run_async_processing(app, model_class: type, item_id: int):
                 try:
                     asr_result = transcribe_audio(file_path, on_slice_done=_update_progress)
                     text = asr_result['text']
+                    fail_slices = asr_result.get('failed_slices', 0)
                     af['status'] = 'ok'
                     af['error'] = ''
                     af['transcript'] = text  # 本地落盘，供后续「重新识别」续传复用
                     all_texts.append(text)
                     total_ok += 1
                     set_audio_files(item, files)
+                    if fail_slices:
+                        logger.warning(f'{af["name"]} 有 {fail_slices} 段重试后仍识别失败（已打标记），'
+                                       f'文件 transcript 含【第N段识别失败】，下次重新识别会重转')
                 except Exception as e:
                     af['status'] = 'error'
                     af['error'] = str(e)[:300]

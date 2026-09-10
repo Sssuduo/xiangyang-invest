@@ -143,3 +143,68 @@ powershell -NoProfile -File "h:\项目1\scripts\boot_transcribe.ps1"
 **性能（实测）**：稳态 GPU 推理约 120ms / 10s 音频（asr_api HTTP 端到端约 600ms，含切片/HTTP/进程池开销），比 CPU 快约 5–40 倍。**注意每段、每个 worker 的首次推理有约 28s 的 cuDNN 算法 autotune 一次性开销**，之后才进入稳态；240 段批量转写时仅前 1–2 段显著偏慢。
 
 **排错**：若 `asr_api` 启动后 GPU 显存为 0 且推理慢，通常是 CUDA/cuDNN DLL 未进入进程 PATH——查 `scripts/asr_api_mon_err.log` 有无 `CUDAExecutionProvider is not avaiable` 回退警告，确认 boot 注入是否生效。用 `nvidia-smi` 看 `asr_api` 进程显存占用即可确认是否真在 GPU 上跑。`onnxruntime-gpu` 1.19.2 要求 cuDNN 9.* + CUDA 12.*，且 cuDNN 8/9 不兼容，升级/重装时需保证三者版本匹配。
+
+## 8. 抽屉页（el-drawer）设计标准规范
+
+> 固化标准实现：`frontend/src/components/common/AppDrawer.vue`（注释已声明「系统统一侧滑抽屉，UI 风格固化，禁止各页面重复调试」）。**新建/改造抽屉时必须遵守本节，不要再各自调样式**。
+
+### 8.1 唯一正确做法：标题栏渐变背景挂在 header 上（不是 title-bar 上）
+
+渐变蓝标题栏（`linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%)`）要求「顶住上/左/右边缘、含右上角关闭按钮 × 区域」。
+
+**根因经验（消息提醒抽屉 id 复盘）**：把渐变背景写在 `.drawer-title-bar` 上会出现两处白色空缺——
+- **上边露白**：`el-drawer__header` 默认 `padding` 未归零；
+- **右边露白**：背景只覆盖标题文字，盖不到右上角关闭按钮 × 那一带。
+
+**正确结构**（背景由 header 承载，title-bar 仅排版）：
+
+```html
+<el-drawer ... append-to-body class="xxx-drawer">
+  <template #header>
+    <div class="drawer-title-bar">
+      <span class="drawer-title"><el-icon><!-- icon --></el-icon>标题</span>
+    </div>
+  </template>
+  ...
+</el-drawer>
+```
+
+```css
+/* 非 scoped（append-to-body 后 scoped 失效，必须唯一 class 限定） */
+.xxx-drawer { padding: 0 !important; margin: 0 !important; }
+.xxx-drawer .el-drawer__header {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-bottom: none !important;
+  background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);  /* 渐变在此，覆盖 × 按钮区域 */
+}
+.xxx-drawer .el-drawer__close-btn { color: #fff; }   /* × 白字融入蓝底 */
+.xxx-drawer .el-drawer__body { padding: 12px 20px 20px !important; }
+```
+
+```css
+/* scoped：title-bar 透明 + 铺满宽度，只负责文字排版 */
+.drawer-title-bar {
+  background: transparent;
+  padding: 18px 24px;
+  margin: 0 !important;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+}
+.drawer-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+```
+
+### 8.2 强制性规则（违反即返工）
+
+1. **优先复用 `AppDrawer.vue`**：能传 `title`/`icon`/`size` 就传参，不要自己手写 drawer 骨架。它已内置「渐变蓝标题栏顶住上/右边缘 + footer 分割横条 + 统一 body 内边距」。
+2. **渐变背景只能挂 header**：`.el-drawer__header` 承载蓝色背景；`drawer-title-bar` 永远 `background: transparent`。
+3. **append-to-body 抽屉的样式必须是「非 scoped + 唯一 class 限定」**：直接在 `<style scoped>` 里写 `.el-drawer__header` 无效（drawer 被 teleport 到 body）。必须给 el-drawer 加唯一 `class`，再在非 scoped `<style>` 里用 `.该class .el-drawer__header` 命中。
+4. **关闭按钮白字**：`.该class .el-drawer__close-btn { color: #fff; }`，避免黑 × 浮在蓝底上突兀。
+5. **header 内边距归零**：`.el-drawer__header { padding: 0 !important; margin: 0 !important; border-bottom: none !important; }`，否则上边露白。
+6. **禁止给 title-bar 写固定 `width: <抽屉size>`**：如 `width: 420px` 会与负 margin/关闭按钮抢位导致右侧对不齐；正确做法是 `width: 100%`。
+
+### 8.3 旧式写法（仅作历史对照，勿再模仿）
+
+早年一批组件（`ActivityDrawer.vue`、`ConstructionView.vue`、`LeadDrawer.vue` 等）在 `.drawer-title-bar` 上挂渐变背景 + `margin: 0 -20px`。该写法**右侧 × 区域露白**，属历史遗留，不作为新标准；可择机逐步迁移到 §8.1。

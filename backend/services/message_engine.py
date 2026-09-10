@@ -84,7 +84,8 @@ def evaluate_rule(rule: MessageRule) -> int:
     """评估单条规则,生成用户消息。返回生成的消息数。
 
     规则运行 = 先清空该规则全部 pending/snoozed 消息，再按当前结果写入新消息；
-    已处理（done）记录保留不删。
+    只要项目仍满足触发条件（超期未研判/超期无动态），每天早上都会重新提醒；
+    无论是否生成消息都写一条运行日志（保证"上次运行时间"每天刷新）。
     """
     if not rule.is_active:
         return 0
@@ -97,82 +98,66 @@ def evaluate_rule(rule: MessageRule) -> int:
     db.session.commit()
 
     sources = _get_triggered_sources(rule)
-    if not sources:
-        return 0
-
     users = _get_users(rule)
-    if not users:
-        return 0
-
     generated = 0
-    for project in sources:
-        # 若该项目已有"已处理"记录（任意用户 done），不再重新提醒（保留历史）
-        handled_before = UserMessage.query.filter(
-            UserMessage.rule_id == rule.id,
-            UserMessage.source_type == 'investment_project',
-            UserMessage.source_id == project.id,
-            UserMessage.status == 'done',
-        ).first()
-        if handled_before:
-            continue
 
-        for user_id, user_type in users:
-            user = AdminUser.query.get(user_id) or BusinessUser.query.get(user_id)
-            if not user:
-                continue
+    if sources and users:
+        for project in sources:
+            for user_id, user_type in users:
+                user = AdminUser.query.get(user_id) or BusinessUser.query.get(user_id)
+                if not user:
+                    continue
 
-            # 实际超期天数（no_followup 用最近动态/首接时间；no_meeting 用首接时间）
-            today = date.today()
-            if rule.condition_type == 'project_no_followup':
-                from models import InvestmentActivity
-                last_act = InvestmentActivity.query.filter_by(project_id=project.id) \
-                    .order_by(InvestmentActivity.date.desc()).first()
-                ref_date = last_act.date.date() if last_act and last_act.date else project.first_contact_date
-            else:
-                ref_date = project.first_contact_date
-            overdue_days = (today - ref_date).days if ref_date else rule.threshold_days
+                # 实际超期天数（no_followup 用最近动态/首接时间；no_meeting 用首接时间）
+                today = date.today()
+                if rule.condition_type == 'project_no_followup':
+                    from models import InvestmentActivity
+                    last_act = InvestmentActivity.query.filter_by(project_id=project.id) \
+                        .order_by(InvestmentActivity.date.desc()).first()
+                    ref_date = last_act.date.date() if last_act and last_act.date else project.first_contact_date
+                else:
+                    ref_date = project.first_contact_date
+                overdue_days = (today - ref_date).days if ref_date else rule.threshold_days
 
-            variables = {
-                'username': getattr(user, 'display_name', None) or user.username,
-                # project_name 纯文本（标题用）；project_name_link 为 [项目名] 链接标记（消息体用）
-                'project_name': project.project_name,
-                'project_name_link': f'[{project.project_name}]',
-                'first_contact_date': project.first_contact_date.isoformat(),
-                'threshold_days': str(rule.threshold_days),
-                'overdue_days': str(overdue_days),
-                'project_id': str(project.id),
-                'conclusion': (project.conclusion or '').strip(),
-            }
-            body = _render_template(rule.body_template, variables)
-            title = _render_template(rule.title_template, variables)
+                variables = {
+                    'username': getattr(user, 'display_name', None) or user.username,
+                    # project_name 纯文本（标题用）；project_name_link 为 [项目名] 链接标记（消息体用）
+                    'project_name': project.project_name,
+                    'project_name_link': f'[{project.project_name}]',
+                    'first_contact_date': project.first_contact_date.isoformat(),
+                    'threshold_days': str(rule.threshold_days),
+                    'overdue_days': str(overdue_days),
+                    'project_id': str(project.id),
+                    'conclusion': (project.conclusion or '').strip(),
+                }
+                body = _render_template(rule.body_template, variables)
+                title = _render_template(rule.title_template, variables)
+                link_query = _render_template(rule.link_query_template, variables)
 
-            link_query = _render_template(rule.link_query_template, variables)
+                msg = UserMessage(
+                    user_id=user_id,
+                    user_type=user_type,
+                    rule_id=rule.id,
+                    source_type='investment_project',
+                    source_id=project.id,
+                    title=title,
+                    body=body,
+                    link_route=rule.link_route,
+                    link_query=link_query,
+                    status='pending',
+                    is_read=False,
+                )
+                db.session.add(msg)
+                generated += 1
 
-            msg = UserMessage(
-                user_id=user_id,
-                user_type=user_type,
-                rule_id=rule.id,
-                source_type='investment_project',
-                source_id=project.id,
-                title=title,
-                body=body,
-                link_route=rule.link_route,
-                link_query=link_query,
-                status='pending',
-                is_read=False,
-            )
-            db.session.add(msg)
-            generated += 1
-
-    if generated > 0:
-        # 写触发日志
-        log = MessageRuleLog(
-            rule_id=rule.id,
-            source_type='investment_project',
-            source_id=None,  # 批量触发,不记录单个 source
-            user_count=generated,
-        )
-        db.session.add(log)
+    # 无论是否生成消息都写触发日志（0 条也记，使"上次运行时间"每天可见）
+    log = MessageRuleLog(
+        rule_id=rule.id,
+        source_type='investment_project',
+        source_id=None,  # 批量触发,不记录单个 source
+        user_count=generated,
+    )
+    db.session.add(log)
 
     db.session.commit()
     return generated

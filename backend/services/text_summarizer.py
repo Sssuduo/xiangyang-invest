@@ -490,10 +490,30 @@ def _clean_chunk_params(config):
     return chunk_chars, max_tokens
 
 
+def _is_reasoning_model(config) -> bool:
+    """判断是否 DeepSeek 推理系模型（v4-flash / reasoner 等）。
+
+    推理模型的 generation 输出分为 reasoning_content + content 两部分，
+    合计受 max_tokens 约束：大块输入时思维链会吃掉全部 token 预算，
+    content 被挤空 → 摘要返回空串（id=35 实证：6000 字块 content=''、
+    reasoning_content 数千字）。此类模型必须显著缩小分块。
+    """
+    if not config:
+        return False
+    name = (config.get('model_name') or '').lower()
+    return 'deepseek' in name or (config.get('provider') or '').lower() == 'deepseek'
+
+
 def _summary_chunk_chars(config):
-    """摘要阶段 (阶段3) 的动态块大小：输出短，主要受输入上下文约束。"""
+    """摘要阶段 (阶段3) 的动态块大小：输出短，主要受输入上下文约束。
+
+    DeepSeek 推理系模型：按 _is_reasoning_model 降块到 2200 字，
+    保证 reasoning 不会挤空 content；其他模型沿用上下文推算。
+    """
     if not config:
         return SUMMARY_CHUNK_CHARS
+    if _is_reasoning_model(config):
+        return int(min(2200, SUMMARY_CHUNK_CHARS))
     ctx = _model_context_window(config)
     c = ctx * 0.7 / 1.5                          # 输入~1.5 tok/字符，输出可忽略
     return int(min(SUMMARY_CHUNK_CHARS, max(2000, c)))
@@ -746,9 +766,11 @@ def summarize_meeting(transcript: str, model_id=None, progress_callback=None) ->
                 f'阶段3块{ci}摘要过短疑似截断：clean {len(clean_c)} 字 → 摘要 {len(one)} 字 '
                 f'(<{SUMMARY_MIN_RATIO:.0%})，对该块做二级细分重试'
             )
-            # 二级分块（更小），同样按 clean/seg 两路切分后逐块局部总结再合并
-            sub_clean = _chunk_text(clean_c, SUMMARY_CHUNK_CHARS // 2, overlap=SUMMARY_OVERLAP_CHARS)
-            sub_seg = _chunk_text(seg_c or clean_c, SUMMARY_CHUNK_CHARS // 2, overlap=SUMMARY_OVERLAP_CHARS)
+            # 二级分块（更小）：对推理模型按 _summary_chunk_chars 同规则再减半，
+            # 避免细分块仍过大导致 reasoning 挤空 content（id=35 实证 4000 字块仍空）
+            sub_size = max(1100, min(_summary_chunk_chars(config) // 2, SUMMARY_CHUNK_CHARS // 2))
+            sub_clean = _chunk_text(clean_c, sub_size, overlap=SUMMARY_OVERLAP_CHARS)
+            sub_seg = _chunk_text(seg_c or clean_c, sub_size, overlap=SUMMARY_OVERLAP_CHARS)
             nsub = max(len(sub_clean), len(sub_seg))
             sub_pairs = [
                 (sub_clean[i] if i < len(sub_clean) else '',

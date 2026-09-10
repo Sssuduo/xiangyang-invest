@@ -187,6 +187,27 @@ def retry_audio_recognition(item_id):
     if item.audio_status in ('asr_processing', 'summarizing'):
         return jsonify({'code': 1, 'message': '正在处理中，请等待完成后重试'}), 409
 
+    # force=1 全量重转：清除各文件已落盘的 transcript（连 status=ok 的一起重转），
+    # 用于修复"旧数据末尾段静默缺失"（早于段重试/失败标记功能的历史转写无法被续传识别）。
+    data = request.get_json(silent=True) or {}
+    if data.get('force'):
+        changed = 0
+        for af in files:
+            if af.get('transcript'):
+                af['transcript'] = ''
+                af['status'] = None
+                changed += 1
+        if changed:
+            from services.audio_service import set_audio_files
+            set_audio_files(item, files)
+            item.audio_transcript = None
+            item.audio_transcript_segmented = None
+            item.audio_transcript_clean = None
+            item.audio_summary = None
+            item.audio_status = None
+            db.session.commit()
+            files = get_audio_files(item)
+
     # 预检 ASR 服务是否可达：避免“已开始识别”后又静默失败，
     # 也规避“识别失败且无切片进度”的困惑（服务不可达时会瞬间失败、不产生任何切片）。
     from services.speech_to_text import check_asr_health

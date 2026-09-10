@@ -194,6 +194,20 @@ def _post_single(filepath, url, timeout, language='zh'):
     return text.strip()
 
 
+def _post_single_with_retry(seg_path, url, timeout, language='zh'):
+    """单段转写；空文本（模型偶发空结果）自动重试一次，仍空返回 ''。
+
+    观测背景：asr_api 对个别 30s 段可能静默返回空（_infer_in_subproc 吞掉异常），
+    若不重试，长音频末尾会出现无法察觉的内容缺失（表现为"转写不完整"）。
+    """
+    text = _post_single(seg_path, url, timeout, language=language)
+    if text:
+        return text, False
+    logger.warning(f'ASR 段首次返回空文本，重试一次：{os.path.basename(seg_path)}')
+    text = _post_single(seg_path, url, timeout, language=language)
+    return text, True
+
+
 def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
     """将音频文件转换为文字（纯 HTTP 客户端，不引 funasr-onnx）。
 
@@ -204,7 +218,10 @@ def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
         on_slice_done: 可选回调，每完成一个切片调用一次 on_slice_done(slice_index, total_slices)
 
     Returns:
-        dict: {'success': True, 'text': str, 'duration': float, 'slices': int}
+        dict: {'success': True, 'text': str, 'duration': float, 'slices': int,
+               'failed_slices': int}
+               failed_slices > 0 表示有段落重试后仍为空，已在文本中标记
+               【第N段识别失败】，调用方可据此提示用户重转。
 
     Raises:
         RuntimeError: 任何失败场景，消息均含 _UNREACHABLE_HINT
@@ -221,7 +238,8 @@ def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
             if on_slice_done:
                 on_slice_done(1, 1)
             logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
-            return {'success': True, 'text': text, 'duration': duration, 'slices': 1}
+            return {'success': True, 'text': text, 'duration': duration,
+                    'slices': 1, 'failed_slices': 0}
         else:
             logger.info(f'长音频（{duration:.0f}s），按 {SEGMENT_DURATION}s/段预切后逐段 ASR')
             tmp = tempfile.mkdtemp(prefix='asr_seg_')
@@ -233,18 +251,29 @@ def transcribe_audio(audio_file_path, base_url=None, on_slice_done=None):
                     if on_slice_done:
                         on_slice_done(1, 1)
                     logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s')
-                    return {'success': True, 'text': text, 'duration': duration, 'slices': 1}
+                    return {'success': True, 'text': text, 'duration': duration,
+                            'slices': 1, 'failed_slices': 0}
                 else:
                     parts = []
+                    failed = 0
                     total_slices = len(segs)
                     for i, seg in enumerate(segs):
                         logger.info(f'ASR 段 [{i + 1}/{total_slices}]: {os.path.basename(seg)}')
-                        parts.append(_post_single(seg, url, timeout))
+                        text, was_retried = _post_single_with_retry(seg, url, timeout)
+                        if not text:
+                            failed += 1
+                            text = f'【第{i + 1}段识别失败】'
+                            logger.error(f'ASR 段 [{i + 1}/{total_slices}] 重试后仍为空，已打标记')
+                        elif was_retried:
+                            logger.info(f'ASR 段 [{i + 1}/{total_slices}] 重试成功')
+                        parts.append(text)
                         if on_slice_done:
                             on_slice_done(i + 1, total_slices)
-                    text = '\n'.join(parts)
-                    logger.info(f'ASR 完成：{len(text)} 字 / {duration:.0f}s，共 {total_slices} 段')
-                    return {'success': True, 'text': text, 'duration': duration, 'slices': total_slices}
+                    full = '\n'.join(parts)
+                    logger.info(f'ASR 完成：{len(full)} 字 / {duration:.0f}s，'
+                                f'共 {total_slices} 段，失败 {failed} 段')
+                    return {'success': True, 'text': full, 'duration': duration,
+                            'slices': total_slices, 'failed_slices': failed}
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
 

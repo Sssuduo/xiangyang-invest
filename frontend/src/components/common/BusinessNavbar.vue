@@ -450,9 +450,8 @@ async function handleChangePassword() {
 /* 抽屉标题栏（与系统其他抽屉统一：渐变底 + 白色加粗） */
 .drawer-title-bar {
   background: linear-gradient(135deg, #5b9bd5 0%, #8ab8e8 100%);
-  margin: 0 -20px;
+  margin: 0 -20px 0 -20px;
   padding: 20px 20px 20px 40px;
-  width: 420px;
 }
 .drawer-title {
   color: #fff;
@@ -554,4 +553,16 @@ async function handleChangePassword() {
 .nav-contact .nav-login:hover,
 .nav-contact .nav-logout:hover { color: #1a3a5c; }
 .nav-contact .nav-user { color: #1a3a5c; font-weight: 500; }
+</style>
+
+<!-- 非 scoped：消息中心抽屉 append-to-body，需全局归一化 header/body 内边距，
+     否则蓝色标题栏上边留白、右边对不齐（与系统其他抽屉统一） -->
+<style>
+.el-drawer__header {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+.el-drawer__body {
+  padding: 12px 20px 20px !important;
+}
 </style>

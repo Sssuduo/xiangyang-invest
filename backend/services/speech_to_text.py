@@ -196,17 +196,21 @@ def _post_single(filepath, url, timeout, language='zh'):
     return text.strip()
 
 
-def _post_single_with_retry(seg_path, url, timeout, language='zh'):
-    """单段转写；空文本（模型偶发空结果）自动重试一次，仍空返回 ''。
+def _post_single_with_retry(seg_path, url, timeout, language='zh', attempts=3):
+    """单段转写；空文本（模型偶发空结果）自动重试，仍空返回 ''。
 
     观测背景：asr_api 对个别 30s 段可能静默返回空（_infer_in_subproc 吞掉异常），
-    若不重试，长音频末尾会出现无法察觉的内容缺失（表现为"转写不完整"）。
+    属于偶发问题——同一段音频直接重转即可成功（已实证 f129/f202/f220 一次通过）。
+    因此默认最多尝试 3 次，把偶发空结果的概率降到可忽略。
     """
-    text = _post_single(seg_path, url, timeout, language=language)
-    if text:
-        return text, False
-    logger.warning(f'ASR 段首次返回空文本，重试一次：{os.path.basename(seg_path)}')
-    text = _post_single(seg_path, url, timeout, language=language)
+    text = ''
+    for i in range(attempts):
+        text = _post_single(seg_path, url, timeout, language=language)
+        if text:
+            if i > 0:
+                logger.info(f'ASR 段重试第 {i} 次成功：{os.path.basename(seg_path)}')
+            return text, i > 0
+        logger.warning(f'ASR 段第 {i + 1}/{attempts} 次返回空文本：{os.path.basename(seg_path)}')
     return text, True
 
 

@@ -209,6 +209,13 @@
                 </el-select>
               </el-form-item>
 
+              <el-form-item>
+                <span class="sync-ledger-check">
+                  <el-checkbox v-model="formData.sync_to_ledger">同步写入工作大事记</el-checkbox>
+                </span>
+                <div class="sync-ledger-hint">勾选后，本条工作记录将同步展示在工作大事记中</div>
+              </el-form-item>
+
               <el-form-item label="附件">
                 <div class="attach-layout">
                   <!-- 上传区（半宽半高、向左对齐）+ Ctrl+V 粘贴（复用工作大事记抽屉的交互） -->
@@ -312,7 +319,8 @@ const emptyForm = () => ({
   end_date: '',
   start_time: '',
   end_time: '',
-  time_period: ''
+  time_period: '',
+  sync_to_ledger: false
 })
 
 const formData = ref(emptyForm())
@@ -573,10 +581,10 @@ function updateDateLabel(dateInfo) {
   const end = new Date(dateInfo.end)
 
   if (currentView.value === 'timeGridWeek') {
-    // 周视图标题：2026-08-24 - 08-31日（结束只展示 月-日）
-    const mm = String(end.getMonth() + 1).padStart(2, '0')
-    const dd = String(end.getDate()).padStart(2, '0')
-    currentDateLabel.value = `${formatDate(start, 'YYYY-MM-DD')} - ${mm}-${dd}日`
+    // 周视图标题：2026年9月7日--9月14日（结束只展示 月日）
+    const startLabel = `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日`
+    const endLabel = `${end.getMonth() + 1}月${end.getDate()}日`
+    currentDateLabel.value = `${startLabel}--${endLabel}`
   } else {
     currentDateLabel.value = `${start.getFullYear()}年${start.getMonth() + 1}月`
   }
@@ -618,7 +626,8 @@ function openEditor(data, eventId = null) {
     end_date: startDate && !isNaN(startDate) ? formatDate(startDate, 'YYYY-MM-DD') : '',
     start_time: data.start_time || '',
     end_time: data.end_time || '',
-    time_period: data.time_period || ''
+    time_period: data.time_period || '',
+    sync_to_ledger: !!data.ledger_id
   }
 
   // 附件列表回显
@@ -742,7 +751,8 @@ async function saveEntry() {
         .map(f => ({ url: f.url, name: f.name, size: f.size || 0 })),
       start_datetime: startDatetime,
       end_datetime: endDatetime,
-      time_period: formData.value.time_period
+      time_period: formData.value.time_period,
+      sync_to_ledger: formData.value.sync_to_ledger
     }
 
     if (isEditing.value && editingId.value) {
@@ -1349,6 +1359,21 @@ onUnmounted(() => {
   flex-shrink: 0;
   font-size: 13px;
   color: #8a93a8;
+}
+
+/* 同步写入工作大事记 勾选框 */
+.sync-ledger-check {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1a3a5c;
+}
+.sync-ledger-hint {
+  font-size: 12px;
+  color: #8a93a8;
+  margin-top: 2px;
+  line-height: 1.4;
 }
 
 .editor-footer {

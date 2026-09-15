@@ -16,6 +16,16 @@ def _to_local_str(dt):
     return dt.astimezone(_LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
+def _to_local_iso(dt):
+    """UTC datetime → 东八区带偏移 ISO 字符串（如 2026-09-15T15:00:00+08:00），
+    供前端 new Date() 精确解析显示（避免把 UTC 值当本地时间导致偏移）。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_LOCAL_TZ).isoformat()
+
+
 class InvestmentProject(db.Model):
     """招商对接项目"""
     __tablename__ = 'investment_projects'
@@ -471,8 +481,8 @@ class WorkCalendarEntry(db.Model):
         return {
             'id': self.id,
             'user_id': self.user_id,
-            'start_datetime': self.start_datetime.isoformat() if self.start_datetime else None,
-            'end_datetime': self.end_datetime.isoformat() if self.end_datetime else None,
+            'start_datetime': _to_local_iso(self.start_datetime),
+            'end_datetime': _to_local_iso(self.end_datetime),
             'time_period': self.time_period,
             'work_item': self.work_item,
             'work_content': self.work_content,

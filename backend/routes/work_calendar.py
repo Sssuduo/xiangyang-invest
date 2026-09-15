@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, send_file, g, current_app
 
-from models.investment import WorkCalendarEntry
+from models.investment import WorkCalendarEntry, ActivityLedger
 from extensions import db
 from routes.business_auth import business_login_required
 
@@ -91,6 +91,82 @@ def _collect_entry_data(data):
     }
 
 
+# ===== 工作大事记同步辅助 =====
+
+def _compose_ledger_content(fields):
+    """日历记录 → 工作大事记 content（标题 + 详情，均为必填/可填空合并）"""
+    parts = [fields['work_item']]
+    if fields['work_content']:
+        parts.append(fields['work_content'])
+    participants = fields.get('participants')
+    if participants:
+        try:
+            names = json.loads(participants)
+        except (TypeError, ValueError):
+            names = participants if isinstance(participants, list) else []
+        if names:
+            parts.append('参加人员：' + '、'.join(names))
+    return '\n'.join(parts)
+
+
+def _local_date_of(dt):
+    """UTC datetime → 东八区日期（datetime 午夜），供工作大事记 date 字段使用"""
+    local = _to_local(dt)
+    return datetime(local.year, local.month, local.day)
+
+
+def _create_synced_ledger(entry, fields):
+    """创建关联的工作大事记，回填 entry.ledger_id；返回 ledger 对象"""
+    ledger = ActivityLedger(
+        date=_local_date_of(entry.start_datetime),
+        content=_compose_ledger_content(fields),
+        files='[]',
+        tags='[]'
+    )
+    db.session.add(ledger)
+    db.session.flush()
+    entry.ledger_id = ledger.id
+    return ledger
+
+
+def _update_synced_ledger(entry, fields):
+    """按字段更新关联的工作大事记 content/date；无关联则创建"""
+    ledger = None
+    if entry.ledger_id:
+        ledger = ActivityLedger.query.get(entry.ledger_id)
+    if ledger is None:
+        ledger = _create_synced_ledger(entry, fields)
+    else:
+        ledger.date = _local_date_of(entry.start_datetime)
+        ledger.content = _compose_ledger_content(fields)
+    return ledger
+
+
+def _is_pure_sync_ledger(ledger):
+    """判断关联大事记是否为纯同步产物（无录音/照片/标签/项目关联），是则可随日历记录一并删除"""
+    if ledger is None:
+        return True
+    try:
+        audio = json.loads(ledger.audio_files or '[]')
+    except (TypeError, ValueError):
+        audio = []
+    try:
+        files = json.loads(ledger.files or '[]')
+    except (TypeError, ValueError):
+        files = []
+    try:
+        tags = json.loads(ledger.tags or '[]')
+    except (TypeError, ValueError):
+        tags = []
+    return (
+        not audio and not files and not tags
+        and not ledger.linked_project_id
+        and not ledger.linked_activity_id
+        and not ledger.linked_construction_id
+        and not ledger.linked_work_progress_id
+    )
+
+
 # ===== 日历 CRUD =====
 
 @bp.route('', methods=['GET'])
@@ -145,6 +221,12 @@ def create():
     )
 
     db.session.add(entry)
+    db.session.flush()
+
+    # 可选：同步写入工作大事记（勾选时创建关联大事记并回填 ledger_id）
+    if data.get('sync_to_ledger'):
+        _create_synced_ledger(entry, fields)
+
     db.session.commit()
 
     return jsonify({'code': 0, 'data': entry.to_dict()}), 201
@@ -172,6 +254,13 @@ def update(id):
     entry.work_content = fields['work_content']
     entry.participants = fields['participants']
     entry.attachments = fields['attachments']
+
+    # 同步到工作大事记：勾选→创建/更新关联大事记；取消勾选→仅解除关联（保留已建大事记，避免误删用户数据）
+    if data.get('sync_to_ledger'):
+        _update_synced_ledger(entry, fields)
+    else:
+        entry.ledger_id = None
+
     entry.updated_at = datetime.utcnow()
 
     db.session.commit()
@@ -186,6 +275,14 @@ def delete(id):
     entry = WorkCalendarEntry.query.filter_by(id=id, user_id=g.user.id).first()
     if entry is None:
         return jsonify({'code': 404, 'message': '记录不存在'}), 404
+
+    # 联动处理关联大事记：纯同步产物（无录音/照片/标签/关联项目）随日历删除；
+    # 已附加独立数据的大事迹仅解除关联，避免误删
+    if entry.ledger_id:
+        ledger = ActivityLedger.query.get(entry.ledger_id)
+        if _is_pure_sync_ledger(ledger):
+            db.session.delete(ledger)
+        entry.ledger_id = None
 
     db.session.delete(entry)
     db.session.commit()

@@ -461,7 +461,15 @@ const calendarOptions = ref({
     const props = info.event.extendedProps
     if (!props.start_datetime) return // 拖选 mirror 不预览
     hoverEvent.value = props
-    hoverPos.value = { x: jsEvent.clientX, y: jsEvent.clientY }
+    // 用事件卡 DOM 位置定位：jsEvent.clientX/Y 在 FullCalendar 事件回调里可能为 0(undefined)，
+    // 导致悬停卡 fixed 定位到左上角；getBoundingClientRect 始终可靠
+    const el = info.el
+    const rect = el && typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null
+    if (rect && rect.width > 0) {
+      hoverPos.value = { x: rect.right, y: rect.top }
+    } else {
+      hoverPos.value = { x: jsEvent ? jsEvent.clientX : 0, y: jsEvent ? jsEvent.clientY : 0 }
+    }
   },
   eventMouseLeave: () => {
     // 延迟关闭，允许移入预览卡

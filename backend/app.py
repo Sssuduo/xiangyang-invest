@@ -112,9 +112,10 @@ def _run_auto_migrations(app):
         'bidding_enterprises': [
             ('contact_position', 'VARCHAR(64)'),
         ],
-        # 工作日历：关联的工作大事记（同步写入）
+        # 工作日历：关联的工作大事记（同步写入） + 动态标签（单选）
         'work_calendar_entries': [
             ('ledger_id', 'INTEGER'),
+            ('tags', 'TEXT'),
         ],
         # 后续如有新增字段，在此追加即可
     }

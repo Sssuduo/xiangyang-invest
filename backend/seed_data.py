@@ -783,6 +783,7 @@ def _seed_investment_dicts():
         ('activity_tag_daofang', '到访接待'),
         ('activity_tag_shipin', '食品企业走进农高区活动'),
         ('activity_tag_diaodu', '调度推进'),
+        ('activity_tag_meeting', '参加会议'),
     ]
     for i, (code, name) in enumerate(activity_tags):
         existing = ActivityTagDict.query.filter_by(code=code).first()

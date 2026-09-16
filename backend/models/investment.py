@@ -465,6 +465,9 @@ class WorkCalendarEntry(db.Model):
     # 附件
     attachments = db.Column(db.Text, default='[]')         # JSON数组：[{url, name, size}, ...]
 
+    # 动态标签（单选，存 code 数组，如 ["activity_tag_meeting"]；复用 activity_tag_dict）
+    tags = db.Column(db.Text, default='[]')
+
     # 关联的工作大事记（需求：新建/编辑时可选择同步写入工作大事记）
     ledger_id = db.Column(db.Integer, db.ForeignKey('activity_ledger.id'), nullable=True, index=True)
     ledger = db.relationship('ActivityLedger', foreign_keys=[ledger_id])
@@ -488,6 +491,7 @@ class WorkCalendarEntry(db.Model):
             'work_content': self.work_content,
             'participants': json.loads(self.participants) if self.participants else [],
             'attachments': json.loads(self.attachments) if self.attachments else [],
+            'tags': json.loads(self.tags) if self.tags else [],
             'ledger_id': self.ledger_id,
             'created_by': self.created_by,
             'created_at': _to_local_str(self.created_at),

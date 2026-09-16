@@ -37,6 +37,11 @@
                 <template v-for="mod in modules" :key="mod.key">
                   <span v-if="row.permissions?.[mod.key]" class="perm-module">
                     <span class="perm-module-name">{{ mod.label }}</span>
+                    <template v-if="mod.key === 'work_calendar'">
+                      <span v-if="row.permissions[mod.key].delete" class="perm-tag">删除</span>
+                      <span v-else class="perm-tag perm-none">无</span>
+                    </template>
+                    <template v-else>
                     <span v-if="row.permissions[mod.key].add !== false" class="perm-tag">添加</span>
                     <span v-if="row.permissions[mod.key].edit" class="perm-tag">编辑</span>
                     <span v-if="row.permissions[mod.key].delete" class="perm-tag">删除</span>
@@ -45,6 +50,7 @@
                     <span v-if="row.permissions[mod.key].assess" class="perm-tag">AI研判</span>
                     <span v-if="row.permissions[mod.key].convert" class="perm-tag">转项目</span>
                     <span v-if="!row.permissions[mod.key].edit && !row.permissions[mod.key].delete && !row.permissions[mod.key].batch_delete && !row.permissions[mod.key].assess && !row.permissions[mod.key].convert" class="perm-tag perm-none">无</span>
+                    </template>
                   </span>
                 </template>
               </div>
@@ -116,6 +122,13 @@
         <div class="perm-config">
           <div v-for="mod in modules" :key="mod.key" class="perm-module-row">
             <span class="perm-module-label">{{ mod.label }}</span>
+            <template v-if="mod.key === 'work_calendar'">
+              <el-checkbox
+                v-model="form.permissions[mod.key].delete"
+                :disabled="!form.permissions[mod.key]"
+              >删除</el-checkbox>
+            </template>
+            <template v-else>
             <el-checkbox
               v-model="form.permissions[mod.key].add"
               :disabled="!form.permissions[mod.key]"
@@ -146,6 +159,7 @@
               v-model="form.permissions[mod.key].convert"
               :disabled="!form.permissions[mod.key]"
             >转为项目</el-checkbox>
+            </template>
           </div>
         </div>
         </template>
@@ -174,7 +188,8 @@ const modules = [
   { key: 'demand', label: '企业诉求管理' },
   { key: 'construction', label: '在建项目管理' },
   { key: 'lead', label: '招商线索研判' },
-  { key: 'knowledge', label: '本地招商知识库' }
+  { key: 'knowledge', label: '本地招商知识库' },
+  { key: 'work_calendar', label: '工作日历管理' }
 ]
 
 const users = ref([])
@@ -188,6 +203,11 @@ const formRef = ref(null)
 const defaultPermissions = () => {
   const p = {}
   modules.forEach(m => {
+    if (m.key === 'work_calendar') {
+      // 工作日历只管删除权限：默认不给，管理员显式勾选后才可删除
+      p[m.key] = { delete: false }
+      return
+    }
     p[m.key] = { add: true, edit: true, delete: true, batch_delete: true, import: true }
     // 招商线索研判需要额外配置 AI研判 + 转为项目 按钮权限
     if (m.key === 'lead') {

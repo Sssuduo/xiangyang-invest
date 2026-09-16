@@ -99,6 +99,12 @@
           <div v-if="hoverEvent.participants && hoverEvent.participants.length" class="hover-participants">
             👥 {{ hoverEvent.participants.join('、') }}
           </div>
+          <div v-if="hoverTagName" class="hover-tag">
+            🏷 {{ hoverTagName }}
+          </div>
+          <div class="hover-actions">
+            <el-button size="small" type="primary" plain @click.stop="openEditorFromHover">✎ 编辑</el-button>
+          </div>
           <div v-if="hoverImages.length" class="hover-images">
             <el-image
               v-for="(img, i) in hoverImages"
@@ -209,6 +215,17 @@
                 </el-select>
               </el-form-item>
 
+              <el-form-item label="标签">
+                <el-radio-group v-model="formData.tags">
+                  <el-radio
+                    v-for="tag in tagOptions"
+                    :key="tag.code"
+                    :value="tag.code"
+                  >{{ tag.name }}</el-radio>
+                  <el-radio :value="''">无</el-radio>
+                </el-radio-group>
+              </el-form-item>
+
               <el-form-item>
                 <span class="sync-ledger-check">
                   <el-checkbox v-model="formData.sync_to_ledger">同步写入工作大事记</el-checkbox>
@@ -269,7 +286,11 @@
 
             <div class="editor-footer">
               <el-button @click="closeEditor">取消</el-button>
-              <el-button v-if="isEditing" type="danger" @click="handleDeleteEntry">删除</el-button>
+              <el-button
+                v-if="isEditing && businessAuth.hasPermission('work_calendar', 'delete')"
+                type="danger"
+                @click="handleDeleteEntry"
+              >删除</el-button>
               <el-button type="primary" :loading="saving" @click="saveEntry">保存</el-button>
             </div>
           </div>
@@ -312,6 +333,7 @@ const emptyForm = () => ({
   work_item: '',
   work_content: '',
   participants: [],
+  tags: '',  // 动态标签（单选，存 code，如 'activity_tag_meeting'）
   attachments: [],
   start_datetime: '',
   end_datetime: '',
@@ -334,6 +356,9 @@ const fileList = ref([])
 // ===== 工作人员列表（用于自动补全） =====
 const staffList = ref([])
 
+// ===== 动态标签字典（表单标签单选，复用 activity_tag_dict） =====
+const tagOptions = ref([])
+
 // ===== 导出弹窗 =====
 const exportDialogVisible = ref(false)
 const exporting = ref(false)
@@ -355,6 +380,15 @@ const hoverImages = computed(() => {
   const atts = hoverEvent.value?.attachments || []
   return atts.filter(a => a && a.url && isImageUrl(a.url))
 })
+
+// 悬停卡/事件卡标签名称（复用动态标签字典）
+function tagNameOf(tags) {
+  if (!Array.isArray(tags) || !tags.length) return ''
+  const hit = tagOptions.value.find(t => t.code === tags[0])
+  return hit ? hit.name : ''
+}
+
+const hoverTagName = computed(() => tagNameOf(hoverEvent.value?.tags))
 
 const hoverStyle = computed(() => {
   let left = hoverPos.value.x + 14
@@ -409,6 +443,11 @@ const calendarOptions = ref({
   // 启用时间选择
   selectable: true,
   selectMirror: true,
+  // 允许在已有事件覆盖的时间区间内继续拖选新建（不打断原有下拉交互）
+  selectAllow: (info) => {
+    if (!info.allDay) return true
+    return false
+  },
 
   eventOverlap: true,
 
@@ -443,24 +482,19 @@ const calendarOptions = ref({
     })
   },
 
-  // 点击已有事件编辑
+  // 点击已有事件：不直接弹编辑框（编辑走卡上 ✎ 按钮），仅停留悬浮预览，避免打断拖选新建流程
   eventClick: (info) => {
     const props = info.event.extendedProps
-    const startDate = new Date(props.start_datetime)
-    const endDate = new Date(props.end_datetime)
-
-    openEditor({
-      ...props,
-      start_time: formatDate(startDate, 'HH:mm'),
-      end_time: formatDate(endDate, 'HH:mm')
-    }, info.event.id)
+    if (!props.start_datetime) return
+    hoverEvent.value = { ...props, id: info.event.id }
+    hoverStay.value = true
   },
 
   // 悬停预览
   eventMouseEnter: (info, jsEvent) => {
     const props = info.event.extendedProps
     if (!props.start_datetime) return // 拖选 mirror 不预览
-    hoverEvent.value = props
+    hoverEvent.value = { ...props, id: info.event.id }
     // 用事件卡 DOM 位置定位：jsEvent.clientX/Y 在 FullCalendar 事件回调里可能为 0(undefined)，
     // 导致悬停卡 fixed 定位到左上角；getBoundingClientRect 始终可靠
     const el = info.el
@@ -478,7 +512,7 @@ const calendarOptions = ref({
     }, 120)
   },
 
-  // 自定义事件渲染（多彩渐变；用户文本转义防 XSS；拖选 mirror 不显示 NaN/未命名）
+  // 自定义事件渲染（浅色滤镜：同一时段多事项可并存互不遮挡；右上角编辑按钮）
   eventContent: (arg) => {
     const { event } = arg
     const props = event.extendedProps
@@ -502,15 +536,39 @@ const calendarOptions = ref({
     const imgCount = (props.attachments || []).filter(a => a && isImageUrl(a.url)).length
     const imgHtml = imgCount > 0 ? `<div class="event-imgs">🖼 ${imgCount}</div>` : ''
 
+    const tagName = tagNameOf(props.tags)
+    const tagHtml = tagName ? `<span class="event-tag-badge">🏷 ${escapeHtml(tagName)}</span>` : ''
+
     return {
       html: `
         <div class="calendar-event-card ev-${tone}">
+          <span class="event-color-bar"></span>
+          <span class="event-edit-btn" title="编辑该事项">✎</span>
           <div class="event-time">${startTime}-${endTime}${imgHtml}</div>
           <div class="event-title">${escapeHtml(event.title || '未命名')}</div>
           ${participantsHtml}
+          ${tagHtml}
         </div>
       `
     }
+  },
+
+  // 事件挂载：给卡上的「编辑」按钮绑定点击（OpenEditor）
+  eventDidMount: (info) => {
+    const btn = info.el?.querySelector?.('.event-edit-btn')
+    if (!btn) return
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const props = info.event.extendedProps
+      if (!props.start_datetime) return
+      const startDate = new Date(props.start_datetime)
+      const endDate = new Date(props.end_datetime)
+      openEditor({
+        ...props,
+        start_time: formatDate(startDate, 'HH:mm'),
+        end_time: formatDate(endDate, 'HH:mm')
+      }, info.event.id)
+    })
   },
 
   // 加载事件数据
@@ -635,6 +693,7 @@ function openEditor(data, eventId = null) {
     start_time: data.start_time || '',
     end_time: data.end_time || '',
     time_period: data.time_period || '',
+    tags: Array.isArray(data.tags) && data.tags.length ? data.tags[0] : '',
     sync_to_ledger: !!data.ledger_id
   }
 
@@ -662,6 +721,21 @@ function closeEditor() {
   formData.value = emptyForm()
   fileList.value = []
   selectionRect.value = null
+}
+
+// 悬浮预览卡 → 编辑（hoverEvent 已带 id）
+function openEditorFromHover() {
+  const h = hoverEvent.value
+  if (!h || !h.id) return
+  hoverEvent.value = null
+  hoverStay.value = false
+  const startDate = h.start_datetime ? new Date(h.start_datetime) : null
+  const endDate = h.end_datetime ? new Date(h.end_datetime) : null
+  openEditor({
+    ...h,
+    start_time: startDate && !isNaN(startDate) ? formatDate(startDate, 'HH:mm') : '',
+    end_time: endDate && !isNaN(endDate) ? formatDate(endDate, 'HH:mm') : ''
+  }, h.id)
 }
 
 // 是否存在未保存内容
@@ -754,6 +828,7 @@ async function saveEntry() {
       work_item: formData.value.work_item,
       work_content: formData.value.work_content,
       participants: formData.value.participants,
+      tags: formData.value.tags ? [formData.value.tags] : [],
       attachments: fileList.value
         .filter(f => f.url)
         .map(f => ({ url: f.url, name: f.name, size: f.size || 0 })),
@@ -983,6 +1058,7 @@ async function loadStaffList() {
     const res = await getDicts()
     if (res.code === 0) {
       staffList.value = (res.data.staff || []).map(s => ({ id: s.id, name: s.name }))
+      tagOptions.value = res.data.activity_tags || []
     }
   } catch (e) {
     console.error('加载工作人员列表失败:', e)
@@ -1144,15 +1220,55 @@ onUnmounted(() => {
   );
 }
 
-/* ===== 日历事件卡片（多彩渐变） ===== */
+/* ===== 日历事件卡片（浅色滤镜：同一时段可并存多事项，互不遮挡） ===== */
 .calendar-event-card {
-  padding: 4px 8px;
+  position: relative;
+  padding: 4px 8px 4px 10px;
   font-size: 12px;
-  color: white;
+  color: #2b3a55;
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 2px 6px rgba(60, 60, 110, 0.18);
-  border-left: 3px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 1px 4px rgba(60, 60, 110, 0.10);
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  /* 半透明浅色底：即便与其他事项时间交叉，下层也能透出 */
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(1px);
+}
+
+/* 左侧色条按色调区分，底色保持浅色滤镜 */
+.calendar-event-card .event-color-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 3px 0 0 3px;
+}
+
+/* 编辑按钮（右上角，悬浮时显现） */
+.event-edit-btn {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(70, 90, 140, 0.85);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.25;
+  transition: opacity 0.15s ease;
+  user-select: none;
+}
+.calendar-event-card:hover .event-edit-btn {
+  opacity: 1;
+}
+.event-edit-btn:hover {
+  background: #4a6fd6;
+  transform: scale(1.15);
 }
 
 .calendar-event-card.is-mirror {
@@ -1172,20 +1288,23 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  color: #4a5b7d;
 }
 
 .event-title {
-  font-weight: 500;
+  font-weight: 600;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #22304f;
 }
 
 .event-participants {
   font-size: 10px;
-  opacity: 0.85;
+  opacity: 0.9;
   margin-top: 2px;
+  color: #5a6b8c;
 }
 
 .event-imgs {
@@ -1196,14 +1315,41 @@ onUnmounted(() => {
   margin-left: 6px;
 }
 
-.ev-c0 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.ev-c1 { background: linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%); }
-.ev-c2 { background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%); }
-.ev-c3 { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
-.ev-c4 { background: linear-gradient(135deg, #ee9ca7 0%, #ffdde1 100%); }
-.ev-c5 { background: linear-gradient(135deg, #4776e6 0%, #8e54e9 100%); }
-.ev-c6 { background: linear-gradient(135deg, #f953c6 0%, #b91d73 100%); }
-.ev-c7 { background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%); }
+.event-tag-badge {
+  display: inline-block;
+  font-size: 10px;
+  color: #3c5a9e;
+  background: rgba(92, 130, 210, 0.16);
+  border: 1px solid rgba(92, 130, 210, 0.35);
+  border-radius: 8px;
+  padding: 0 6px;
+  margin-top: 3px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 色调：仅作左侧色条与极浅底色，保持滤镜通透 */
+.ev-c0 { background: rgba(102, 126, 234, 0.16); border-color: rgba(102, 126, 234, 0.45); }
+.ev-c1 { background: rgba(54, 209, 220, 0.16); border-color: rgba(54, 209, 220, 0.45); }
+.ev-c2 { background: rgba(247, 151, 30, 0.16); border-color: rgba(247, 151, 30, 0.45); }
+.ev-c3 { background: rgba(17, 153, 142, 0.16); border-color: rgba(17, 153, 142, 0.45); }
+.ev-c4 { background: rgba(238, 156, 167, 0.20); border-color: rgba(238, 156, 167, 0.5); }
+.ev-c5 { background: rgba(71, 118, 230, 0.16); border-color: rgba(71, 118, 230, 0.45); }
+.ev-c6 { background: rgba(249, 83, 198, 0.14); border-color: rgba(249, 83, 198, 0.42); }
+.ev-c7 { background: rgba(11, 163, 96, 0.16); border-color: rgba(11, 163, 96, 0.45); }
+
+/* 左侧色条颜色（与色调一致） */
+.ev-c0 .event-color-bar { background: #667eea; }
+.ev-c1 .event-color-bar { background: #36d1dc; }
+.ev-c2 .event-color-bar { background: #f7971e; }
+.ev-c3 .event-color-bar { background: #11998e; }
+.ev-c4 .event-color-bar { background: #ee9ca7; }
+.ev-c5 .event-color-bar { background: #4776e6; }
+.ev-c6 .event-color-bar { background: #f953c6; }
+.ev-c7 .event-color-bar { background: #0ba360; }
 
 /* ===== 悬停预览卡 ===== */
 .hover-fade-enter-active,
@@ -1257,6 +1403,18 @@ onUnmounted(() => {
   font-size: 12px;
   color: #6b7490;
   margin-top: 6px;
+}
+
+.hover-tag {
+  font-size: 12px;
+  color: #3c5a9e;
+  margin-top: 6px;
+}
+
+.hover-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .hover-images {

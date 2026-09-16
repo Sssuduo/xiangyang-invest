@@ -80,6 +80,13 @@ def _collect_entry_data(data):
     if not isinstance(attachments, list):
         raise ValueError('attachments 必须是数组')
 
+    # 动态标签（单选，接收 code 数组，如 ["activity_tag_meeting"]）
+    tags = data.get('tags', [])
+    if not isinstance(tags, list) or len(tags) > 1:
+        raise ValueError('tags 必须是数组且最多一个（单选）')
+    if tags and not isinstance(tags[0], str):
+        raise ValueError('tags 元素必须是字符串 code')
+
     return {
         'start_datetime': start_dt,
         'end_datetime': end_dt,
@@ -88,6 +95,7 @@ def _collect_entry_data(data):
         'work_content': (data.get('work_content') or '').strip(),
         'participants': json.dumps(participants, ensure_ascii=False),
         'attachments': json.dumps(attachments, ensure_ascii=False),
+        'tags': json.dumps(tags, ensure_ascii=False),
     }
 
 
@@ -172,12 +180,11 @@ def _is_pure_sync_ledger(ledger):
 @bp.route('', methods=['GET'])
 @business_login_required
 def get_list():
-    """获取工作日历条目（按时间范围，重叠语义：事件与该区间有交集即返回）"""
+    """获取工作日历条目（全局共享：返回所有业务用户记录；按时间范围重叠语义）"""
     start = request.args.get('start')
     end = request.args.get('end')
-    user_id = g.user.id
 
-    query = WorkCalendarEntry.query.filter_by(user_id=user_id)
+    query = WorkCalendarEntry.query
 
     if start and end:
         try:
@@ -217,6 +224,7 @@ def create():
         work_content=fields['work_content'],
         participants=fields['participants'],
         attachments=fields['attachments'],
+        tags=fields['tags'],
         created_by=g.user.id
     )
 
@@ -235,8 +243,8 @@ def create():
 @bp.route('/<int:id>', methods=['PUT'])
 @business_login_required
 def update(id):
-    """更新工作日历条目（仅限本人记录）"""
-    entry = WorkCalendarEntry.query.filter_by(id=id, user_id=g.user.id).first()
+    """更新工作日历条目（全局共享：所有登录业务用户都可编辑）"""
+    entry = WorkCalendarEntry.query.get(id)
     if entry is None:
         return jsonify({'code': 404, 'message': '记录不存在'}), 404
 
@@ -254,6 +262,7 @@ def update(id):
     entry.work_content = fields['work_content']
     entry.participants = fields['participants']
     entry.attachments = fields['attachments']
+    entry.tags = fields['tags']
 
     # 同步到工作大事记：勾选→创建/更新关联大事记；取消勾选→仅解除关联（保留已建大事记，避免误删用户数据）
     if data.get('sync_to_ledger'):
@@ -271,8 +280,13 @@ def update(id):
 @bp.route('/<int:id>', methods=['DELETE'])
 @business_login_required
 def delete(id):
-    """删除工作日历条目（仅限本人记录）"""
-    entry = WorkCalendarEntry.query.filter_by(id=id, user_id=g.user.id).first()
+    """删除工作日历条目（需「工作日历删除」权限：permissions.work_calendar.delete）"""
+    # 权限校验：工作日历删除由用户表权限概览中的「工作日历删除」控制
+    perms = g.user.get_permissions() if hasattr(g.user, 'get_permissions') else {}
+    if not (perms.get('work_calendar') or {}).get('delete'):
+        return jsonify({'code': 403, 'message': '没有工作日历删除权限'}), 403
+
+    entry = WorkCalendarEntry.query.get(id)
     if entry is None:
         return jsonify({'code': 404, 'message': '记录不存在'}), 404
 
@@ -359,9 +373,8 @@ def export_word():
     if not fields:
         fields = set(EXPORT_FIELDS)
 
-    # 重叠语义查询该时间段内有交集的条目
+    # 重叠语义查询该时间段内有交集的条目（全局共享：所有用户记录）
     entries = WorkCalendarEntry.query.filter(
-        WorkCalendarEntry.user_id == g.user.id,
         WorkCalendarEntry.start_datetime <= end_dt,
         WorkCalendarEntry.end_datetime >= start_dt
     ).order_by(WorkCalendarEntry.start_datetime).all()

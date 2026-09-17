@@ -1316,9 +1316,9 @@ onUnmounted(() => {
 .event-tag-badge {
   display: inline-block;
   font-size: 10px;
-  color: #3c5a9e;
-  background: rgba(92, 130, 210, 0.14);
-  border: 1px solid rgba(92, 130, 210, 0.30);
+  color: #5a6b8c;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(120, 140, 190, 0.35);
   border-radius: 8px;
   padding: 0 6px;
   margin-top: 3px;
@@ -1330,22 +1330,22 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-/* 色调：极浅透明底色 + 柔和边框，保持滤镜通透（同区间可叠加透出） */
-.ev-c0 { background: rgba(102, 126, 234, 0.10); border-color: rgba(102, 126, 234, 0.30); }
-.ev-c1 { background: rgba(54, 209, 220, 0.10); border-color: rgba(54, 209, 220, 0.30); }
-.ev-c2 { background: rgba(247, 151, 30, 0.10); border-color: rgba(247, 151, 30, 0.30); }
-.ev-c3 { background: rgba(17, 153, 142, 0.10); border-color: rgba(17, 153, 142, 0.30); }
-.ev-c4 { background: rgba(238, 156, 167, 0.14); border-color: rgba(238, 156, 167, 0.38); }
-.ev-c5 { background: rgba(71, 118, 230, 0.10); border-color: rgba(71, 118, 230, 0.30); }
-.ev-c6 { background: rgba(249, 83, 198, 0.10); border-color: rgba(249, 83, 198, 0.30); }
-.ev-c7 { background: rgba(11, 163, 96, 0.10); border-color: rgba(11, 163, 96, 0.30); }
+/* 色调（无标签 fallback）：类型色半透明打底整卡，透明度适中（明显但不刺眼） */
+.ev-c0 { background: rgba(102, 126, 234, 0.22); border-color: rgba(102, 126, 234, 0.48); }
+.ev-c1 { background: rgba(54, 209, 220, 0.22); border-color: rgba(54, 209, 220, 0.48); }
+.ev-c2 { background: rgba(247, 151, 30, 0.22); border-color: rgba(247, 151, 30, 0.48); }
+.ev-c3 { background: rgba(17, 153, 142, 0.22); border-color: rgba(17, 153, 142, 0.48); }
+.ev-c4 { background: rgba(238, 156, 167, 0.26); border-color: rgba(238, 156, 167, 0.52); }
+.ev-c5 { background: rgba(71, 118, 230, 0.22); border-color: rgba(71, 118, 230, 0.48); }
+.ev-c6 { background: rgba(249, 83, 198, 0.22); border-color: rgba(249, 83, 198, 0.48); }
+.ev-c7 { background: rgba(11, 163, 96, 0.22); border-color: rgba(11, 163, 96, 0.48); }
 
-/* 标签类型专属色调：外出考察→绿、到访接待→蓝、食品活动→橙、调度推进→紫、参加会议→青 */
-.ev-tag-g { background: rgba(76, 175, 80, 0.12); border-color: rgba(76, 175, 80, 0.32); }
-.ev-tag-b { background: rgba(66, 133, 244, 0.12); border-color: rgba(66, 133, 244, 0.32); }
-.ev-tag-o { background: rgba(255, 152, 0, 0.14); border-color: rgba(255, 152, 0, 0.34); }
-.ev-tag-p { background: rgba(156, 39, 176, 0.12); border-color: rgba(156, 39, 176, 0.32); }
-.ev-tag-c { background: rgba(0, 172, 193, 0.12); border-color: rgba(0, 172, 193, 0.32); }
+/* 标签类型专属色调（内置配色）：外出考察→绿、到访接待→蓝、食品活动→橙、调度推进→紫、参加会议→青 */
+.ev-tag-g { background: rgba(76, 175, 80, 0.24); border-color: rgba(76, 175, 80, 0.50); }
+.ev-tag-b { background: rgba(66, 133, 244, 0.24); border-color: rgba(66, 133, 244, 0.50); }
+.ev-tag-o { background: rgba(255, 152, 0, 0.26); border-color: rgba(255, 152, 0, 0.52); }
+.ev-tag-p { background: rgba(156, 39, 176, 0.24); border-color: rgba(156, 39, 176, 0.50); }
+.ev-tag-c { background: rgba(0, 172, 193, 0.24); border-color: rgba(0, 172, 193, 0.50); }
 
 /* 左侧色条颜色（与色调一致） */
 .ev-c0 .event-color-bar { background: #667eea; }

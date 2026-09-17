@@ -31,10 +31,6 @@ def _run_auto_migrations(app):
 
     # 各表缺失列映射：{表名: [(列名, 列类型), ...]}
     MIGRATIONS = {
-        # V16.16.21 动态标签主色（工作日历卡片分色，字典管理可配置）
-        'activity_tag_dict': [
-            ('display_color', 'VARCHAR(16)'),
-        ],
         'activity_ledger': [
             ('audio_files', 'TEXT'),
             ('audio_archive', 'TEXT'),

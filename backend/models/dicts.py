@@ -98,14 +98,12 @@ class ActivityTagDict(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=False)
-    display_color = db.Column(db.String(16), nullable=False, default='#4caf50')  # 标签主色（日历卡片用）
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {
             'id': self.id, 'code': self.code, 'name': self.name,
-            'display_color': self.display_color,
             'sort_order': self.sort_order, 'is_active': self.is_active
         }
 

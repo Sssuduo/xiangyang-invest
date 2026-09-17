@@ -777,21 +777,22 @@ def _seed_investment_dicts():
         else:
             db.session.add(ProjectTagDict(code=code, name=name, sort_order=i + 1))
 
-    # 动态标签
+    # 动态标签（display_color 为日历卡片主色，可在字典管理配置）
     activity_tags = [
-        ('activity_tag_waichu', '外出考察'),
-        ('activity_tag_daofang', '到访接待'),
-        ('activity_tag_shipin', '食品企业走进农高区活动'),
-        ('activity_tag_diaodu', '调度推进'),
-        ('activity_tag_meeting', '参加会议'),
+        ('activity_tag_waichu', '外出考察', '#4caf50'),
+        ('activity_tag_daofang', '到访接待', '#4285f4'),
+        ('activity_tag_shipin', '食品企业走进农高区活动', '#ff9800'),
+        ('activity_tag_diaodu', '调度推进', '#9c27b0'),
+        ('activity_tag_meeting', '参加会议', '#00acc1'),
     ]
-    for i, (code, name) in enumerate(activity_tags):
+    for i, (code, name, color) in enumerate(activity_tags):
         existing = ActivityTagDict.query.filter_by(code=code).first()
         if existing:
             existing.name = name
+            existing.display_color = color
             existing.sort_order = i + 1
         else:
-            db.session.add(ActivityTagDict(code=code, name=name, sort_order=i + 1))
+            db.session.add(ActivityTagDict(code=code, name=name, display_color=color, sort_order=i + 1))
 
     db.session.commit()
     print('[种子数据] 招商对接项目库字典已初始化')

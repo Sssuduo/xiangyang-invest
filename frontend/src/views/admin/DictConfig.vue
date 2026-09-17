@@ -152,7 +152,7 @@ const tabs = [
   { key: 'resolution_statuses', label: '解决状态' },
   { key: 'staff', label: '工作人员' },
 ]
-const tabsWithColor = ['follow_statuses', 'meeting_statuses', 'resolution_statuses']
+const tabsWithColor = ['follow_statuses', 'meeting_statuses', 'resolution_statuses', 'activity_tags']
 
 const activeTab = ref('follow_statuses')
 const currentTabHasColor = computed(() => tabsWithColor.includes(activeTab.value))

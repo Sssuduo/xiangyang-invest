@@ -524,9 +524,13 @@ const calendarOptions = ref({
 
     const startTime = formatDate(new Date(props.start_datetime), 'HH:mm')
     const endTime = formatDate(new Date(props.end_datetime), 'HH:mm')
-    // 类型色调：优先按动态标签映射；无标签回退标题 hash 色
+    // 类型色调：优先用动态标签字典里配置的 display_color；无标签回退标题 hash 色
     const tagCode = Array.isArray(props.tags) && props.tags.length ? props.tags[0] : ''
-    const tone = TAG_TONE_MAP[tagCode] || colorTone(props.work_item || '')
+    const tagMeta = tagCode ? tagOptions.value.find(t => t.code === tagCode) : null
+    const tagColor = tagMeta && tagMeta.display_color ? tagMeta.display_color : ''
+    let toneClass = tagColor ? '' : 'ev-' + colorTone(props.work_item || '')
+    let cardStyle = tagColor ? `style="background:${hexToRgba(tagColor, 0.18)};border-color:${hexToRgba(tagColor, 0.42)}"` : ''
+    let barStyle = tagColor ? `style="background:${tagColor}"` : ''
 
     let participantsHtml = ''
     if (props.participants && props.participants.length > 0) {
@@ -539,7 +543,7 @@ const calendarOptions = ref({
     const imgHtml = imgCount > 0 ? `<div class="event-imgs">🖼 ${imgCount}</div>` : ''
 
     const tagName = tagNameOf(props.tags)
-    const tagHtml = tagName ? `<div class="event-tag-badge">🏷 ${escapeHtml(tagName)}</div>` : ''
+    const tagHtml = tagName ? `<div class="event-tag-badge" ${tagColor ? `style="color:${tagColor};background:${hexToRgba(tagColor, 0.14)};border-color:${hexToRgba(tagColor, 0.35)}"` : ''}>🏷 ${escapeHtml(tagName)}</div>` : ''
 
     const contentHtml = props.work_content
       ? `<div class="event-content">${escapeHtml(props.work_content)}</div>`
@@ -547,8 +551,8 @@ const calendarOptions = ref({
 
     return {
       html: `
-        <div class="calendar-event-card ev-${tone}">
-          <span class="event-color-bar"></span>
+        <div class="calendar-event-card ${toneClass}" ${cardStyle}>
+          <span class="event-color-bar" ${barStyle}></span>
           <div class="event-time">${startTime}-${endTime}${imgHtml}</div>
           ${tagHtml}
           <div class="event-title">${escapeHtml(event.title || '未命名')}</div>
@@ -647,19 +651,24 @@ function updateDateLabel(dateInfo) {
   }
 }
 
-// 事件配色：优先按动态标签映射色调；无标签回退标题 hash 取 8 组之一
-const TAG_TONE_MAP = {
-  activity_tag_waichu: 'tag-g',   // 外出考察 → 绿
-  activity_tag_daofang: 'tag-b',  // 到访接待 → 蓝
-  activity_tag_shipin: 'tag-o',   // 食品企业走进农高区活动 → 橙
-  activity_tag_diaodu: 'tag-p',   // 调度推进 → 紫
-  activity_tag_meeting: 'tag-c',  // 参加会议 → 青
-}
+// 事件配色：无标签回退标题 hash 取 8 组之一；带标签用字典里配置的 display_color（内联样式）
 const TONES = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
 function colorTone(str) {
   let h = 0
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0
   return TONES[h % TONES.length]
+}
+
+// 十六进制颜色 → rgba（用于由标签主色生成浅色滤镜卡片）
+function hexToRgba(hex, alpha) {
+  let h = (hex || '').replace('#', '')
+  if (h.length === 3) h = h.split('').map(c => c + c).join('')
+  const n = parseInt(h, 16)
+  if (isNaN(n)) return `rgba(120, 140, 200, ${alpha})`
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 function isImageUrl(url) {
@@ -1330,22 +1339,15 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-/* 色调：极浅透明底色 + 柔和边框，保持滤镜通透（同区间可叠加透出） */
-.ev-c0 { background: rgba(102, 126, 234, 0.10); border-color: rgba(102, 126, 234, 0.30); }
-.ev-c1 { background: rgba(54, 209, 220, 0.10); border-color: rgba(54, 209, 220, 0.30); }
-.ev-c2 { background: rgba(247, 151, 30, 0.10); border-color: rgba(247, 151, 30, 0.30); }
-.ev-c3 { background: rgba(17, 153, 142, 0.10); border-color: rgba(17, 153, 142, 0.30); }
-.ev-c4 { background: rgba(238, 156, 167, 0.14); border-color: rgba(238, 156, 167, 0.38); }
-.ev-c5 { background: rgba(71, 118, 230, 0.10); border-color: rgba(71, 118, 230, 0.30); }
-.ev-c6 { background: rgba(249, 83, 198, 0.10); border-color: rgba(249, 83, 198, 0.30); }
-.ev-c7 { background: rgba(11, 163, 96, 0.10); border-color: rgba(11, 163, 96, 0.30); }
-
-/* 标签类型专属色调：外出考察→绿、到访接待→蓝、食品活动→橙、调度推进→紫、参加会议→青 */
-.ev-tag-g { background: rgba(76, 175, 80, 0.12); border-color: rgba(76, 175, 80, 0.32); }
-.ev-tag-b { background: rgba(66, 133, 244, 0.12); border-color: rgba(66, 133, 244, 0.32); }
-.ev-tag-o { background: rgba(255, 152, 0, 0.14); border-color: rgba(255, 152, 0, 0.34); }
-.ev-tag-p { background: rgba(156, 39, 176, 0.12); border-color: rgba(156, 39, 176, 0.32); }
-.ev-tag-c { background: rgba(0, 172, 193, 0.12); border-color: rgba(0, 172, 193, 0.32); }
+/* 色调（无标签 fallback）：浅色透明但足够可见；带标签的事件用字典配置色内联渲染 */
+.ev-c0 { background: rgba(102, 126, 234, 0.18); border-color: rgba(102, 126, 234, 0.42); }
+.ev-c1 { background: rgba(54, 209, 220, 0.18); border-color: rgba(54, 209, 220, 0.42); }
+.ev-c2 { background: rgba(247, 151, 30, 0.18); border-color: rgba(247, 151, 30, 0.42); }
+.ev-c3 { background: rgba(17, 153, 142, 0.18); border-color: rgba(17, 153, 142, 0.42); }
+.ev-c4 { background: rgba(238, 156, 167, 0.22); border-color: rgba(238, 156, 167, 0.48); }
+.ev-c5 { background: rgba(71, 118, 230, 0.18); border-color: rgba(71, 118, 230, 0.42); }
+.ev-c6 { background: rgba(249, 83, 198, 0.18); border-color: rgba(249, 83, 198, 0.42); }
+.ev-c7 { background: rgba(11, 163, 96, 0.18); border-color: rgba(11, 163, 96, 0.42); }
 
 /* 左侧色条颜色（与色调一致） */
 .ev-c0 .event-color-bar { background: #667eea; }
@@ -1356,11 +1358,6 @@ onUnmounted(() => {
 .ev-c5 .event-color-bar { background: #4776e6; }
 .ev-c6 .event-color-bar { background: #f953c6; }
 .ev-c7 .event-color-bar { background: #0ba360; }
-.ev-tag-g .event-color-bar { background: #4caf50; }
-.ev-tag-b .event-color-bar { background: #4285f4; }
-.ev-tag-o .event-color-bar { background: #ff9800; }
-.ev-tag-p .event-color-bar { background: #9c27b0; }
-.ev-tag-c .event-color-bar { background: #00acc1; }
 
 /* ===== 悬停预览卡 ===== */
 .hover-fade-enter-active,

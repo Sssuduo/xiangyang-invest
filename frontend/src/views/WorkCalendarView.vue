@@ -588,21 +588,28 @@ const calendarOptions = ref({
     }
 
     const imgCount = (props.attachments || []).filter(a => a && isImageUrl(a.url)).length
-    const imgHtml = imgCount > 0 ? `<div class="event-imgs">🖼 ${imgCount}</div>` : ''
+    const imgHtml = imgCount > 0 ? `<span class="event-imgs">🖼 ${imgCount}</span>` : ''
 
+    // 标签名单独包一层：卡片变窄时只留 🏷 图标，避免出现被截半的文字
     const tagName = tagNameOf(props.tags)
-    const tagHtml = tagName ? `<div class="event-tag-badge">🏷 ${escapeHtml(tagName)}</div>` : ''
+    const tagHtml = tagName
+      ? `<span class="event-tag-badge">🏷<span class="event-tag-name">${escapeHtml(tagName)}</span></span>`
+      : ''
 
     const contentHtml = props.work_content
       ? `<div class="event-content">${escapeHtml(props.work_content)}</div>`
+      : ''
+
+    // 标签 / 图片图标与时间段同处第一行（右侧），省下一行给事项名和内容
+    const metaHtml = (imgHtml || tagHtml)
+      ? `<span class="event-meta">${imgHtml}${tagHtml}</span>`
       : ''
 
     return {
       html: `
         <div class="calendar-event-card ev-${tone}">
           <span class="event-color-bar"></span>
-          <div class="event-time">${startTime}-${endTime}${imgHtml}</div>
-          ${tagHtml}
+          <div class="event-time"><span class="event-time-range">${startTime}-${endTime}</span>${metaHtml}</div>
           <div class="event-title">${escapeHtml(event.title || '未命名')}</div>
           ${contentHtml}
           ${participantsHtml}
@@ -1336,13 +1343,29 @@ onUnmounted(() => {
   color: #5f6984;
 }
 
+/* 第一行：左侧时间段（永不被压缩），右侧图片数 + 标签徽章 */
 .work-calendar :deep(.event-time) {
   font-weight: 700;
   font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   color: #2c3a5e;
+}
+
+.work-calendar :deep(.event-time-range) {
+  flex: 0 0 auto;
+}
+
+.work-calendar :deep(.event-meta) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .work-calendar :deep(.event-title) {
@@ -1375,26 +1398,31 @@ onUnmounted(() => {
 .work-calendar :deep(.event-imgs) {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   font-size: 10px;
-  margin-left: 6px;
   color: #46527a;
 }
 
+/* 标签徽章：与时间段同处第一行，空间不够时自身省略（不挤压时间段） */
 .work-calendar :deep(.event-tag-badge) {
   display: inline-block;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 10px;
   color: #2b3a55;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(105, 125, 180, 0.55);
   border-radius: 8px;
   padding: 0 6px;
-  margin-top: 3px;
-  line-height: 16px;
+  line-height: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
   vertical-align: middle;
+}
+
+.work-calendar :deep(.event-tag-name) {
+  margin-left: 3px;
 }
 
 /* 色调（无标签 fallback）：类型色半透明打底整卡（底 alpha 0.36 / 边框 0.72，清晰可辨） */
@@ -1428,6 +1456,54 @@ onUnmounted(() => {
 .work-calendar :deep(.ev-tag-o .event-color-bar) { background: #e67e00; }
 .work-calendar :deep(.ev-tag-p .event-color-bar) { background: #9c27b0; }
 .work-calendar :deep(.ev-tag-c .event-color-bar) { background: #008fa0; }
+
+/* ===== 自适应精简（容器查询）=====
+   同一时段有多个事项时 FullCalendar 会把它们并排分列（卡片变窄），短时长事项本身很矮；
+   以事件容器为尺寸查询基准，按可用「宽 × 高」逐级精简内容，避免出现半截行或文字溢出。
+   高度阈值 = 上一级内容刚好放下的高度（行高实测：时间 15 / 标题 18 / 内容 15×行数 / 人员 16 + 内边距 8）。 */
+.work-calendar :deep(.fc-timegrid-event-harness) {
+  container-type: size;
+}
+
+/* 1) 高度不足：先略去参加人员，再压内容行数，然后只留时间 + 事项名，最后并排成一行 */
+@container (max-height: 90px) {
+  .work-calendar :deep(.event-participants) { display: none; }
+}
+@container (max-height: 74px) {
+  .work-calendar :deep(.event-content) { -webkit-line-clamp: 1; }
+}
+@container (max-height: 59px) {
+  .work-calendar :deep(.event-content) { display: none; }
+}
+@container (max-height: 42px) {
+  .work-calendar :deep(.calendar-event-card) { padding: 1px 6px 1px 8px; }
+  .work-calendar :deep(.event-time) { display: inline; margin-right: 5px; font-size: 10px; }
+  .work-calendar :deep(.event-meta) { display: none; }
+  .work-calendar :deep(.event-title) {
+    display: inline-block;
+    vertical-align: bottom;
+    margin-top: 0;
+    max-width: calc(100% - 54px);
+    font-size: 11px;
+  }
+}
+
+/* 2) 宽度不足（并排分列）：同样逐级精简 */
+@container (max-width: 165px) {
+  .work-calendar :deep(.event-participants) { display: none; }
+}
+@container (max-width: 140px) {
+  .work-calendar :deep(.event-content) { -webkit-line-clamp: 1; }
+}
+@container (max-width: 152px) {
+  .work-calendar :deep(.event-tag-name) { display: none; }
+}
+@container (max-width: 112px) {
+  .work-calendar :deep(.event-meta) { display: none; }
+}
+@container (max-width: 95px) {
+  .work-calendar :deep(.event-content) { display: none; }
+}
 
 /* ===== 悬停预览卡 ===== */
 .hover-fade-enter-active,

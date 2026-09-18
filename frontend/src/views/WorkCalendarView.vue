@@ -1293,9 +1293,12 @@ onUnmounted(() => {
   font-size: 11px;
   color: #5a6b8c;
   margin-top: 2px;
-  white-space: nowrap;
+  /* 内容只展示一部分：最多两行，超出省略号缩略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
 }
 
 .event-participants {

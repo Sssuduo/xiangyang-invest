@@ -88,7 +88,7 @@
           v-if="hoverEvent"
           class="event-hover-card"
           :style="hoverStyle"
-          @mouseenter="hoverStay = true"
+          @mouseenter="handleHoverEnter"
           @mouseleave="handleHoverLeave"
         >
           <div class="hover-time">
@@ -373,8 +373,35 @@ const exportFields = ref(exportFieldOptions.map(f => f.key))
 
 // ===== 事件悬停预览 =====
 const hoverEvent = ref(null)
-const hoverPos = ref({ x: 0, y: 0 })
+// 悬停源的几何信息（用事件卡 DOM 的 rect，而不是鼠标坐标）
+const hoverPos = ref({ left: 0, right: 0, top: 0 })
 const hoverStay = ref(false)
+// 悬停卡宽度（与 .event-hover-card 的 width 保持一致）与「贴边重叠」像素
+const HOVER_CARD_WIDTH = 320
+const HOVER_CARD_OVERLAP = 2
+// 延迟关闭只保留一个定时器：每次显示 / 进入卡片前先清掉，
+// 否则旧定时器会在新卡片刚出现时把它关掉（表现为「一闪而过」）
+let hoverHideTimer = null
+
+function clearHoverHideTimer() {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+}
+
+function scheduleHoverHide(delay = 160) {
+  clearHoverHideTimer()
+  hoverHideTimer = setTimeout(() => {
+    hoverHideTimer = null
+    if (!hoverStay.value) hoverEvent.value = null
+  }, delay)
+}
+
+function showHoverCard(props, id) {
+  clearHoverHideTimer()
+  hoverEvent.value = { ...props, id }
+}
 
 const hoverImages = computed(() => {
   const atts = hoverEvent.value?.attachments || []
@@ -390,12 +417,27 @@ function tagNameOf(tags) {
 
 const hoverTagName = computed(() => tagNameOf(hoverEvent.value?.tags))
 
+// 悬停卡定位：优先贴事件卡右侧，右侧放不下则向左展开；
+// 两种方向都让卡片与事件卡重叠 2px —— 指针从事件卡横向移出时直接进入悬停卡，
+// 不会先掠过紧挨着的相邻事项（那会触发相邻事项的 mouseenter，把卡片挤走/闪掉）。
 const hoverStyle = computed(() => {
-  let left = hoverPos.value.x + 14
-  let top = hoverPos.value.y + 14
-  if (left + 320 > window.innerWidth) left = hoverPos.value.x - 334
-  if (top + 200 > window.innerHeight) top = hoverPos.value.y - 214
-  return { left: `${left}px`, top: `${top}px` }
+  const p = hoverPos.value
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const margin = 8
+
+  let left
+  if (p.right + HOVER_CARD_WIDTH - HOVER_CARD_OVERLAP + margin <= vw) {
+    left = p.right - HOVER_CARD_OVERLAP
+  } else if (p.left - HOVER_CARD_WIDTH + HOVER_CARD_OVERLAP - margin >= 0) {
+    left = p.left + HOVER_CARD_OVERLAP - HOVER_CARD_WIDTH
+  } else {
+    // 两侧都不够：贴住视口并夹紧，保证整卡可见（不再被挤出屏幕）
+    left = Math.max(margin, Math.min(p.right - HOVER_CARD_WIDTH, vw - HOVER_CARD_WIDTH - margin))
+  }
+
+  const top = Math.max(margin, Math.min(p.top, vh - 240))
+  return { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
 })
 
 // ===== 编辑器位置（卡到窗口上部，向上放） =====
@@ -486,30 +528,40 @@ const calendarOptions = ref({
   eventClick: (info) => {
     const props = info.event.extendedProps
     if (!props.start_datetime) return
-    hoverEvent.value = { ...props, id: info.event.id }
-    hoverStay.value = true
+    hoverStay.value = false
+    showHoverCard(props, info.event.id)
   },
 
   // 悬停预览
   eventMouseEnter: (info, jsEvent) => {
     const props = info.event.extendedProps
     if (!props.start_datetime) return // 拖选 mirror 不预览
-    hoverEvent.value = { ...props, id: info.event.id }
+
+    // 同一张事件卡重复 mouseenter（悬停卡覆盖相邻事项时浏览器会重放）：
+    // 只取消待关闭定时器，不重排位置、不重置停留态，避免卡片抖动/闪退
+    if (hoverEvent.value && String(hoverEvent.value.id) === String(info.event.id)) {
+      clearHoverHideTimer()
+      return
+    }
+
+    hoverStay.value = false
+    showHoverCard(props, info.event.id)
+
     // 用事件卡 DOM 位置定位：jsEvent.clientX/Y 在 FullCalendar 事件回调里可能为 0(undefined)，
     // 导致悬停卡 fixed 定位到左上角；getBoundingClientRect 始终可靠
     const el = info.el
     const rect = el && typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null
     if (rect && rect.width > 0) {
-      hoverPos.value = { x: rect.right, y: rect.top }
+      hoverPos.value = { left: rect.left, right: rect.right, top: rect.top }
     } else {
-      hoverPos.value = { x: jsEvent ? jsEvent.clientX : 0, y: jsEvent ? jsEvent.clientY : 0 }
+      const x = jsEvent ? jsEvent.clientX : 0
+      const y = jsEvent ? jsEvent.clientY : 0
+      hoverPos.value = { left: x, right: x, top: y }
     }
   },
   eventMouseLeave: () => {
-    // 延迟关闭，允许移入预览卡
-    setTimeout(() => {
-      if (!hoverStay.value) hoverEvent.value = null
-    }, 120)
+    // 延迟关闭，给指针留出移入悬停卡的时间（定时器全局唯一，不会互相抢）
+    scheduleHoverHide()
   },
 
   // 自定义事件渲染（浅色滤镜：同一时段多事项可并存互不遮挡；按标签/事项分色）
@@ -725,6 +777,7 @@ function closeEditor() {
 function openEditorFromHover() {
   const h = hoverEvent.value
   if (!h || !h.id) return
+  clearHoverHideTimer()
   hoverEvent.value = null
   hoverStay.value = false
   const startDate = h.start_datetime ? new Date(h.start_datetime) : null
@@ -1044,8 +1097,15 @@ async function handleExportWord() {
 
 // ===== 悬停预览关闭 =====
 
+// 指针进入悬停卡：取消待关闭定时器并标记「停留」，卡片可长期展示、可点编辑/看大图
+function handleHoverEnter() {
+  hoverStay.value = true
+  clearHoverHideTimer()
+}
+
 function handleHoverLeave() {
   hoverStay.value = false
+  clearHoverHideTimer()
   hoverEvent.value = null
 }
 
@@ -1078,6 +1138,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  clearHoverHideTimer()
 })
 </script>
 
@@ -1235,23 +1296,27 @@ onUnmounted(() => {
   );
 }
 
-/* ===== 日历事件卡片（浅色滤镜：同一时段可并存多事项，互不遮挡） ===== */
-.calendar-event-card {
+/* ===== 日历事件卡片（类型色打底：同一时段可并存多事项，互不遮挡） =====
+   ⚠️ 全部规则必须带 :deep()：eventContent 返回的是 HTML 字符串，由 FullCalendar 直接 innerHTML
+   注入，元素上不带 Vue scoped 的 data-v 属性；若直接写 .calendar-event-card {...}，编译后为
+   .calendar-event-card[data-v-xxx]，永远命中不了 —— 这正是历史版本「卡片几乎看不到」的真因
+   （底色/边框/文字色全部未生效，白字落在透明底上，只剩 emoji 可见）。 */
+.work-calendar :deep(.calendar-event-card) {
   position: relative;
   padding: 4px 8px 4px 10px;
   font-size: 12px;
-  color: #2b3a55;
+  line-height: 1.35;
+  color: #1b2540;
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(60, 60, 110, 0.08);
-  /* 半透明浅色底：即便与其他事项时间交叉，下层也能透出 */
-  border: 1px solid rgba(130, 145, 190, 0.28);
-  background: rgba(255, 255, 255, 0.30);
-  backdrop-filter: blur(1px);
+  box-shadow: 0 1px 4px rgba(60, 60, 110, 0.14);
+  /* 兜底底色（无色调类时）：浅色卡面 + 深色文字 */
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(120, 138, 190, 0.62);
 }
 
-/* 左侧色条按色调区分，底色保持浅色滤镜 */
-.calendar-event-card .event-color-bar {
+/* 左侧色条按色调区分 */
+.work-calendar :deep(.calendar-event-card .event-color-bar) {
   position: absolute;
   left: 0;
   top: 0;
@@ -1260,38 +1325,38 @@ onUnmounted(() => {
   border-radius: 3px 0 0 3px;
 }
 
-.calendar-event-card.is-mirror {
-  background: rgba(140, 150, 180, 0.25) !important;
-  border: 1.5px dashed rgba(120, 130, 165, 0.55) !important;
+/* 拖选中的占位卡 */
+.work-calendar :deep(.calendar-event-card.is-mirror) {
+  background: rgba(140, 150, 180, 0.34) !important;
+  border: 1.5px dashed rgba(110, 122, 160, 0.72) !important;
   box-shadow: none;
-  color: #7a84a0;
+  color: #5f6984;
 }
-.calendar-event-card.is-mirror .event-title {
-  color: #7a84a0;
+.work-calendar :deep(.calendar-event-card.is-mirror .event-title) {
+  color: #5f6984;
 }
 
-.event-time {
-  font-weight: 600;
+.work-calendar :deep(.event-time) {
+  font-weight: 700;
   font-size: 11px;
-  opacity: 0.95;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #4a5b7d;
+  color: #2c3a5e;
 }
 
-.event-title {
-  font-weight: 600;
+.work-calendar :deep(.event-title) {
+  font-weight: 700;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #22304f;
+  color: #131c36;
 }
 
-.event-content {
+.work-calendar :deep(.event-content) {
   font-size: 11px;
-  color: #5a6b8c;
+  color: #3a4867;
   margin-top: 2px;
   /* 内容只展示一部分：最多两行，超出省略号缩略 */
   display: -webkit-box;
@@ -1301,27 +1366,26 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-.event-participants {
+.work-calendar :deep(.event-participants) {
   font-size: 10px;
-  opacity: 0.9;
   margin-top: 2px;
-  color: #5a6b8c;
+  color: #46527a;
 }
 
-.event-imgs {
+.work-calendar :deep(.event-imgs) {
   display: inline-flex;
   align-items: center;
   font-size: 10px;
-  opacity: 0.9;
   margin-left: 6px;
+  color: #46527a;
 }
 
-.event-tag-badge {
+.work-calendar :deep(.event-tag-badge) {
   display: inline-block;
   font-size: 10px;
-  color: #5a6b8c;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(120, 140, 190, 0.35);
+  color: #2b3a55;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(105, 125, 180, 0.55);
   border-radius: 8px;
   padding: 0 6px;
   margin-top: 3px;
@@ -1333,37 +1397,37 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-/* 色调（无标签 fallback）：类型色半透明打底整卡，透明度适中（明显但不刺眼） */
-.ev-c0 { background: rgba(102, 126, 234, 0.22); border-color: rgba(102, 126, 234, 0.48); }
-.ev-c1 { background: rgba(54, 209, 220, 0.22); border-color: rgba(54, 209, 220, 0.48); }
-.ev-c2 { background: rgba(247, 151, 30, 0.22); border-color: rgba(247, 151, 30, 0.48); }
-.ev-c3 { background: rgba(17, 153, 142, 0.22); border-color: rgba(17, 153, 142, 0.48); }
-.ev-c4 { background: rgba(238, 156, 167, 0.26); border-color: rgba(238, 156, 167, 0.52); }
-.ev-c5 { background: rgba(71, 118, 230, 0.22); border-color: rgba(71, 118, 230, 0.48); }
-.ev-c6 { background: rgba(249, 83, 198, 0.22); border-color: rgba(249, 83, 198, 0.48); }
-.ev-c7 { background: rgba(11, 163, 96, 0.22); border-color: rgba(11, 163, 96, 0.48); }
+/* 色调（无标签 fallback）：类型色半透明打底整卡（底 alpha 0.36 / 边框 0.72，清晰可辨） */
+.work-calendar :deep(.ev-c0) { background: rgba(102, 126, 234, 0.36); border-color: rgba(102, 126, 234, 0.72); }
+.work-calendar :deep(.ev-c1) { background: rgba(54, 209, 220, 0.38); border-color: rgba(30, 186, 197, 0.78); }
+.work-calendar :deep(.ev-c2) { background: rgba(247, 151, 30, 0.36); border-color: rgba(247, 151, 30, 0.72); }
+.work-calendar :deep(.ev-c3) { background: rgba(17, 153, 142, 0.36); border-color: rgba(17, 153, 142, 0.72); }
+.work-calendar :deep(.ev-c4) { background: rgba(238, 156, 167, 0.42); border-color: rgba(224, 108, 126, 0.78); }
+.work-calendar :deep(.ev-c5) { background: rgba(71, 118, 230, 0.36); border-color: rgba(71, 118, 230, 0.72); }
+.work-calendar :deep(.ev-c6) { background: rgba(249, 83, 198, 0.34); border-color: rgba(249, 83, 198, 0.72); }
+.work-calendar :deep(.ev-c7) { background: rgba(11, 163, 96, 0.36); border-color: rgba(11, 163, 96, 0.72); }
 
 /* 标签类型专属色调（内置配色）：外出考察→绿、到访接待→蓝、食品活动→橙、调度推进→紫、参加会议→青 */
-.ev-tag-g { background: rgba(76, 175, 80, 0.24); border-color: rgba(76, 175, 80, 0.50); }
-.ev-tag-b { background: rgba(66, 133, 244, 0.24); border-color: rgba(66, 133, 244, 0.50); }
-.ev-tag-o { background: rgba(255, 152, 0, 0.26); border-color: rgba(255, 152, 0, 0.52); }
-.ev-tag-p { background: rgba(156, 39, 176, 0.24); border-color: rgba(156, 39, 176, 0.50); }
-.ev-tag-c { background: rgba(0, 172, 193, 0.24); border-color: rgba(0, 172, 193, 0.50); }
+.work-calendar :deep(.ev-tag-g) { background: rgba(76, 175, 80, 0.36); border-color: rgba(56, 142, 60, 0.78); }
+.work-calendar :deep(.ev-tag-b) { background: rgba(66, 133, 244, 0.36); border-color: rgba(66, 133, 244, 0.76); }
+.work-calendar :deep(.ev-tag-o) { background: rgba(255, 152, 0, 0.38); border-color: rgba(230, 126, 0, 0.80); }
+.work-calendar :deep(.ev-tag-p) { background: rgba(156, 39, 176, 0.34); border-color: rgba(156, 39, 176, 0.74); }
+.work-calendar :deep(.ev-tag-c) { background: rgba(0, 172, 193, 0.36); border-color: rgba(0, 143, 160, 0.78); }
 
-/* 左侧色条颜色（与色调一致） */
-.ev-c0 .event-color-bar { background: #667eea; }
-.ev-c1 .event-color-bar { background: #36d1dc; }
-.ev-c2 .event-color-bar { background: #f7971e; }
-.ev-c3 .event-color-bar { background: #11998e; }
-.ev-c4 .event-color-bar { background: #ee9ca7; }
-.ev-c5 .event-color-bar { background: #4776e6; }
-.ev-c6 .event-color-bar { background: #f953c6; }
-.ev-c7 .event-color-bar { background: #0ba360; }
-.ev-tag-g .event-color-bar { background: #4caf50; }
-.ev-tag-b .event-color-bar { background: #4285f4; }
-.ev-tag-o .event-color-bar { background: #ff9800; }
-.ev-tag-p .event-color-bar { background: #9c27b0; }
-.ev-tag-c .event-color-bar { background: #00acc1; }
+/* 左侧色条颜色（与色调一致，实色） */
+.work-calendar :deep(.ev-c0 .event-color-bar) { background: #667eea; }
+.work-calendar :deep(.ev-c1 .event-color-bar) { background: #12b3bf; }
+.work-calendar :deep(.ev-c2 .event-color-bar) { background: #f7971e; }
+.work-calendar :deep(.ev-c3 .event-color-bar) { background: #11998e; }
+.work-calendar :deep(.ev-c4 .event-color-bar) { background: #e06c7e; }
+.work-calendar :deep(.ev-c5 .event-color-bar) { background: #4776e6; }
+.work-calendar :deep(.ev-c6 .event-color-bar) { background: #f953c6; }
+.work-calendar :deep(.ev-c7 .event-color-bar) { background: #0ba360; }
+.work-calendar :deep(.ev-tag-g .event-color-bar) { background: #388e3c; }
+.work-calendar :deep(.ev-tag-b .event-color-bar) { background: #4285f4; }
+.work-calendar :deep(.ev-tag-o .event-color-bar) { background: #e67e00; }
+.work-calendar :deep(.ev-tag-p .event-color-bar) { background: #9c27b0; }
+.work-calendar :deep(.ev-tag-c .event-color-bar) { background: #008fa0; }
 
 /* ===== 悬停预览卡 ===== */
 .hover-fade-enter-active,

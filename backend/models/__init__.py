@@ -22,3 +22,5 @@ from models.voice_knowledge import VoiceKnowledgeEntry, TextCorrectionRecord
 from models.official_doc import OfficialDocTemplate
 from models.bidding import (BiddingCategoryDict, BiddingUser, BiddingEnterprise,
     BiddingProject, BiddingBid, BiddingMilestone, BiddingTimeline)
+from models.chain import (ChainNode, ChainEnterprise, ChainGap,
+    ChainTarget, ChainAdvice)

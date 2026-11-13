@@ -68,8 +68,22 @@
         <div class="stat-card stat-local">
           <div class="stat-card-icon"><el-icon><OfficeBuilding /></el-icon></div>
           <div class="stat-card-body">
-            <span class="stat-card-value">{{ overview.local_target_count ?? 0 }}</span>
-            <span class="stat-card-label">市域内可联动</span>
+            <span class="stat-card-value">{{ overview.outprov_target_count ?? 0 }}</span>
+            <span class="stat-card-label">省外目标企业</span>
+          </div>
+        </div>
+        <div class="stat-card stat-fit">
+          <div class="stat-card-icon"><el-icon><TrendCharts /></el-icon></div>
+          <div class="stat-card-body">
+            <span class="stat-card-value">{{ overview.high_fit_count ?? 0 }}</span>
+            <span class="stat-card-label">投资可行性高</span>
+          </div>
+        </div>
+        <div class="stat-card stat-strong">
+          <div class="stat-card-icon"><el-icon><Connection /></el-icon></div>
+          <div class="stat-card-body">
+            <span class="stat-card-value">{{ strongTargetCount }}</span>
+            <span class="stat-card-label">强链目标企业</span>
           </div>
         </div>
       </div>
@@ -197,6 +211,19 @@
               </template>
             </el-table-column>
             <el-table-column prop="region" label="属地" width="130" show-overflow-tooltip />
+            <el-table-column label="注册资本" width="110" align="right">
+              <template #default="{ row }">
+                <span>{{ fmtCapital(row.reg_capital) || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="企业实力" width="100" align="center" sortable :sort-by="row => row.strength || 0">
+              <template #default="{ row }">
+                <span
+                  class="score-badge"
+                  :style="{ background: strengthColor(row.strength) + '1f', color: strengthColor(row.strength) }"
+                >{{ row.strength ?? '—' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="basis" label="归类依据" min-width="240" show-overflow-tooltip />
           </el-table>
         </el-tab-pane>
@@ -206,8 +233,8 @@
           <!-- 优先级规则可视化 -->
           <div class="section-header">
             <el-icon class="section-icon"><SetUp /></el-icon>
-            <span class="section-title">优先级评分规则（五因子）</span>
-            <span class="section-extra">总分 = 五因子加权合计，满分 100 分</span>
+            <span class="section-title">优先级评分规则（六因子）</span>
+            <span class="section-extra">总分 = 六因子加权合计，满分 100 分</span>
           </div>
           <div class="rules-panel">
             <div class="rule-factors">
@@ -217,7 +244,7 @@
                   <span class="factor-weight">{{ f.max }} 分</span>
                 </div>
                 <div class="factor-bar">
-                  <div class="factor-bar-fill" :style="{ width: (f.max / 30 * 100) + '%' }" />
+                  <div class="factor-bar-fill" :style="{ width: (f.max / 25 * 100) + '%' }" />
                 </div>
                 <div class="factor-desc">{{ f.desc }}</div>
               </div>
@@ -233,6 +260,72 @@
               <div class="veto-rule">
                 <el-icon><WarningFilled /></el-icon>
                 <span>{{ ruleVeto }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 企业实力五维（F6 因子内部构成） -->
+          <div class="section-header">
+            <el-icon class="section-icon"><TrendCharts /></el-icon>
+            <span class="section-title">企业实力评价（五维，用于 F6 因子）</span>
+            <span class="section-extra">全部基于公开工商与财务信息，查不到即置空，不做推测</span>
+          </div>
+          <div class="strength-panel">
+            <div v-for="s in ruleStrengthFactors" :key="s.key" class="strength-item">
+              <div class="strength-head">
+                <span class="strength-name">{{ s.name }}</span>
+                <span class="strength-weight">{{ s.max }} 分</span>
+              </div>
+              <div class="factor-bar">
+                <div class="factor-bar-fill strength-fill" :style="{ width: (s.max / 25 * 100) + '%' }" />
+              </div>
+              <div class="strength-desc">{{ s.desc }}</div>
+            </div>
+          </div>
+
+          <!-- 链作用 + 投资可行性 判定口径 -->
+          <div class="section-header">
+            <el-icon class="section-icon"><Guide /></el-icon>
+            <span class="section-title">链作用与投资可行性判定口径</span>
+            <span class="section-extra">判断引入后能否补链、延链、强链</span>
+          </div>
+          <div class="role-fit-panel">
+            <div class="role-block">
+              <div class="block-title">链作用三分类</div>
+              <div v-for="r in ruleChainRoles" :key="r.role" class="role-item">
+                <span class="role-badge" :style="{ background: r.color }">{{ r.role }}</span>
+                <span class="role-desc">{{ r.desc }}</span>
+                <span class="role-count">{{ (chainRoleStats.find(x => x.role === r.role) || {}).count || 0 }} 家</span>
+              </div>
+            </div>
+            <div class="role-block">
+              <div class="block-title">投资可行性分档</div>
+              <div v-for="f in ruleInvestFit" :key="f.level" class="role-item">
+                <span class="role-badge" :style="{ background: f.color }">{{ f.level }}</span>
+                <span class="role-desc">{{ f.desc }}</span>
+                <span class="role-count">{{ (fitStats.find(x => x.level === f.level) || {}).count || 0 }} 家</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 省外企业可获得性分布 -->
+          <div class="section-header">
+            <el-icon class="section-icon"><MapLocation /></el-icon>
+            <span class="section-title">目标企业地域来源分布</span>
+            <span class="section-extra">招商引资主视角：优先关注省外企业到襄州投资的可行性</span>
+          </div>
+          <div class="region-panel">
+            <div v-for="r in regionStats" :key="r.region_type" class="region-item">
+              <div class="region-bar-wrap">
+                <span class="region-name">{{ r.region_type }}</span>
+                <div class="region-bar">
+                  <div
+                    class="region-bar-fill"
+                    :style="{ width: (r.count / (overview.target_count || 1) * 100) + '%', background: REGION_COLORS[r.region_type] || '#409eff' }"
+                  />
+                </div>
+                <span class="region-count">{{ r.count }} 家</span>
+                <span class="region-high">可行性高 {{ r.high_fit }} 家</span>
               </div>
             </div>
           </div>
@@ -261,7 +354,7 @@
                 <span class="meta-item">支撑企业 <b>{{ gap.supporter_count }}</b> 家</span>
                 <span class="meta-item">目标企业 <b>{{ gap.target_count }}</b> 家</span>
               </div>
-              <!-- 五因子构成条 -->
+              <!-- 六因子构成条 -->
               <div class="factor-stack">
                 <div
                   v-for="f in factorChips(gap)" :key="f.key"
@@ -283,7 +376,7 @@
           <!-- 缺口雷达图 -->
           <div class="section-header">
             <el-icon class="section-icon"><DataAnalysis /></el-icon>
-            <span class="section-title">五因子得分对比</span>
+            <span class="section-title">六因子得分对比</span>
             <span class="section-extra">选中缺口与最高优先级缺口对比</span>
             <span class="toolbar-spacer" />
             <el-select v-model="selectedGapId" size="small" style="width: 240px">
@@ -298,6 +391,32 @@
         <!-- ========== 页签三：目标企业库 ========== -->
         <el-tab-pane label="目标企业库" name="target">
           <div class="target-toolbar">
+            <div class="quick-filters">
+              <el-button
+                :type="targetFilter.region_type === '省外' ? 'danger' : 'default'"
+                size="small" @click="applyOutprovFilter"
+              >
+                <el-icon><MapLocation /></el-icon> 省外企业
+                <span class="qf-count">{{ (regionStats.find(x => x.region_type === '省外') || {}).count || 0 }}</span>
+              </el-button>
+              <el-button
+                :type="targetFilter.invest_fit === '高' ? 'danger' : 'default'"
+                size="small" @click="applyHighFitFilter"
+              >
+                <el-icon><TrendCharts /></el-icon> 可行性高
+                <span class="qf-count">{{ overview.high_fit_count ?? 0 }}</span>
+              </el-button>
+              <el-button
+                :type="targetFilter.chain_role === '强链' ? 'success' : 'default'"
+                size="small" @click="applyStrongChainFilter"
+              >
+                <el-icon><Connection /></el-icon> 强链目标
+                <span class="qf-count">{{ strongTargetCount }}</span>
+              </el-button>
+              <el-button size="small" @click="resetTargetFilters">
+                <el-icon><RefreshLeft /></el-icon> 重置
+              </el-button>
+            </div>
             <el-select v-model="targetFilter.gap_id" placeholder="全部缺口" clearable style="width: 200px" @change="fetchTargets">
               <el-option label="全部缺口" value="" />
               <el-option v-for="g in gaps" :key="g.id" :label="`${g.title}（${g.total_score}分）`" :value="String(g.id)" />
@@ -306,14 +425,37 @@
               <el-option label="全部环节" value="" />
               <el-option v-for="n in nodes" :key="n.code" :label="n.name" :value="n.code" />
             </el-select>
-            <el-select v-model="targetFilter.is_local" placeholder="全部区域" clearable style="width: 140px" @change="fetchTargets">
-              <el-option label="全部区域" value="" />
-              <el-option label="市域内已有" value="1" />
-              <el-option label="待引进" value="0" />
+            <el-select v-model="targetFilter.region_type" placeholder="地域类型" clearable style="width: 150px" @change="fetchTargets">
+              <el-option label="全部地域" value="" />
+              <el-option
+                v-for="r in targetFilters.region_types" :key="r.name"
+                :label="`${r.name}（${r.count}）`" :value="r.name"
+              />
+            </el-select>
+            <el-select v-model="targetFilter.chain_role" placeholder="链作用" clearable style="width: 130px" @change="fetchTargets">
+              <el-option label="全部链作用" value="" />
+              <el-option
+                v-for="r in targetFilters.chain_roles" :key="r.name"
+                :label="`${r.name}（${r.count}）`" :value="r.name"
+              />
+            </el-select>
+            <el-select v-model="targetFilter.invest_fit" placeholder="投资可行性" clearable style="width: 140px" @change="fetchTargets">
+              <el-option label="全部可行性" value="" />
+              <el-option
+                v-for="f in targetFilters.invest_fits" :key="f.name"
+                :label="`可行性${f.name}（${f.count}）`" :value="f.name"
+              />
+            </el-select>
+            <el-select v-model="targetFilter.province" placeholder="省份" clearable filterable style="width: 130px" @change="fetchTargets">
+              <el-option label="全部省份" value="" />
+              <el-option
+                v-for="p in targetFilters.provinces" :key="p.name"
+                :label="`${p.name}（${p.count}）`" :value="p.name"
+              />
             </el-select>
             <el-input
               v-model="targetFilter.keyword" placeholder="搜索企业名 / 主营 / 所在地" clearable
-              style="width: 240px" @keyup.enter="fetchTargets" @clear="fetchTargets"
+              style="width: 220px" @keyup.enter="fetchTargets" @clear="fetchTargets"
             >
               <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
@@ -323,16 +465,56 @@
           </div>
 
           <el-table :data="targets" border size="small" v-loading="targetLoading" max-height="600">
-            <el-table-column prop="name" label="目标企业" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="gap_title" label="对应缺口" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="name" label="目标企业" min-width="190" show-overflow-tooltip />
+            <el-table-column prop="gap_title" label="对应缺口" min-width="150" show-overflow-tooltip />
             <el-table-column label="缺口分档" width="90" align="center">
               <template #default="{ row }">
                 <span class="level-badge-sm" :style="{ background: levelColor(row.gap_level) }">{{ row.gap_level }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="region" label="所在地" width="130" show-overflow-tooltip />
-            <el-table-column prop="products" label="主营方向" min-width="190" show-overflow-tooltip />
-            <el-table-column prop="scale" label="规模" min-width="170" show-overflow-tooltip />
+            <el-table-column label="省份" width="80" align="center">
+              <template #default="{ row }">
+                <span v-if="row.province" class="prov-tag">{{ row.province }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="地域类型" width="120" align="center">
+              <template #default="{ row }">
+                <span
+                  v-if="row.region_type"
+                  class="region-type-tag"
+                  :style="{ background: (REGION_COLORS[row.region_type] || '#909399') + '1f', color: REGION_COLORS[row.region_type] || '#909399' }"
+                >{{ row.region_type }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="链作用" width="90" align="center">
+              <template #default="{ row }">
+                <span
+                  v-if="row.chain_role"
+                  class="role-tag"
+                  :style="{ background: (ROLE_COLORS[row.chain_role] || '#909399') + '1f', color: ROLE_COLORS[row.chain_role] || '#909399' }"
+                >{{ row.chain_role }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="可行性" width="90" align="center">
+              <template #default="{ row }">
+                <span
+                  v-if="row.invest_fit_level"
+                  class="fit-tag"
+                  :style="{ background: (FIT_COLORS[row.invest_fit_level] || '#909399') + '1f', color: FIT_COLORS[row.invest_fit_level] || '#909399' }"
+                >{{ row.invest_fit_level }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="region" label="所在地" width="120" show-overflow-tooltip />
+            <el-table-column prop="products" label="主营方向" min-width="170" show-overflow-tooltip />
+            <el-table-column label="落地形式" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span>{{ row.landing_form || '—' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="匹配分" width="90" align="center" sortable :sort-by="row => row.total_score">
               <template #default="{ row }">
                 <span class="score-badge" :style="{ background: levelColor(row.gap_level) + '1f', color: levelColor(row.gap_level) }">
@@ -340,10 +522,12 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="区域属性" width="100" align="center">
+            <el-table-column label="企业实力" width="90" align="center" sortable :sort-by="row => row.strength || 0">
               <template #default="{ row }">
-                <el-tag v-if="row.is_local" type="success" size="small" effect="plain">市域内已有</el-tag>
-                <el-tag v-else type="info" size="small" effect="plain">待引进</el-tag>
+                <span
+                  class="score-badge"
+                  :style="{ background: strengthColor(row.strength) + '1f', color: strengthColor(row.strength) }"
+                >{{ row.strength ?? '—' }}</span>
               </template>
             </el-table-column>
             <el-table-column label="复核状态" width="100" align="center">
@@ -400,22 +584,22 @@
             <div class="export-card" @click="handleExportWord">
               <el-icon class="export-icon" style="color: #67c23a"><Document /></el-icon>
               <div class="export-name">产业链招商分析报告</div>
-              <div class="export-desc">Word · 含总体判断、五个招商方向、风险提示与两张附表</div>
+              <div class="export-desc">Word · 含总体判断、招商方向、风险提示与三张附表（含本地企业实力）</div>
             </div>
             <div class="export-card" @click="handleExportCsv('enterprises')">
               <el-icon class="export-icon" style="color: #409eff"><Grid /></el-icon>
               <div class="export-name">环节供给总表</div>
-              <div class="export-desc">CSV · 62 家企业的环节归类、资质与归类依据</div>
+              <div class="export-desc">CSV · 62 家企业的环节归类、资质、注册资本与实力评分</div>
             </div>
             <div class="export-card" @click="handleExportCsv('gaps')">
               <el-icon class="export-icon" style="color: #e6a23c"><DataAnalysis /></el-icon>
               <div class="export-name">产业链缺口表</div>
-              <div class="export-desc">CSV · 五因子分项得分、支撑企业与研判结论</div>
+              <div class="export-desc">CSV · 六因子分项得分、支撑企业与研判结论</div>
             </div>
             <div class="export-card" @click="handleExportCsv('targets')">
               <el-icon class="export-icon" style="color: #f56c6c"><Aim /></el-icon>
               <div class="export-name">目标企业清单</div>
-              <div class="export-desc">CSV · 候选企业、匹配理由与来源链接（采集时间 2026-11-13）</div>
+              <div class="export-desc">CSV · 省外候选企业、链作用、投资可行性、落地形式与来源链接</div>
             </div>
           </div>
         </el-tab-pane>
@@ -438,14 +622,63 @@
           <el-tag size="small" :color="levelColor(currentTarget.gap_level)" effect="dark">
             {{ currentTarget.gap_title }}
           </el-tag>
-          <el-tag v-if="currentTarget.is_local" type="success" size="small" effect="plain">市域内已有</el-tag>
+          <el-tag
+            v-if="currentTarget.region_type" size="small" effect="plain"
+            :style="{ color: REGION_COLORS[currentTarget.region_type] || '#909399' }"
+          >{{ currentTarget.region_type }}</el-tag>
+          <el-tag
+            v-if="currentTarget.chain_role" size="small" effect="plain"
+            :style="{ color: ROLE_COLORS[currentTarget.chain_role] || '#909399' }"
+          >{{ currentTarget.chain_role }}</el-tag>
+          <el-tag
+            v-if="currentTarget.invest_fit_level" size="small" effect="plain"
+            :style="{ color: FIT_COLORS[currentTarget.invest_fit_level] || '#909399' }"
+          >可行性{{ currentTarget.invest_fit_level }}</el-tag>
           <el-tag size="small" effect="plain">匹配 {{ currentTarget.total_score }} 分</el-tag>
         </div>
+
+        <div class="detail-section-title">
+          <el-icon><Guide /></el-icon> 引才补链研判
+        </div>
         <el-descriptions :column="1" border size="small" class="detail-desc">
+          <el-descriptions-item label="所属省份">{{ currentTarget.province || '—' }}</el-descriptions-item>
           <el-descriptions-item label="所在地">{{ currentTarget.region || '—' }}</el-descriptions-item>
           <el-descriptions-item label="主营方向">{{ currentTarget.products || '—' }}</el-descriptions-item>
           <el-descriptions-item label="企业规模">{{ currentTarget.scale || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="链作用">{{ currentTarget.chain_role || '—' }}（补链/延链/强链）</el-descriptions-item>
+          <el-descriptions-item label="建议落地形式">{{ currentTarget.landing_form || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="匹配本地链主">
+            <span v-if="matchedChainNames.length">{{ matchedChainNames.join('、') }}</span>
+            <span v-else>—</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="投资可行性">
+            <span :style="{ color: FIT_COLORS[currentTarget.invest_fit_level] || '#909399', fontWeight: 600 }">
+              {{ currentTarget.invest_fit_level || '—' }}
+            </span>
+            <span v-if="currentTarget.invest_fit_reason" class="fit-reason">{{ currentTarget.invest_fit_reason }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="匹配理由">{{ currentTarget.evidence || '—' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-section-title">
+          <el-icon><TrendCharts /></el-icon> 企业实力
+        </div>
+        <el-descriptions :column="2" border size="small" class="detail-desc">
+          <el-descriptions-item label="注册资本">{{ fmtCapital(currentTarget.reg_capital) || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="实力评分">
+            <span class="strength-num" :style="{ color: strengthColor(currentTarget.strength) }">{{ currentTarget.strength ?? '—' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="近三年营收">{{ fmtSeries(currentTarget.revenue_3y) || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="近三年净利">{{ fmtSeries(currentTarget.netprofit_3y) || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="融资情况">{{ currentTarget.funding || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="对外投资">{{ currentTarget.investments || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="投资签约" :span="2">{{ currentTarget.signed_deal || '—' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-section-title">
+          <el-icon><Link /></el-icon> 来源
+        </div>
+        <el-descriptions :column="1" border size="small" class="detail-desc">
           <el-descriptions-item label="来源链接">
             <a v-if="currentTarget.source_url" :href="currentTarget.source_url" target="_blank" rel="noopener" class="source-link">
               {{ currentTarget.source_url }}
@@ -454,8 +687,9 @@
           </el-descriptions-item>
           <el-descriptions-item label="复核状态">{{ currentTarget.review_status }}</el-descriptions-item>
         </el-descriptions>
+
         <div class="detail-score">
-          <div class="score-title">五因子匹配得分</div>
+          <div class="score-title">六因子匹配得分</div>
           <div v-for="f in factorChips(currentTarget)" :key="f.key" class="score-row">
             <span class="score-name">{{ f.name }}</span>
             <div class="score-bar">
@@ -475,7 +709,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Share, Connection, Star, Warning, Aim, OfficeBuilding, Grid, DataAnalysis,
   Document, SetUp, WarningFilled, ChatDotSquare, Search, InfoFilled, Files,
-  Promotion, Guide,
+  Promotion, Guide, TrendCharts, MapLocation, RefreshLeft, Link,
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { chainApi, downloadBlob } from '@/api/chain'
@@ -498,7 +732,11 @@ const nodeEnterprises = ref([])
 const entLoading = ref(false)
 
 const targetLoading = ref(false)
-const targetFilter = ref({ gap_id: '', node_code: '', is_local: '', keyword: '' })
+const targetFilter = ref({
+  gap_id: '', node_code: '', is_local: '', region_type: '',
+  chain_role: '', invest_fit: '', province: '', keyword: '',
+})
+const targetFilters = ref({ provinces: [], region_types: [], chain_roles: [], invest_fits: [] })
 
 const detailVisible = ref(false)
 const currentTarget = ref(null)
@@ -530,17 +768,87 @@ const LAYERS = [
 const LEVEL_COLORS = { 高: '#f56c6c', 中: '#e6a23c', 低: '#909399' }
 
 const FACTOR_DEFS = [
-  { key: 'f1', name: '需求刚性', max: 30, color: '#f56c6c' },
-  { key: 'f2', name: '支撑企业数', max: 25, color: '#e6a23c' },
-  { key: 'f3', name: '本地缺失度', max: 25, color: '#409eff' },
+  { key: 'f1', name: '需求刚性', max: 25, color: '#f56c6c' },
+  { key: 'f2', name: '支撑企业数', max: 20, color: '#e6a23c' },
+  { key: 'f3', name: '本地缺失度', max: 20, color: '#409eff' },
   { key: 'f4', name: '链主牵引', max: 10, color: '#67c23a' },
   { key: 'f5', name: '落地可行性', max: 10, color: '#7b6fd4' },
+  { key: 'f6', name: '企业与承载实力', max: 15, color: '#14b8a6' },
 ]
+
+/** 链作用配色（补链/延链/强链） */
+const ROLE_COLORS = { 补链: '#f56c6c', 延链: '#e6a23c', 强链: '#2f7f5f' }
+
+/** 投资可行性配色 */
+const FIT_COLORS = { 高: '#f56c6c', 中: '#e6a23c', 低: '#909399' }
+
+/** 地域类型配色 */
+const REGION_COLORS = { 省外: '#f56c6c', 湖北省内市域外: '#e6a23c', 襄阳市域内: '#409eff' }
+
+/** 企业实力评分配色（按分值分档，与缺口优先级无关） */
+function strengthColor(score) {
+  const s = Number(score) || 0
+  if (s >= 80) return '#2f7f5f'
+  if (s >= 60) return '#409eff'
+  if (s >= 40) return '#e6a23c'
+  return '#909399'
+}
+
+/** 注册资本格式化：数据库单位为万元 → 优先显示亿元 */
+function fmtCapital(rc) {
+  const v = Number(rc) || 0
+  if (!v) return ''
+  if (v >= 10000) return `${(v / 10000).toFixed(2)} 亿元`
+  return `${v} 万元`
+}
+
+/**
+ * 近三年营收 / 净利格式化
+ * 原始形如 "2023:236900万;2024:265121万;2025:293373万"
+ * 转成 "2023 23.69亿 / 2024 26.51亿 / 2025 29.34亿" 便于阅读
+ */
+function fmtSeries(text) {
+  if (!text) return ''
+  const parts = String(text).split(/[;；]/).filter(Boolean)
+  const out = []
+  for (const p of parts) {
+    const m = p.match(/^\s*(\d{4})\s*[:：]\s*([\d.]+)\s*(万|亿)?\s*$/)
+    if (!m) { out.push(p.trim()); continue }
+    const [, year, num, unit] = m
+    const n = parseFloat(num)
+    if (unit === '亿') out.push(`${year} ${n.toFixed(2)}亿`)
+    else if (n >= 10000) out.push(`${year} ${(n / 10000).toFixed(2)}亿`)
+    else out.push(`${year} ${n}万`)
+  }
+  return out.join(' / ')
+}
 
 // ===== 计算属性 =====
 const ruleFactors = computed(() => overview.value.rules?.factors || [])
 const ruleLevels = computed(() => overview.value.rules?.levels || [])
 const ruleVeto = computed(() => overview.value.rules?.veto || '')
+const ruleStrengthFactors = computed(() => overview.value.rules?.strength_factors || [])
+const ruleChainRoles = computed(() => overview.value.rules?.chain_roles || [])
+const ruleInvestFit = computed(() => overview.value.rules?.invest_fit || [])
+const regionStats = computed(() => overview.value.region_stats || [])
+const chainRoleStats = computed(() => overview.value.chain_role_stats || [])
+const fitStats = computed(() => overview.value.fit_stats || [])
+const strongTargetCount = computed(() => {
+  const s = chainRoleStats.value.find(x => x.role === '强链')
+  return s ? s.count : 0
+})
+/** 当前目标企业可对接的本地链主名称 */
+const matchedChainNames = computed(() => {
+  const ml = currentTarget.value?.match_local_chain
+  if (!ml) return []
+  if (Array.isArray(ml)) return ml
+  try {
+    const arr = JSON.parse(ml)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+})
 
 const visibleNodes = computed(() => {
   if (!graphLayerFilter.value) return nodes.value
@@ -639,12 +947,12 @@ function levelColor(level) {
   return LEVEL_COLORS[level] || '#909399'
 }
 
-/** 缺口 / 目标企业的五因子构成（用于堆叠条与详情） */
+/** 缺口 / 目标企业的六因子构成（用于堆叠条与详情） */
 function factorChips(item) {
   const src = item.factors || item.scores || {}
   return FACTOR_DEFS.map(f => {
     const raw = src[f.key] || 0
-    // 缺口为百分制得分（0-30/25/10），目标企业为 0-100 评分
+    // 缺口为百分制得分（0-25/20/10/15），目标企业为 0-100 评分
     const value = item.factors ? raw : Math.round(raw * f.max / 100)
     return {
       key: f.key,
@@ -686,12 +994,49 @@ async function fetchTargets() {
     if (targetFilter.value.gap_id) params.gap_id = targetFilter.value.gap_id
     if (targetFilter.value.node_code) params.node_code = targetFilter.value.node_code
     if (targetFilter.value.is_local !== '') params.is_local = targetFilter.value.is_local
+    if (targetFilter.value.region_type) params.region_type = targetFilter.value.region_type
+    if (targetFilter.value.chain_role) params.chain_role = targetFilter.value.chain_role
+    if (targetFilter.value.invest_fit) params.invest_fit = targetFilter.value.invest_fit
+    if (targetFilter.value.province) params.province = targetFilter.value.province
     if (targetFilter.value.keyword) params.keyword = targetFilter.value.keyword
     const res = await chainApi.getTargets(params)
     if (res.code === 0) targets.value = res.data || []
   } finally {
     targetLoading.value = false
   }
+}
+
+/** 拉取目标企业库可用筛选项（省份 / 地域类型 / 链作用 / 投资可行性） */
+async function fetchTargetFilters() {
+  const res = await chainApi.getTargetFilters()
+  if (res.code === 0) targetFilters.value = res.data || {}
+}
+
+/** 一键筛选：省外企业（招商引资主视角） */
+function applyOutprovFilter() {
+  targetFilter.value.region_type = targetFilter.value.region_type === '省外' ? '' : '省外'
+  fetchTargets()
+}
+
+/** 一键筛选：投资可行性高 */
+function applyHighFitFilter() {
+  targetFilter.value.invest_fit = targetFilter.value.invest_fit === '高' ? '' : '高'
+  fetchTargets()
+}
+
+/** 一键筛选：强链目标（可做链主或与本地链主绑定） */
+function applyStrongChainFilter() {
+  targetFilter.value.chain_role = targetFilter.value.chain_role === '强链' ? '' : '强链'
+  fetchTargets()
+}
+
+/** 重置全部筛选条件 */
+function resetTargetFilters() {
+  targetFilter.value = {
+    gap_id: '', node_code: '', is_local: '', region_type: '',
+    chain_role: '', invest_fit: '', province: '', keyword: '',
+  }
+  fetchTargets()
 }
 
 async function fetchAdvice() {
@@ -713,7 +1058,10 @@ async function fetchNodeEnterprises() {
 async function loadAll() {
   loading.value = true
   try {
-    await Promise.all([fetchOverview(), fetchNodes(), fetchGaps(), fetchTargets(), fetchAdvice()])
+    await Promise.all([
+      fetchOverview(), fetchNodes(), fetchGaps(), fetchTargets(),
+      fetchAdvice(), fetchTargetFilters(),
+    ])
     await fetchNodeEnterprises()
   } catch (err) {
     ElMessage.error(err.message || '加载产业链分析数据失败')
@@ -900,7 +1248,7 @@ watch(selectedGapId, () => {
 .page-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* 统计卡片 */
-.stat-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
 @media (max-width: 1400px) { .stat-cards { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 768px) { .stat-cards { grid-template-columns: repeat(2, 1fr); } }
 
@@ -921,6 +1269,8 @@ watch(selectedGapId, () => {
 .stat-gap .stat-card-icon { background: #fef0f0; color: #f56c6c; }
 .stat-target .stat-card-icon { background: #f4f4f5; color: #7b6fd4; }
 .stat-local .stat-card-icon { background: #f0f9eb; color: #67c23a; }
+.stat-fit .stat-card-icon { background: #fef0f0; color: #f56c6c; }
+.stat-strong .stat-card-icon { background: #e8f3ee; color: #2f7f5f; }
 .stat-card-body { display: flex; flex-direction: column; }
 .stat-card-value { font-size: 26px; font-weight: 700; color: #303133; line-height: 1.2; }
 .stat-card-label { font-size: 13px; color: #909399; margin-top: 2px; }
@@ -1045,8 +1395,61 @@ watch(selectedGapId, () => {
 
 /* 目标企业 */
 .target-toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
+.quick-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.quick-filters .qf-count {
+  display: inline-block; margin-left: 4px; padding: 0 6px;
+  background: rgba(0, 0, 0, 0.06); border-radius: 9px;
+  font-size: 12px; font-weight: 600;
+}
 .result-count { font-size: 13px; color: #909399; }
 .score-badge { display: inline-block; min-width: 34px; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 13px; text-align: center; }
+.prov-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  background: #f4f4f5; color: #606266; font-size: 12px; font-weight: 600;
+}
+.region-type-tag, .role-tag, .fit-tag {
+  display: inline-block; min-width: 34px; padding: 1px 8px; border-radius: 10px;
+  font-size: 12px; font-weight: 600; text-align: center;
+}
+
+/* 企业实力五维面板 */
+.strength-panel {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px; margin-bottom: 6px;
+}
+.strength-item { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 14px; }
+.strength-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.strength-name { font-size: 13px; font-weight: 600; color: #303133; }
+.strength-weight { font-size: 13px; font-weight: 700; color: #14b8a6; }
+.factor-bar-fill.strength-fill { background: linear-gradient(90deg, #0d9488, #14b8a6); }
+.strength-desc { font-size: 12px; color: #909399; line-height: 1.6; }
+
+/* 链作用 / 投资可行性 判定面板 */
+.role-fit-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 6px; }
+@media (max-width: 1100px) { .role-fit-panel { grid-template-columns: 1fr; } }
+.role-block { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 14px; }
+.block-title { font-size: 13px; font-weight: 700; color: #1a3a5c; margin-bottom: 10px; }
+.role-item { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 10px; font-size: 12px; }
+.role-item:last-child { margin-bottom: 0; }
+.role-badge {
+  flex-shrink: 0; min-width: 34px; height: 22px; padding: 0 8px; border-radius: 11px;
+  color: #fff; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.role-desc { flex: 1; color: #606266; line-height: 1.6; }
+.role-count { flex-shrink: 0; color: #909399; font-weight: 600; }
+
+/* 地域来源分布 */
+.region-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px;
+}
+.region-bar-wrap { display: flex; align-items: center; gap: 12px; }
+.region-name { flex-shrink: 0; width: 110px; font-size: 13px; font-weight: 600; color: #303133; }
+.region-bar { flex: 1; height: 14px; background: #ebeef5; border-radius: 7px; overflow: hidden; }
+.region-bar-fill { height: 100%; border-radius: 7px; transition: width 0.4s; }
+.region-count { flex-shrink: 0; width: 56px; text-align: right; font-size: 13px; font-weight: 700; color: #303133; }
+.region-high { flex-shrink: 0; width: 110px; font-size: 12px; color: #909399; }
 
 /* 建议 */
 .advice-list { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
@@ -1081,7 +1484,16 @@ watch(selectedGapId, () => {
 .detail-body { padding: 4px 4px 20px; }
 .detail-name { margin: 0 0 10px; font-size: 18px; font-weight: 700; color: #1a3a5c; }
 .detail-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-.detail-desc ::v-deep(.el-descriptions__label) { width: 82px; color: #606266; }
+.detail-section-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; color: #1a3a5c;
+  margin: 18px 0 10px; padding-left: 8px;
+  border-left: 3px solid #409eff; line-height: 1.3;
+}
+.detail-desc { margin-bottom: 6px; }
+.detail-desc ::v-deep(.el-descriptions__label) { width: 92px; color: #606266; }
+.fit-reason { margin-left: 8px; font-size: 12px; color: #909399; line-height: 1.6; }
+.strength-num { font-size: 16px; font-weight: 700; }
 .source-link { color: #409eff; word-break: break-all; }
 .detail-score { margin-top: 20px; background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 14px; }
 .score-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 12px; }

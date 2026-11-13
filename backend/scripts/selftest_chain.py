@@ -30,15 +30,39 @@ with app.app_context():
     print(f'[表] 环节 {ChainNode.query.count()} / 企业 {ChainEnterprise.query.count()} '
           f'/ 缺口 {ChainGap.query.count()} / 目标 {ChainTarget.query.count()} '
           f'/ 建议 {ChainAdvice.query.count()}')
-    assert ChainNode.query.count() == 25, '环节数不对'
-    assert ChainEnterprise.query.count() == 62, '企业数不对'
-    assert ChainGap.query.count() == 9, '缺口数不对'
-    assert ChainTarget.query.count() > 25, '目标企业数偏少'
-    assert ChainAdvice.query.count() == 7, '建议数不对'
+    assert ChainNode.query.count() == 26, '环节数不对（应为 26）'
+    assert ChainEnterprise.query.count() == 62, '企业数不对（应为 62）'
+    assert ChainGap.query.count() == 13, '缺口数不对（应为 13）'
+    assert ChainTarget.query.count() == 102, '目标企业数不对（应为 102）'
+    assert ChainAdvice.query.count() == 12, '建议数不对（应为 12）'
+
+    # 招商引资：襄州区属地目标企业必须为 0
+    xz_local = ChainTarget.query.filter_by(is_xiangzhou_local=True).count()
+    assert xz_local == 0, f'襄州区属地目标企业应为 0，实际 {xz_local}'
+    print('[约束] 襄州区属地目标企业 0 家 ✓')
+
+    # 省外企业须为主体
+    outprov = ChainTarget.query.filter_by(region_type='省外').count()
+    assert outprov >= 60, f'省外目标企业偏少：{outprov}'
+    print(f'[约束] 省外目标企业 {outprov} 家 ✓')
+
+    # 六因子：冷链优先级必须被压低（不得进入前五）
+    gaps_all = ChainGap.query.order_by(ChainGap.sort_order).all()
+    cold = next((g for g in gaps_all if g.node_code == 'COLD'), None)
+    assert cold is not None, '缺少冷链环节缺口'
+    rank = next(i for i, g in enumerate(gaps_all, 1) if g.id == cold.id)
+    assert rank > 5, f'冷链优先级仍过高（第 {rank} 位）'
+    print(f'[约束] 冷链优先级第 {rank} 位 / {cold.total_score} 分，未进前五 ✓')
+
+    # 六因子分项满分校验
+    assert cold.f6 is not None, '缺口缺少 F6 企业实力因子'
+    assert ChainGap.query.filter_by(node_code='COLD').first().f6 >= 0
+
     # 幂等性：再跑一次不应重复写入
     from chain_seed import seed_chain_data
     seed_chain_data(app)
     assert ChainEnterprise.query.count() == 62, '重复初始化！'
+    assert ChainTarget.query.count() == 102, '目标企业重复初始化！'
     print('[幂等] 重复执行 seed_chain_data 后数据未翻倍 ✓')
 
 client = app.test_client()
@@ -49,7 +73,8 @@ print(f'[登录] code={res.get_json().get("code")}')
 assert res.get_json().get('code') == 0, 'demo 登录失败'
 
 for path in ['/api/chain/overview', '/api/chain/nodes', '/api/chain/enterprises',
-             '/api/chain/gaps', '/api/chain/targets', '/api/chain/advice']:
+             '/api/chain/gaps', '/api/chain/targets', '/api/chain/advice',
+             '/api/chain/target-filters']:
     r = client.get(path)
     j = r.get_json()
     assert j.get('code') == 0, f'{path} 返回异常：{j}'
@@ -57,13 +82,47 @@ for path in ['/api/chain/overview', '/api/chain/nodes', '/api/chain/enterprises'
     n = len(d) if isinstance(d, list) else 'obj'
     print(f'[GET] {path:28s} -> {r.status_code}  条目 {n}')
 
+# overview 新字段
+ov = client.get('/api/chain/overview').get_json()['data']
+assert ov['outprov_target_count'] >= 60, 'overview 省外目标数异常'
+assert ov['xiangzhou_local_count'] == 0, 'overview 襄州区属地数应为 0'
+assert ov['high_fit_count'] > 0, 'overview 可行性高企业数为 0'
+assert len(ov['rules']['factors']) == 6, '优先级因子应为 6 个'
+assert len(ov['rules']['strength_factors']) == 5, '企业实力维度应为 5 个'
+assert len(ov['rules']['chain_roles']) == 3, '链作用分类应为 3 类'
+assert len(ov['rules']['invest_fit']) == 3, '投资可行性分档应为 3 档'
+print(f"[概览] 省外 {ov['outprov_target_count']} / 可行性高 {ov['high_fit_count']} / "
+      f"本地企业均实力 {ov['strength_avg']} / 六因子 ✓")
+
 # 筛选
 r = client.get('/api/chain/enterprises?layer=中游').get_json()
 print(f'[筛选] 中游企业 {len(r["data"])} 家')
+r = client.get('/api/chain/enterprises?order_by=strength').get_json()
+strengths = [e['strength'] or 0 for e in r['data']]
+assert strengths == sorted(strengths, reverse=True), '企业实力排序错误'
+print(f'[筛选] 按实力排序生效（首位 {strengths[0]} 分）')
 r = client.get('/api/chain/targets?is_local=1').get_json()
 print(f'[筛选] 市域内目标企业 {len(r["data"])} 家')
+r = client.get('/api/chain/targets?region_type=省外').get_json()
+print(f'[筛选] 省外目标企业 {len(r["data"])} 家')
+assert len(r['data']) >= 60, '省外筛选结果偏少'
+assert all(t['region_type'] == '省外' for t in r['data']), '省外筛选串档'
+r = client.get('/api/chain/targets?chain_role=强链').get_json()
+print(f'[筛选] 强链目标企业 {len(r["data"])} 家')
+assert all(t['chain_role'] == '强链' for t in r['data']), '链作用筛选串档'
+r = client.get('/api/chain/targets?invest_fit=高').get_json()
+print(f'[筛选] 投资可行性高 {len(r["data"])} 家')
+assert all(t['invest_fit_level'] == '高' for t in r['data']), '可行性筛选串档'
+r = client.get('/api/chain/targets?province=河南').get_json()
+print(f'[筛选] 河南目标企业 {len(r["data"])} 家')
 r = client.get('/api/chain/targets?gap_id=1').get_json()
-print(f'[筛选] 冷链缺口目标企业 {len(r["data"])} 家')
+print(f'[筛选] 缺口1 目标企业 {len(r["data"])} 家')
+# 筛选器元数据
+tf = client.get('/api/chain/target-filters').get_json()['data']
+assert len(tf['provinces']) >= 8, '省份列表偏少'
+assert len(tf['region_types']) == 3 and len(tf['chain_roles']) == 3 and len(tf['invest_fits']) == 3
+print(f'[筛选器] 省份 {len(tf["provinces"])} 个 / 地域 {len(tf["region_types"])} / '
+      f'链作用 {len(tf["chain_roles"])} / 可行性 {len(tf["invest_fits"])} ✓')
 
 # CSV 导出
 for ds in ['enterprises', 'gaps', 'targets']:

@@ -20,14 +20,14 @@ export const chainApi = {
 
   /**
    * 企业清单
-   * @param {Object} params - { node_code, layer, role, keyword }
+   * @param {Object} params - { node_code, layer, role, keyword, min_strength, order_by }
    */
   getEnterprises(params) {
     return request.get('/chain/enterprises', { params })
   },
 
   /**
-   * 共性配套缺口（含五因子得分）
+   * 共性配套缺口（含六因子得分）
    */
   getGaps() {
     return request.get('/chain/gaps')
@@ -35,10 +35,17 @@ export const chainApi = {
 
   /**
    * 目标企业候选库
-   * @param {Object} params - { gap_id, node_code, is_local, keyword }
+   * @param {Object} params - { gap_id, node_code, is_local, region_type, chain_role, invest_fit, province, keyword }
    */
   getTargets(params) {
     return request.get('/chain/targets', { params })
+  },
+
+  /**
+   * 目标企业库筛选项（省份 / 地域类型 / 链作用 / 投资可行性）
+   */
+  getTargetFilters() {
+    return request.get('/chain/target-filters')
   },
 
   /**

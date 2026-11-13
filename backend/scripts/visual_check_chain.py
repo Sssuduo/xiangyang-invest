@@ -157,6 +157,41 @@ export default defineConfig({
             shots.append(('03-target', OUT + '/chain-03-target.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
 
+            # 目标企业库：点击「省外企业」快捷筛选
+            page.locator('.quick-filters button', has_text='省外企业').first.click()
+            page.wait_for_timeout(1500)
+            shots.append(('03b-outprov', OUT + '/chain-03b-outprov.png'))
+            page.screenshot(path=shots[-1][1], full_page=True)
+            outprov_text = page.locator('.result-count').first.inner_text()
+            print('省外筛选结果:', outprov_text)
+            assert '80 家' in outprov_text, f'省外筛选数量异常: {outprov_text}'
+
+            # 目标企业库：打开详情抽屉
+            page.locator('.el-table__row .el-button', has_text='详情').first.click()
+            page.wait_for_timeout(1600)
+            shots.append(('03c-detail', OUT + '/chain-03c-detail.png'))
+            page.screenshot(path=shots[-1][1], full_page=True)
+            drawer_probe = page.evaluate("""() => {
+                const d = document.querySelector('.el-drawer__body');
+                if (!d) return null;
+                return {
+                    hasStrength: d.innerText.includes('企业实力'),
+                    hasRole: d.innerText.includes('链作用'),
+                    hasFit: d.innerText.includes('投资可行性'),
+                    hasSixFactor: d.innerText.includes('六因子匹配得分'),
+                    scrollH: d.scrollHeight,
+                };
+            }""")
+            print('详情抽屉探针:', drawer_probe)
+            assert drawer_probe and drawer_probe['hasStrength'], '详情抽屉缺少企业实力区块'
+            assert drawer_probe and drawer_probe['hasSixFactor'], '详情抽屉缺少六因子得分'
+            page.keyboard.press('Escape')
+            page.wait_for_timeout(800)
+
+            # 复位筛选
+            page.locator('.quick-filters button', has_text='重置').first.click()
+            page.wait_for_timeout(1200)
+
             # 页签四：招商建议
             tabs.nth(3).click()
             page.wait_for_timeout(1500)
@@ -184,6 +219,19 @@ export default defineConfig({
                 }
                 const radar = document.querySelector('.chart-box canvas');
                 out.radarCanvas = radar ? { w: radar.width, h: radar.height } : null;
+                // 新增面板的溢出检查
+                const panels = ['.strength-panel', '.role-fit-panel', '.region-panel', '.quick-filters'];
+                out.panels = {};
+                panels.forEach(sel => {
+                    const el = document.querySelector(sel);
+                    if (!el) { out.panels[sel] = null; return; }
+                    const r = el.getBoundingClientRect();
+                    out.panels[sel] = { w: Math.round(r.width), h: Math.round(r.height),
+                                        overflowX: el.scrollWidth > el.clientWidth + 2 };
+                });
+                // 表格横向溢出
+                const wrap = document.querySelector('.el-table__body-wrapper');
+                out.tableOverflow = wrap ? wrap.scrollWidth > wrap.clientWidth + 2 : null;
                 return out;
             }""")
             print('几何探针:', probe)

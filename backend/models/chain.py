@@ -2,10 +2,14 @@
 
 农高区（襄州片区）企业产业链图谱分析：
 - chain_nodes       产业链环节本体（上游/中游/下游/平台支撑）
-- chain_enterprises 企业主数据（本次分析范围：襄州片区企业统计表 62 家）
-- chain_gaps        共性配套缺口（含优先级五因子得分）
+- chain_enterprises 企业主数据（本次分析范围：襄阳国家农高区企业统计表 62 家）
+- chain_gaps        共性配套缺口（含优先级六因子得分）
 - chain_targets     目标企业候选（联网采集，保留来源链接）
 - chain_advice      招商建议（文字材料）
+
+优先级六因子（总分 100）：
+  F1 需求刚性 25 / F2 支撑企业数 20 / F3 本地缺失度 20
+  F4 链主牵引 10 / F5 落地可行性 10 / F6 企业与承载实力 15
 """
 from datetime import datetime
 
@@ -37,26 +41,50 @@ class ChainNode(db.Model):
 
 
 class ChainEnterprise(db.Model):
-    """企业主数据（归类到产业链环节）"""
+    """企业主数据（归类到产业链环节，含工商核实的企业实力五维）"""
     __tablename__ = 'chain_enterprises'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    seq = db.Column(db.Integer, default=0)                # 原表序号（49 起原表为空，此处顺延）
+    seq = db.Column(db.Integer, default=0)                # 权威统计表序号
     name = db.Column(db.String(255), nullable=False)
     industry = db.Column(db.String(64), default='')        # 原表「产业」字段
     node_code = db.Column(db.String(64), default='', index=True)  # 产业链环节
     role = db.Column(db.String(32), default='一般')        # 链主/重点/一般
     is_hightech = db.Column(db.Boolean, default=False)     # 高企
-    leader_level = db.Column(db.String(32), default='')    # 国家级/省级/市级
+    leader_level = db.Column(db.String(255), default='')   # 龙头/资质称号
     is_scale = db.Column(db.Boolean, default=False)        # 规上
     region = db.Column(db.String(128), default='')         # 属地
     basis = db.Column(db.Text, default='')                 # 环节归类依据
-    source = db.Column(db.String(128), default='襄州片区企业统计表')
+    source = db.Column(db.String(128), default='襄阳国家农高区企业情况统计表')
     review_status = db.Column(db.String(16), default='待复核')
+    # ---- 企业实力五维（联网核实） ----
+    district = db.Column(db.String(64), default='')        # 登记机关属地
+    reg_capital = db.Column(db.Integer, default=0)         # 注册资本（万元）
+    reg_capital_text = db.Column(db.String(128), default='')  # 注册资本原文
+    establish_date = db.Column(db.String(32), default='')
+    legal_person = db.Column(db.String(64), default='')
+    address = db.Column(db.String(255), default='')
+    main_business = db.Column(db.Text, default='')         # 主营业务
+    revenue_3y = db.Column(db.String(255), default='')     # 近三年营收趋势
+    netprofit_3y = db.Column(db.String(255), default='')   # 近三年净利润趋势
+    funding = db.Column(db.Text, default='')               # 融资情况
+    investments = db.Column(db.Text, default='')           # 对外投资情况
+    signed_deal = db.Column(db.Text, default='')           # 投资签约情况
+    highlights = db.Column(db.Text, default='')            # 其他亮点
+    source_url = db.Column(db.String(512), default='')     # 来源链接
+    confidence = db.Column(db.String(16), default='medium')  # 核实置信度
+    strength = db.Column(db.Integer, default=0)           # 企业实力分 0-100
+    strength_detail = db.Column(db.Text, default='{}')     # 实力分项（JSON）
+    strength_trend = db.Column(db.String(32), default='')  # 财报趋势
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
+        import json
+        try:
+            sd = json.loads(self.strength_detail) if self.strength_detail else {}
+        except Exception:
+            sd = {}
         return {
             'id': self.id,
             'seq': self.seq,
@@ -71,11 +99,29 @@ class ChainEnterprise(db.Model):
             'basis': self.basis or '',
             'source': self.source or '',
             'review_status': self.review_status or '待复核',
+            'district': self.district or '',
+            'reg_capital': self.reg_capital or 0,
+            'reg_capital_text': self.reg_capital_text or '',
+            'establish_date': self.establish_date or '',
+            'legal_person': self.legal_person or '',
+            'address': self.address or '',
+            'main_business': self.main_business or '',
+            'revenue_3y': self.revenue_3y or '',
+            'netprofit_3y': self.netprofit_3y or '',
+            'funding': self.funding or '',
+            'investments': self.investments or '',
+            'signed_deal': self.signed_deal or '',
+            'highlights': self.highlights or '',
+            'source_url': self.source_url or '',
+            'confidence': self.confidence or 'medium',
+            'strength': self.strength or 0,
+            'strength_detail': sd,
+            'strength_trend': self.strength_trend or '',
         }
 
 
 class ChainGap(db.Model):
-    """共性配套缺口（含优先级五因子得分）"""
+    """共性配套缺口（含优先级六因子得分）"""
     __tablename__ = 'chain_gaps'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -85,11 +131,12 @@ class ChainGap(db.Model):
     supporters = db.Column(db.Text, default='[]')      # 支撑本地企业（JSON 数组）
     supporter_count = db.Column(db.Integer, default=0)
     evidence = db.Column(db.Text, default='[]')        # 诉求/依据摘录（JSON 数组）
-    f1 = db.Column(db.Integer, default=0)              # 需求刚性 30
-    f2 = db.Column(db.Integer, default=0)              # 支撑企业数 25
-    f3 = db.Column(db.Integer, default=0)              # 本地缺失度 25
+    f1 = db.Column(db.Integer, default=0)              # 需求刚性 25
+    f2 = db.Column(db.Integer, default=0)              # 支撑企业数 20
+    f3 = db.Column(db.Integer, default=0)              # 本地缺失度 20
     f4 = db.Column(db.Integer, default=0)              # 链主牵引 10
     f5 = db.Column(db.Integer, default=0)              # 落地可行性 10
+    f6 = db.Column(db.Integer, default=0)              # 企业与承载实力 15
     total_score = db.Column(db.Integer, default=0)
     level = db.Column(db.String(16), default='中')      # 高/中/低
     analysis_note = db.Column(db.Text, default='')
@@ -107,14 +154,14 @@ class ChainGap(db.Model):
         return {
             'id': self.id,
             'node_code': self.node_code,
-            'title': self.title,
+            'title': self.title or '',
             'demand': self.demand or '',
             'supporters': _loads(self.supporters, []),
             'supporter_count': self.supporter_count or 0,
             'evidence': _loads(self.evidence, []),
             'factors': {
                 'f1': self.f1 or 0, 'f2': self.f2 or 0, 'f3': self.f3 or 0,
-                'f4': self.f4 or 0, 'f5': self.f5 or 0,
+                'f4': self.f4 or 0, 'f5': self.f5 or 0, 'f6': self.f6 or 0,
             },
             'total_score': self.total_score or 0,
             'level': self.level or '中',
@@ -131,15 +178,35 @@ class ChainTarget(db.Model):
     gap_id = db.Column(db.Integer, db.ForeignKey('chain_gaps.id', ondelete='CASCADE'), index=True)
     name = db.Column(db.String(255), nullable=False)
     node_code = db.Column(db.String(64), default='')
-    region = db.Column(db.String(128), default='')
+    region = db.Column(db.String(128), default='')        # 地域描述
+    province = db.Column(db.String(32), default='')        # 省份
+    city = db.Column(db.String(64), default='')           # 城市
+    region_type = db.Column(db.String(32), default='', index=True)  # 省外/湖北省内市域外/襄阳市域内
+    is_xiangzhou_local = db.Column(db.Boolean, default=False)     # 是否襄州区属地（招商引资应排除）
     products = db.Column(db.Text, default='')
     scale = db.Column(db.String(255), default='')
+    listed = db.Column(db.String(128), default='')         # 上市情况
     source_url = db.Column(db.String(512), default='')
-    evidence = db.Column(db.Text, default='')          # 匹配理由
-    scores = db.Column(db.Text, default='{}')          # 五因子分项（JSON）
+    evidence = db.Column(db.Text, default='')              # 匹配理由
+    scores = db.Column(db.Text, default='{}')              # 六因子分项（JSON）
     total_score = db.Column(db.Integer, default=0)
-    is_local = db.Column(db.Boolean, default=False)     # 是否市域内已有（可联动）
+    is_local = db.Column(db.Boolean, default=False)        # 是否襄阳市域内（可联动）
     review_status = db.Column(db.String(16), default='待复核')
+    # ---- 产业链深度判据 ----
+    chain_role = db.Column(db.String(16), default='补链', index=True)  # 补链/延链/强链
+    match_local_chain = db.Column(db.Text, default='[]')   # 可对接本地链主（JSON 数组）
+    landing_form = db.Column(db.String(128), default='')   # 建议落地形式
+    invest_fit_level = db.Column(db.String(8), default='中', index=True)  # 高/中/低
+    invest_fit_reason = db.Column(db.Text, default='')     # 投资可行性理由
+    # ---- 企业实力五维 ----
+    reg_capital = db.Column(db.Integer, default=0)
+    revenue_3y = db.Column(db.String(255), default='')
+    netprofit_3y = db.Column(db.String(255), default='')
+    funding = db.Column(db.Text, default='')
+    investments = db.Column(db.Text, default='')
+    signed_deal = db.Column(db.Text, default='')
+    strength = db.Column(db.Integer, default=0)
+    confidence = db.Column(db.String(16), default='medium')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -149,20 +216,42 @@ class ChainTarget(db.Model):
             sc = json.loads(self.scores) if self.scores else {}
         except Exception:
             sc = {}
+        try:
+            ml = json.loads(self.match_local_chain) if self.match_local_chain else []
+        except Exception:
+            ml = []
         return {
             'id': self.id,
             'gap_id': self.gap_id,
             'name': self.name,
             'node_code': self.node_code or '',
             'region': self.region or '',
+            'province': self.province or '',
+            'city': self.city or '',
+            'region_type': self.region_type or '',
+            'is_xiangzhou_local': bool(self.is_xiangzhou_local),
             'products': self.products or '',
             'scale': self.scale or '',
+            'listed': self.listed or '',
             'source_url': self.source_url or '',
             'evidence': self.evidence or '',
             'scores': sc,
             'total_score': self.total_score or 0,
             'is_local': bool(self.is_local),
             'review_status': self.review_status or '待复核',
+            'chain_role': self.chain_role or '补链',
+            'match_local_chain': ml,
+            'landing_form': self.landing_form or '',
+            'invest_fit_level': self.invest_fit_level or '中',
+            'invest_fit_reason': self.invest_fit_reason or '',
+            'reg_capital': self.reg_capital or 0,
+            'revenue_3y': self.revenue_3y or '',
+            'netprofit_3y': self.netprofit_3y or '',
+            'funding': self.funding or '',
+            'investments': self.investments or '',
+            'signed_deal': self.signed_deal or '',
+            'strength': self.strength or 0,
+            'confidence': self.confidence or 'medium',
         }
 
 

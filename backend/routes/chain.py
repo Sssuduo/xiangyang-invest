@@ -1,6 +1,6 @@
 """产业链招商智能分析 API 路由
 
-数据链路：企业统计表（62 家）→ 环节归类 → 共性缺口 → 五因子优先级 → 目标企业 → 招商建议
+数据链路：企业统计表（62 家）→ 环节归类 → 共性缺口 → 六因子优先级 → 目标企业 → 招商建议
 
 接口前缀：/api/chain
 """
@@ -31,13 +31,38 @@ LAYER_COLORS = {
 }
 LEVEL_COLORS = {'高': '#f56c6c', '中': '#e6a23c', '低': '#909399'}
 
-# 优先级五因子定义（供前端可视化规则表）
+# 优先级六因子定义（供前端可视化规则表）
 FACTOR_RULES = [
-    {'key': 'f1', 'name': '需求刚性', 'max': 30, 'desc': '本地企业对配套环节的采购/使用需求是否不可替代'},
-    {'key': 'f2', 'name': '支撑企业数', 'max': 25, 'desc': '提出该配套需求的企业数量与规模（支撑面）'},
-    {'key': 'f3', 'name': '本地缺失度', 'max': 25, 'desc': '本地该环节供给空缺程度，越空缺得分越高'},
+    {'key': 'f1', 'name': '需求刚性', 'max': 25, 'desc': '本地企业对配套环节的采购/使用需求是否不可替代'},
+    {'key': 'f2', 'name': '支撑企业数', 'max': 20, 'desc': '提出该配套需求的企业数量与规模（支撑面）'},
+    {'key': 'f3', 'name': '本地缺失度', 'max': 20, 'desc': '本地该环节供给空缺程度，越空缺得分越高'},
     {'key': 'f4', 'name': '链主牵引', 'max': 10, 'desc': '是否有本地链主企业明确提出并可带动配套落地'},
     {'key': 'f5', 'name': '落地可行性', 'max': 10, 'desc': '承载条件、市场半径、政策与建设时序的可操作性'},
+    {'key': 'f6', 'name': '企业与承载实力', 'max': 15,
+     'desc': '相关企业综合实力：注册资本、近三年财报趋势、融资、投资、投资签约五维客观评分'},
+]
+
+# 企业实力五维（F6 因子内部构成，供前端说明）
+STRENGTH_RULES = [
+    {'key': 'capital', 'name': '注册资本', 'max': 25, 'desc': '按注册资本规模分档：1 亿元以上 25 / 5000 万-1 亿 21 / 2000-5000 万 17 / 1000-2000 万 13 / 500-1000 万 9 / 500 万以下 5'},
+    {'key': 'revenue', 'name': '营收规模', 'max': 25, 'desc': '近三年营收最高年度折算：10 亿以上 25 / 5-10 亿 21 / 1-5 亿 17 / 3000 万-1 亿 13 / 1000-3000 万 9 / 1000 万以下 6'},
+    {'key': 'trend', 'name': '财报趋势', 'max': 15, 'desc': '增长 15 / 持平 10 / 下滑 4 / 无公开数据 8'},
+    {'key': 'funding', 'name': '融资与投资', 'max': 20, 'desc': '有股权融资 15 分；有对外投资再加 5 分，上限 20'},
+    {'key': 'signed', 'name': '投资签约', 'max': 15, 'desc': '已签约/开工/投产/落地 15 / 有投资记录 11 / 无 4'},
+]
+
+# 链作用定义（补链/延链/强链）
+CHAIN_ROLE_RULES = [
+    {'role': '补链', 'color': '#f56c6c', 'desc': '本地该环节完全缺失，引入即可补上空白'},
+    {'role': '延链', 'color': '#e6a23c', 'desc': '本地已有主体，可上规模或上品类'},
+    {'role': '强链', 'color': '#2f7f5f', 'desc': '可做本地链主，或与本地链主形成配套绑定'},
+]
+
+# 投资可行性分档
+INVEST_FIT_RULES = [
+    {'level': '高', 'color': '#f56c6c', 'desc': '有异地扩产计划、已在中部布局或政府合作意愿明确，落地概率高'},
+    {'level': '中', 'color': '#e6a23c', 'desc': '具备扩张意愿或技术互补性，宜以分厂、区域仓配、技术输出等轻量形态切入'},
+    {'level': '低', 'color': '#909399', 'desc': '存在失信、立案、亏损等风险，或异地投资必要性弱，不列入主攻名单'},
 ]
 
 LEVEL_RULES = [
@@ -47,6 +72,9 @@ LEVEL_RULES = [
 ]
 
 VETO_RULE = '否决规则：本地该环节已有 6 家及以上企业供给时，该环节优先级不得高于「中」'
+
+# 地域类型
+REGION_TYPES = ['省外', '湖北省内市域外', '襄阳市域内']
 
 
 def _perm(user, action, default=True):
@@ -121,6 +149,35 @@ def get_overview():
             'count': len([e for e in enterprises if e.role == role]),
         })
 
+    # 地域分布（目标企业）
+    region_stats = []
+    for rt in REGION_TYPES:
+        items = [t for t in targets if t.region_type == rt]
+        region_stats.append({
+            'region_type': rt,
+            'count': len(items),
+            'high_fit': len([t for t in items if t.invest_fit_level == '高']),
+        })
+
+    # 链作用分布（补链/延链/强链）
+    chain_role_stats = []
+    for r in ('补链', '延链', '强链'):
+        items = [t for t in targets if t.chain_role == r]
+        chain_role_stats.append({
+            'role': r,
+            'count': len(items),
+            'high_fit': len([t for t in items if t.invest_fit_level == '高']),
+        })
+
+    # 投资可行性分布
+    fit_stats = []
+    for lv in ('高', '中', '低'):
+        fit_stats.append({
+            'level': lv,
+            'color': LEVEL_COLORS.get(lv, '#909399'),
+            'count': len([t for t in targets if t.invest_fit_level == lv]),
+        })
+
     return jsonify({'code': 0, 'data': {
         'node_count': len(nodes),
         'enterprise_count': len(enterprises),
@@ -131,11 +188,21 @@ def get_overview():
         'scale_count': len([e for e in enterprises if e.is_scale]),
         'leader_count': len([e for e in enterprises if e.role == '链主']),
         'local_target_count': len([t for t in targets if t.is_local]),
+        'outprov_target_count': len([t for t in targets if t.region_type == '省外']),
+        'high_fit_count': len([t for t in targets if t.invest_fit_level == '高']),
+        'xiangzhou_local_count': len([t for t in targets if t.is_xiangzhou_local]),
+        'strength_avg': round(sum(e.strength or 0 for e in enterprises) / len(enterprises), 1) if enterprises else 0,
         'layer_stats': layer_stats,
         'level_stats': level_stats,
         'role_stats': role_stats,
+        'region_stats': region_stats,
+        'chain_role_stats': chain_role_stats,
+        'fit_stats': fit_stats,
         'rules': {
             'factors': FACTOR_RULES,
+            'strength_factors': STRENGTH_RULES,
+            'chain_roles': CHAIN_ROLE_RULES,
+            'invest_fit': INVEST_FIT_RULES,
             'levels': LEVEL_RULES,
             'veto': VETO_RULE,
         },
@@ -180,12 +247,14 @@ def get_nodes():
 @bp.route('/enterprises', methods=['GET'])
 @business_login_required
 def get_enterprises():
-    """企业清单（支持按环节、层级、角色、关键字筛选）"""
+    """企业清单（支持按环节、层级、角色、实力分、关键字筛选）"""
     q = ChainEnterprise.query.order_by(ChainEnterprise.seq)
     node_code = request.args.get('node_code', '').strip()
     layer = request.args.get('layer', '').strip()
     role = request.args.get('role', '').strip()
     keyword = request.args.get('keyword', '').strip()
+    min_strength = request.args.get('min_strength', '').strip()
+    order_by = request.args.get('order_by', '').strip()
 
     node_map = _node_map()
     items = q.all()
@@ -196,8 +265,17 @@ def get_enterprises():
         items = [e for e in items if e.node_code in codes]
     if role:
         items = [e for e in items if e.role == role]
+    if min_strength:
+        try:
+            floor = int(min_strength)
+            items = [e for e in items if (e.strength or 0) >= floor]
+        except ValueError:
+            pass
     if keyword:
-        items = [e for e in items if keyword in e.name or keyword in (e.industry or '') or keyword in (e.region or '')]
+        items = [e for e in items if keyword in e.name or keyword in (e.industry or '')
+                 or keyword in (e.region or '') or keyword in (e.main_business or '')]
+    if order_by == 'strength':
+        items = sorted(items, key=lambda e: -(e.strength or 0))
 
     data = []
     for e in items:
@@ -213,7 +291,7 @@ def get_enterprises():
 @bp.route('/gaps', methods=['GET'])
 @business_login_required
 def get_gaps():
-    """共性配套缺口（含五因子得分与目标企业数）"""
+    """共性配套缺口（含六因子得分与目标企业数）"""
     gaps = ChainGap.query.order_by(ChainGap.total_score.desc()).all()
     targets = ChainTarget.query.all()
     node_map = _node_map()
@@ -233,11 +311,15 @@ def get_gaps():
 @bp.route('/targets', methods=['GET'])
 @business_login_required
 def get_targets():
-    """目标企业候选库"""
+    """目标企业候选库（支持省外/域内、补链延链强链、投资可行性等筛选）"""
     q = ChainTarget.query.order_by(ChainTarget.total_score.desc())
     gap_id = request.args.get('gap_id', '').strip()
     node_code = request.args.get('node_code', '').strip()
     is_local = request.args.get('is_local', '').strip()
+    region_type = request.args.get('region_type', '').strip()
+    chain_role = request.args.get('chain_role', '').strip()
+    invest_fit = request.args.get('invest_fit', '').strip()
+    province = request.args.get('province', '').strip()
     keyword = request.args.get('keyword', '').strip()
 
     items = q.all()
@@ -247,9 +329,18 @@ def get_targets():
         items = [t for t in items if t.node_code == node_code]
     if is_local in ('1', '0'):
         items = [t for t in items if bool(t.is_local) == (is_local == '1')]
+    if region_type:
+        items = [t for t in items if t.region_type == region_type]
+    if chain_role:
+        items = [t for t in items if t.chain_role == chain_role]
+    if invest_fit:
+        items = [t for t in items if t.invest_fit_level == invest_fit]
+    if province:
+        items = [t for t in items if t.province == province]
     if keyword:
         items = [t for t in items if keyword in t.name or keyword in (t.products or '')
-                 or keyword in (t.region or '') or keyword in (t.evidence or '')]
+                 or keyword in (t.region or '') or keyword in (t.evidence or '')
+                 or keyword in (t.province or '') or keyword in (t.city or '')]
 
     gap_map = _gap_map()
     node_map = _node_map()
@@ -266,6 +357,27 @@ def get_targets():
         d['layer_color'] = LAYER_COLORS.get(node.layer, '#5b9bd5') if node else '#5b9bd5'
         data.append(d)
     return jsonify({'code': 0, 'data': data, 'total': len(data)})
+
+
+@bp.route('/target-filters', methods=['GET'])
+@business_login_required
+def get_target_filters():
+    """目标企业库可用的筛选项（省份、地域类型、链作用、投资可行性）"""
+    targets = ChainTarget.query.all()
+    provinces = {}
+    for t in targets:
+        if t.province:
+            provinces[t.province] = provinces.get(t.province, 0) + 1
+    return jsonify({'code': 0, 'data': {
+        'provinces': [{'name': k, 'count': v} for k, v in
+                       sorted(provinces.items(), key=lambda x: -x[1])],
+        'region_types': [{'name': rt, 'count': len([t for t in targets if t.region_type == rt])}
+                         for rt in REGION_TYPES],
+        'chain_roles': [{'name': r, 'count': len([t for t in targets if t.chain_role == r])}
+                        for r in ('补链', '延链', '强链')],
+        'invest_fits': [{'name': lv, 'count': len([t for t in targets if t.invest_fit_level == lv])}
+                        for lv in ('高', '中', '低')],
+    }})
 
 
 @bp.route('/advice', methods=['GET'])
@@ -293,15 +405,19 @@ def get_advice():
 
 CSV_DATASETS = {
     'enterprises': ('环节供给总表', [
-        '序号', '企业名称', '产业', '所属环节', '层级', '角色', '高企', '龙头级别', '规上', '属地', '归类依据',
+        '序号', '企业名称', '产业', '所属环节', '层级', '角色', '高企', '规上', '属地',
+        '注册资本(万元)', '近三年营收', '近三年净利', '融资情况', '对外投资', '投资签约',
+        '企业实力分', '归类依据',
     ]),
     'gaps': ('产业链缺口表', [
-        '优先级', '分档', '环节', '缺口标题', '需求刚性(30)', '支撑企业数(25)', '本地缺失度(25)',
-        '链主牵引(10)', '落地可行性(10)', '总分', '支撑本地企业数', '共性配套需求', '分析研判',
+        '优先级', '分档', '环节', '缺口标题', '需求刚性(25)', '支撑企业数(20)', '本地缺失度(20)',
+        '链主牵引(10)', '落地可行性(10)', '企业与承载实力(15)', '总分',
+        '支撑本地企业数', '共性配套需求', '分析研判',
     ]),
     'targets': ('目标企业清单', [
-        '对应缺口', '优先级分档', '目标企业', '所属环节', '所在地', '主营产品', '规模',
-        '是否市域内已有', '匹配总分', '匹配理由', '来源链接', '复核状态',
+        '对应缺口', '优先级分档', '目标企业', '所属环节', '省份', '城市', '地域类型',
+        '链作用', '投资可行性', '建议落地形式', '可对接本地链主', '注册资本(万元)',
+        '近三年营收', '规模资质', '上市情况', '匹配总分', '匹配理由', '来源链接', '复核状态',
     ]),
 }
 
@@ -323,25 +439,33 @@ def export_csv(dataset):
             node = node_map.get(e.node_code)
             rows.append([
                 e.seq, e.name, e.industry, node.name if node else '', node.layer if node else '',
-                e.role, '是' if e.is_hightech else '否', e.leader_level or '', '是' if e.is_scale else '否',
-                e.region, e.basis,
+                e.role, '是' if e.is_hightech else '否', '是' if e.is_scale else '否',
+                e.region, e.reg_capital or 0, e.revenue_3y or '', e.netprofit_3y or '',
+                e.funding or '', e.investments or '', e.signed_deal or '',
+                e.strength or 0, e.basis,
             ])
     elif dataset == 'gaps':
         for g in ChainGap.query.order_by(ChainGap.total_score.desc()).all():
             node = node_map.get(g.node_code)
             rows.append([
                 g.total_score, g.level, node.name if node else '', g.title,
-                g.f1, g.f2, g.f3, g.f4, g.f5, g.total_score, g.supporter_count,
+                g.f1, g.f2, g.f3, g.f4, g.f5, g.f6, g.total_score, g.supporter_count,
                 g.demand, g.analysis_note,
             ])
     else:
         for t in ChainTarget.query.order_by(ChainTarget.total_score.desc()).all():
             gap = gap_map.get(t.gap_id)
             node = node_map.get(t.node_code)
+            try:
+                ml = json.loads(t.match_local_chain) if t.match_local_chain else []
+            except Exception:
+                ml = []
             rows.append([
                 gap.title if gap else '', gap.level if gap else '', t.name,
-                node.name if node else '', t.region, t.products, t.scale,
-                '市域内已有' if t.is_local else '待引进', t.total_score, t.evidence,
+                node.name if node else '', t.province or '', t.city or '', t.region_type or '',
+                t.chain_role or '', t.invest_fit_level or '', t.landing_form or '',
+                '、'.join(ml), t.reg_capital or 0, t.revenue_3y or '',
+                t.scale or '', t.listed or '', t.total_score, t.evidence,
                 t.source_url, t.review_status,
             ])
 
@@ -447,9 +571,9 @@ def export_word():
         add_body(advice.content)
 
     add_heading('附表一：产业链缺口与优先级一览')
-    table = doc.add_table(rows=1, cols=6)
+    table = doc.add_table(rows=1, cols=8)
     table.style = 'Table Grid'
-    hdr = ['优先级', '分档', '环节', '缺口标题', '支撑企业数', '目标企业数']
+    hdr = ['优先级', '分档', '环节', '缺口标题', '支撑企业数', '目标企业数', '链作用分布', '企业实力']
     for i, h in enumerate(hdr):
         cell = table.rows[0].cells[i]
         cell.text = h
@@ -458,22 +582,28 @@ def export_word():
                 set_font(rr, '黑体', Pt(11), True)
     for g in gaps:
         node = node_map.get(g.node_code)
+        gtargets = ChainTarget.query.filter_by(gap_id=g.id).all()
+        role_txt = '、'.join(f'{r}{len([t for t in gtargets if t.chain_role == r])}'
+                            for r in ('补链', '延链', '强链')
+                            if len([t for t in gtargets if t.chain_role == r]))
         row = table.add_row().cells
         row[0].text = str(g.total_score)
         row[1].text = g.level
         row[2].text = node.name if node else ''
         row[3].text = g.title
         row[4].text = str(g.supporter_count)
-        row[5].text = str(len(ChainTarget.query.filter_by(gap_id=g.id).all()))
+        row[5].text = str(len(gtargets))
+        row[6].text = role_txt or '—'
+        row[7].text = f'{g.f6}/15'
         for cell in row:
             for pp in cell.paragraphs:
                 for rr in pp.runs:
                     set_font(rr, '仿宋', Pt(10.5))
 
-    add_heading('附表二：目标企业候选清单')
-    table2 = doc.add_table(rows=1, cols=5)
+    add_heading('附表二：目标企业候选清单（含链作用与投资可行性）')
+    table2 = doc.add_table(rows=1, cols=7)
     table2.style = 'Table Grid'
-    hdr2 = ['对应缺口', '目标企业', '所在地', '匹配总分', '匹配理由']
+    hdr2 = ['对应缺口', '目标企业', '省份', '地域', '链作用', '投资可行性', '建议落地形式']
     for i, h in enumerate(hdr2):
         cell = table2.rows[0].cells[i]
         cell.text = h
@@ -485,9 +615,35 @@ def export_word():
         row = table2.add_row().cells
         row[0].text = gap.title if gap else ''
         row[1].text = t.name
-        row[2].text = t.region
-        row[3].text = str(t.total_score)
-        row[4].text = t.evidence
+        row[2].text = t.province or ''
+        row[3].text = t.region_type or ''
+        row[4].text = t.chain_role or ''
+        row[5].text = t.invest_fit_level or ''
+        row[6].text = t.landing_form or ''
+        for cell in row:
+            for pp in cell.paragraphs:
+                for rr in pp.runs:
+                    set_font(rr, '仿宋', Pt(10.5))
+
+    add_heading('附表三：本地企业实力一览（注册资本 / 财报 / 融资 / 投资 / 签约）')
+    table3 = doc.add_table(rows=1, cols=6)
+    table3.style = 'Table Grid'
+    hdr3 = ['企业名称', '所属环节', '注册资本(万元)', '近三年营收', '实力分', '投资签约情况']
+    for i, h in enumerate(hdr3):
+        cell = table3.rows[0].cells[i]
+        cell.text = h
+        for pp in cell.paragraphs:
+            for rr in pp.runs:
+                set_font(rr, '黑体', Pt(11), True)
+    for e in ChainEnterprise.query.order_by(ChainEnterprise.seq).all():
+        node = node_map.get(e.node_code)
+        row = table3.add_row().cells
+        row[0].text = e.name
+        row[1].text = node.name if node else ''
+        row[2].text = str(e.reg_capital or 0)
+        row[3].text = e.revenue_3y or '—'
+        row[4].text = str(e.strength or 0)
+        row[5].text = (e.signed_deal or '—')[:120]
         for cell in row:
             for pp in cell.paragraphs:
                 for rr in pp.runs:
@@ -531,23 +687,37 @@ def convert_target(target_id):
         return jsonify({'code': 409, 'message': f'该企业已存在线索（编号 {existing.order_no}），未重复创建'}), 409
 
     max_order = db.session.query(db.func.max(InvestmentLead.order_no)).scalar() or 0
+    try:
+        ml = json.loads(target.match_local_chain) if target.match_local_chain else []
+    except Exception:
+        ml = []
     lead = InvestmentLead(
         order_no=max_order + 1,
         project_name=f'{target.name} 招商对接',
         invest_enterprise=target.name,
-        enterprise_info=f'所在地：{target.region}；主营：{target.products}；规模：{target.scale}；'
-                        f'对应环节：{node.name if node else target.node_code}'
-                        + (f'；对应缺口：{gap.title}' if gap else ''),
+        enterprise_info=f'所在地：{target.province}{target.city}（{target.region_type}）；'
+                        f'主营：{target.products}；规模：{target.scale}'
+                        + (f'；上市：{target.listed}' if target.listed else '')
+                        + f'；注册资本：{target.reg_capital or 0} 万元'
+                        + f'；对应环节：{node.name if node else target.node_code}'
+                        + (f'；对应缺口：{gap.title}' if gap else '')
+                        + (f'；链作用：{target.chain_role}' if target.chain_role else '')
+                        + (f'；建议落地形式：{target.landing_form}' if target.landing_form else '')
+                        + (f'；可对接本地链主：{"、".join(ml)}' if ml else ''),
         project_content=f'【产业链配套缺口招商】{gap.title if gap else ""}\n'
                         f'{gap.demand if gap else ""}\n\n'
-                        f'【匹配理由】{target.evidence}\n'
+                        f'【匹配理由】{target.evidence}\n\n'
+                        f'【链作用】{target.chain_role}　【建议落地形式】{target.landing_form}\n'
+                        f'【到襄州投资可行性】{target.invest_fit_level}——{target.invest_fit_reason}\n'
+                        f'【可对接本地链主】{"、".join(ml) if ml else "—"}\n'
                         f'【信息来源】{target.source_url}',
         invest_amount=0,
         follow_status_code='follow_focus',
         meeting_status_code='not_meeting',
         project_type_code='type_shipin',
         person_in_charge='',
-        conclusion=f'由产业链招商分析自动生成，匹配总分 {target.total_score}，待专班复核。',
+        conclusion=f'由产业链招商分析自动生成，匹配总分 {target.total_score}，'
+                   f'链作用 {target.chain_role}，投资可行性 {target.invest_fit_level}，待专班复核。',
         tags=json.dumps(['产业链招商'], ensure_ascii=False),
     )
     db.session.add(lead)

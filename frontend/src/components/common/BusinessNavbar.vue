@@ -63,6 +63,13 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- 产业链招商智能分析 — 仅登录后可见 -->
+        <router-link
+          v-if="businessAuth.isLoggedIn"
+          to="/chain"
+          class="nav-item"
+          active-class="active-item"
+        >产业链招商</router-link>
         <!-- 揭榜挂帅 下拉菜单 — 已屏蔽 -->
         <!-- <el-dropdown v-if="businessAuth.isLoggedIn" trigger="hover" class="nav-dropdown" @command="handleCommand">
           <span class="nav-item nav-dropdown-trigger" :class="{ 'is-active': isBiddingRoute }">

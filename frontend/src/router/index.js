@@ -214,6 +214,13 @@ const routes = [
     component: () => import('@/views/WorkCalendarView.vue'),
     meta: { requiresBusinessAuth: true }
   },
+  // ---- 产业链招商智能分析 ----
+  {
+    path: '/chain',
+    name: 'ChainAnalysis',
+    component: () => import('@/views/ChainView.vue'),
+    meta: { requiresBusinessAuth: true }
+  },
   // ---- 揭榜挂帅（已屏蔽）----
   // {
   //   path: '/bidding',

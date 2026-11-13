@@ -123,18 +123,36 @@ def _run_auto_migrations(app):
     # 需要自动创建的表列表（如果不存在）
     AUTO_CREATE_TABLES = [
         'work_calendar_entries',
+        # 产业链招商智能分析（V17）
+        'chain_nodes',
+        'chain_enterprises',
+        'chain_gaps',
+        'chain_targets',
+        'chain_advice',
     ]
+
+    # 表名 → 模型映射（AUTO_CREATE_TABLES 中的表统一走 db.create_all 的对应模型）
+    TABLE_MODELS = {
+        'work_calendar_entries': 'models.investment:WorkCalendarEntry',
+        'chain_nodes': 'models.chain:ChainNode',
+        'chain_enterprises': 'models.chain:ChainEnterprise',
+        'chain_gaps': 'models.chain:ChainGap',
+        'chain_targets': 'models.chain:ChainTarget',
+        'chain_advice': 'models.chain:ChainAdvice',
+    }
 
     with app.app_context():
         inspector = inspect(_db.engine)
-        
+
         # 先创建缺失的表
         for table_name in AUTO_CREATE_TABLES:
             if not inspector.has_table(table_name):
                 try:
                     # 使用 db.create_all() 只创建该表
-                    from models.investment import WorkCalendarEntry
-                    WorkCalendarEntry.__table__.create(_db.engine, checkfirst=True)
+                    module_path, class_name = TABLE_MODELS[table_name].split(':')
+                    module = __import__(module_path, fromlist=[class_name])
+                    model_cls = getattr(module, class_name)
+                    model_cls.__table__.create(_db.engine, checkfirst=True)
                     app.logger.info(f'[自动迁移] 已创建新表 {table_name}')
                 except Exception as exc:
                     app.logger.warning(f'[自动迁移] 创建表失败 ({table_name}): {exc}')
@@ -209,6 +227,13 @@ def create_app(config_name=None):
         with app.app_context():
             from seed_data import init_database
             init_database(app)
+
+            # 产业链招商智能分析：基础数据（环节/企业/缺口/目标企业/建议）幂等初始化
+            try:
+                from chain_seed import seed_chain_data
+                seed_chain_data(app)
+            except Exception as exc:
+                app.logger.warning(f'[产业链招商] 初始化失败: {exc}')
 
         # 夜间压缩调度器 [V15.5 已屏蔽]
         # 录音方式已更新，不再需要夜间压缩音频文件大小。原 services/night_scheduler

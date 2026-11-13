@@ -410,18 +410,38 @@ def init_database(app):
             'demand': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
             'construction': {'add': True, 'edit': True, 'delete': True, 'batch_delete': True, 'import': True},
             'lead': {'view': True, 'add': True, 'edit': True, 'delete': True, 'assess': True, 'convert': True},
-            'knowledge': {'view': True, 'add': True, 'edit': True, 'delete': True}
+            'knowledge': {'view': True, 'add': True, 'edit': True, 'delete': True},
+            'chain': {'view': True, 'edit': True, 'convert': True}
         })
         db.session.add(demo)
         print('[种子数据] 业务用户账号已创建: demo / demo123')
 
+    # ---- 产业链招商权限回填：为存量业务用户补上 chain 模块 ----
+    # 新增模块后，历史账号的 permissions 里没有 chain 键，
+    # 前端 hasPermission 会判定为无权限，导致「转线索/复核」按钮对存量账号不可见。
+    for bu in BusinessUser.query.filter_by(role='user').all():
+        bu_perms = bu.get_permissions()
+        if 'chain' not in bu_perms:
+            bu_perms['chain'] = {'view': True, 'edit': True, 'convert': True}
+            bu.set_permissions(bu_perms)
+            db.session.add(bu)
+
     # ---- Staff: 为每个管理员用户创建工作人员记录 ----
     if not Staff.query.first():
+        # Staff.user_id 外键指向 business_users.id，必须关联业务用户而非管理员 id，
+        # 否则新库初始化时管理员 id 在 business_users 中不存在 → 外键约束失败。
+        biz_users = BusinessUser.query.all()
+        biz_by_name = {bu.username: bu for bu in biz_users}
+        biz_by_dn = {bu.display_name: bu for bu in biz_users if bu.display_name}
         for admin_user in AdminUser.query.all():
+            name = admin_user.display_name or admin_user.username
+            bu = biz_by_name.get(admin_user.username) or biz_by_dn.get(name)
+            if Staff.query.filter_by(name=name).first():
+                continue
             staff = Staff(
-                name=admin_user.display_name or admin_user.username,
+                name=name,
                 position='农高区创建专班工作人员',
-                user_id=admin_user.id,
+                user_id=bu.id if bu else None,
                 sort_order=admin_user.id
             )
             db.session.add(staff)

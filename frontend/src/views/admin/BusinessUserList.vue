@@ -41,6 +41,12 @@
                       <span v-if="row.permissions[mod.key].delete" class="perm-tag">删除</span>
                       <span v-else class="perm-tag perm-none">无</span>
                     </template>
+                    <template v-else-if="mod.key === 'chain'">
+                      <span v-if="row.permissions[mod.key].view" class="perm-tag">查看</span>
+                      <span v-if="row.permissions[mod.key].edit" class="perm-tag">复核</span>
+                      <span v-if="row.permissions[mod.key].convert" class="perm-tag">转线索</span>
+                      <span v-if="!row.permissions[mod.key].view && !row.permissions[mod.key].edit && !row.permissions[mod.key].convert" class="perm-tag perm-none">无</span>
+                    </template>
                     <template v-else>
                     <span v-if="row.permissions[mod.key].add !== false" class="perm-tag">添加</span>
                     <span v-if="row.permissions[mod.key].edit" class="perm-tag">编辑</span>
@@ -128,6 +134,20 @@
                 :disabled="!form.permissions[mod.key]"
               >删除</el-checkbox>
             </template>
+            <template v-else-if="mod.key === 'chain'">
+              <el-checkbox
+                v-model="form.permissions[mod.key].view"
+                :disabled="!form.permissions[mod.key]"
+              >查看</el-checkbox>
+              <el-checkbox
+                v-model="form.permissions[mod.key].edit"
+                :disabled="!form.permissions[mod.key]"
+              >复核</el-checkbox>
+              <el-checkbox
+                v-model="form.permissions[mod.key].convert"
+                :disabled="!form.permissions[mod.key]"
+              >转线索</el-checkbox>
+            </template>
             <template v-else>
             <el-checkbox
               v-model="form.permissions[mod.key].add"
@@ -189,7 +209,8 @@ const modules = [
   { key: 'construction', label: '在建项目管理' },
   { key: 'lead', label: '招商线索研判' },
   { key: 'knowledge', label: '本地招商知识库' },
-  { key: 'work_calendar', label: '工作日历管理' }
+  { key: 'work_calendar', label: '工作日历管理' },
+  { key: 'chain', label: '产业链招商分析' }
 ]
 
 const users = ref([])
@@ -206,6 +227,11 @@ const defaultPermissions = () => {
     if (m.key === 'work_calendar') {
       // 工作日历只管删除权限：默认不给，管理员显式勾选后才可删除
       p[m.key] = { delete: false }
+      return
+    }
+    if (m.key === 'chain') {
+      // 产业链招商分析：查看 + 复核 + 转线索（无增删改）
+      p[m.key] = { view: true, edit: true, convert: true }
       return
     }
     p[m.key] = { add: true, edit: true, delete: true, batch_delete: true, import: true }

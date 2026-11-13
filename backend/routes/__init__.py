@@ -78,6 +78,9 @@ bidding_public_bp = Blueprint('bidding_public', __name__, url_prefix='/api/biddi
 # 工作日历
 work_calendar_bp = Blueprint('work_calendar', __name__, url_prefix='/api/work-calendar')
 
+# 产业链招商智能分析
+chain_bp = Blueprint('chain', __name__, url_prefix='/api/chain')
+
 # C 端 App 只读蓝图（内部人员查看 + AI 研判 + 周报）
 client_bp = Blueprint('client', __name__, url_prefix='/api/client')
 
@@ -123,6 +126,7 @@ def register_routes(app):
     from routes import admin_bidding as _admin_bidding
     from routes import bidding_public as _bidding_public
     from routes import work_calendar as _work_calendar
+    from routes import chain as _chain
 
     app.register_blueprint(api.api_bp)
     app.register_blueprint(admin_auth.admin_auth_bp)
@@ -180,6 +184,9 @@ def register_routes(app):
     
     # 工作日历
     app.register_blueprint(work_calendar.work_calendar_bp)
+
+    # 产业链招商智能分析
+    app.register_blueprint(chain.chain_bp)
 
     # 注册 C 端 App 只读蓝图（当前禁用：移动端功能暂不上线）
     # from routes import client as _client

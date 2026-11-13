@@ -115,17 +115,80 @@ def main():
         nav_text = page.locator('.nav-menu').inner_text()
         print('导航含「产业链招商」:', '产业链招商' in nav_text)
 
-        # 抽屉详情
+        # 统计卡片（应为 8 张，含省外目标/可行性高/强链目标）
+        cards = page.locator('.stat-card')
+        print('统计卡片数:', cards.count())
+        print('卡片标签:', [t.strip() for t in page.locator('.stat-card-label').all_inner_texts()])
+
+        # 缺口页签：六因子 + 企业实力五维 + 链作用面板 + 地域分布
+        tabs.nth(1).click()
+        page.wait_for_timeout(1600)
+        gap_probe = page.evaluate("""() => ({
+            factorCards: document.querySelectorAll('.rules-panel .factor-item').length,
+            strengthCards: document.querySelectorAll('.strength-panel .strength-item').length,
+            roleBlocks: document.querySelectorAll('.role-fit-panel .role-block').length,
+            regionRows: document.querySelectorAll('.region-panel .region-item').length,
+            factorTitle: (document.querySelector('.rules-panel') ? '' : '')
+                + Array.from(document.querySelectorAll('.section-title')).map(x=>x.innerText).join(' | '),
+        })""")
+        print('缺口页签探针:', gap_probe)
+        assert gap_probe['factorCards'] == 6, f'六因子卡片数异常 {gap_probe["factorCards"]}'
+        assert gap_probe['strengthCards'] == 5, f'企业实力维度数异常 {gap_probe["strengthCards"]}'
+        assert gap_probe['roleBlocks'] == 2, '链作用面板区块数异常'
+        assert gap_probe['regionRows'] == 3, '地域分布行数异常'
+        print('✓ 缺口页签新增面板全部渲染')
+
+        # 目标企业库：省外筛选
         tabs.nth(2).click()
-        page.wait_for_timeout(1200)
-        btn = page.locator('.el-table__fixed-right button, td:last-child button').first
+        page.wait_for_timeout(1500)
+        page.locator('.quick-filters button', has_text='省外企业').first.click()
+        page.wait_for_timeout(1600)
+        cnt = page.locator('.result-count').first.inner_text()
+        print('省外筛选:', cnt)
+        assert '80 家' in cnt, f'省外筛选数量异常: {cnt}'
+        page.screenshot(path=os.path.join(OUT, 'prod-chain-06-outprov.png'), full_page=True)
+        print('✓ 省外筛选')
+
+        # 抽屉详情
+        btn = page.locator('.el-table__row .el-button', has_text='详情').first
         try:
             btn.click()
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(1600)
             page.screenshot(path=os.path.join(OUT, 'prod-chain-05-drawer.png'))
+            drawer_probe = page.evaluate("""() => {
+                const d = document.querySelector('.el-drawer__body');
+                if (!d) return null;
+                const txt = d.innerText;
+                return {
+                    hasStrength: txt.includes('企业实力'),
+                    hasSixFactor: txt.includes('六因子匹配得分'),
+                    hasChainRole: txt.includes('链作用'),
+                    capital: (txt.match(/注册资本\\s*([^\\n]*)/) || [])[1] || '',
+                };
+            }""")
+            print('详情抽屉探针:', drawer_probe)
+            assert drawer_probe and drawer_probe['hasStrength'], '详情抽屉缺少企业实力区块'
+            assert drawer_probe and drawer_probe['hasSixFactor'], '详情抽屉缺少六因子得分'
             print('✓ 详情抽屉')
         except Exception as e:
             print('抽屉截图跳过:', e)
+
+        # 表格列清单 + 横向滚动检查
+        cols = page.evaluate("""() => {
+            const hs = Array.from(document.querySelectorAll('.el-table__header th'));
+            const wrap = document.querySelector('.el-table__body-wrapper');
+            const first = document.querySelector('.el-table__body-wrapper tbody tr');
+            return {
+                headers: hs.map(h => h.innerText.trim()).filter(Boolean),
+                scrollW: wrap ? wrap.scrollWidth : 0,
+                clientW: wrap ? wrap.clientWidth : 0,
+                firstRowCells: first ? first.children.length : 0,
+                firstRowText: first ? first.innerText.replace(/\s+/g,' ').slice(0,260) : '',
+            };
+        }""")
+        print('表格列:', cols)
+        assert any('企业实力' in c for c in cols['headers']), '表格缺少企业实力列'
+        print('✓ 企业实力列存在')
 
         if errors:
             print('!! 页面错误:')

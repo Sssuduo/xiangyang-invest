@@ -351,7 +351,11 @@ def main():
         assert log_probe['changeItems'] >= 5, '更新日志修改内容偏少'
         assert log_probe['riskItems'] >= 1 and log_probe['nextItems'] >= 1, '风险/下一步缺失'
         assert log_probe['adviceInPane'] == 0, '更新日志页签不应混入招商建议卡片'
-        assert log_probe['blocks'] == 1, '更新日志三栏布局异常'
+        # blocks = 每条日志一个三栏容器，条数应与日志卡片数一致
+        assert log_probe['blocks'] == log_probe['inPane'], (
+            f'更新日志三栏布局异常：blocks={log_probe["blocks"]} logs={log_probe["inPane"]}')
+        # 每条日志的三栏（修改内容 / 风险提示 / 下一步工作）都要有内容
+        assert log_probe['changeItems'] >= log_probe['inPane'] * 5, '更新日志修改内容条目偏少'
         page.screenshot(path=os.path.join(OUT, 'prod-chain-09-changelog.png'), full_page=True)
         print('✓ 更新日志独立页签')
 

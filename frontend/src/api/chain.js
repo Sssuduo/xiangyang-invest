@@ -56,6 +56,13 @@ export const chainApi = {
   },
 
   /**
+   * 更新日志（修改内容 + 风险提示 + 下一步工作）
+   */
+  getChangelog() {
+    return request.get('/chain/changelog')
+  },
+
+  /**
    * 将目标企业转为招商线索
    * @param {Number} id - 目标企业ID
    */
@@ -74,7 +81,7 @@ export const chainApi = {
 
   /**
    * 导出 CSV（带 BOM，Excel 直接打开）
-   * @param {String} dataset - enterprises / gaps / targets
+   * @param {String} dataset - enterprises / gaps / targets / changelog
    */
   async exportCsv(dataset) {
     const response = await fetch(`/api/chain/export/${dataset}.csv`, {

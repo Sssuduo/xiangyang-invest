@@ -1,0 +1,234 @@
+[
+ {
+  "code": "SEED",
+  "name": "种子种苗与育种",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 1,
+  "desc": "育种研发、种子生产与经营、种苗供应、品种权与种子加工检测"
+ },
+ {
+  "code": "FEED",
+  "name": "饲料与动物营养",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 2,
+  "desc": "畜禽配合饲料、预混料、饲料添加剂"
+ },
+ {
+  "code": "FERT",
+  "name": "肥料与土壤改良",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 3,
+  "desc": "有机肥、生物菌肥、复合肥、水溶肥、土壤调理剂"
+ },
+ {
+  "code": "PEST",
+  "name": "农药与植保服务",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 4,
+  "desc": "生物农药制剂、绿色防控、统防统治、天敌与信息素"
+ },
+ {
+  "code": "MACH",
+  "name": "农业机械与农技服务",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 5,
+  "desc": "农机装备、农机服务、植保托管、农技服务"
+ },
+ {
+  "code": "FARM",
+  "name": "种植、园艺与水产养殖",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 6,
+  "desc": "粮食、棉花、食用菌、辣椒、水果等种植与初加工，淡水养殖与苗木果木"
+ },
+ {
+  "code": "LIVE",
+  "name": "畜禽养殖",
+  "layer": "上游",
+  "group_name": "农业生产投入品",
+  "sort_order": 7,
+  "desc": "生猪、禽类、肉牛等规模化养殖与种猪繁育"
+ },
+ {
+  "code": "GRAIN",
+  "name": "米面粮油加工",
+  "layer": "中游",
+  "group_name": "食品与农产品加工",
+  "sort_order": 8,
+  "desc": "大米、面粉、食用油等粮油初加工与粮食收储"
+ },
+ {
+  "code": "MEAT",
+  "name": "肉禽蛋加工",
+  "layer": "中游",
+  "group_name": "食品与农产品加工",
+  "sort_order": 9,
+  "desc": "屠宰分割、肉禽蛋制品加工"
+ },
+ {
+  "code": "VEG",
+  "name": "果蔬与食用菌加工",
+  "layer": "中游",
+  "group_name": "食品与农产品加工",
+  "sort_order": 10,
+  "desc": "芝麻与淀粉制品、净菜、脱水、菌菇制品等加工"
+ },
+ {
+  "code": "ADDI",
+  "name": "食品添加与调味",
+  "layer": "中游",
+  "group_name": "食品与农产品加工",
+  "sort_order": 11,
+  "desc": "食品添加剂、复合调味料、香辛料、稳定增稠剂"
+ },
+ {
+  "code": "COTTON",
+  "name": "棉花初加工",
+  "layer": "中游",
+  "group_name": "纤维与纺织",
+  "sort_order": 12,
+  "desc": "棉籽脱绒轧花、皮棉与棉短绒加工"
+ },
+ {
+  "code": "TEXTILE",
+  "name": "纺织服装制造",
+  "layer": "中游",
+  "group_name": "纤维与纺织",
+  "sort_order": 13,
+  "desc": "成衣缝制加工、针纺织品制造与流通"
+ },
+ {
+  "code": "SNACK",
+  "name": "休闲食品与烘焙",
+  "layer": "下游",
+  "group_name": "食品加工",
+  "sort_order": 14,
+  "desc": "膨化休闲、烘焙糕点、炒货、休闲零食"
+ },
+ {
+  "code": "FROZEN",
+  "name": "速冻调理与速食",
+  "layer": "下游",
+  "group_name": "食品加工",
+  "sort_order": 15,
+  "desc": "速冻调理食品、预制菜、速食"
+ },
+ {
+  "code": "LOCAL",
+  "name": "地方特色食品",
+  "layer": "下游",
+  "group_name": "食品加工",
+  "sort_order": 16,
+  "desc": "襄阳牛肉面、酱腌菜等地方特色与区域品牌食品"
+ },
+ {
+  "code": "FUNC",
+  "name": "功能性营养食品",
+  "layer": "下游",
+  "group_name": "食品加工",
+  "sort_order": 17,
+  "desc": "魔芋与凝胶食品、精准营养、代糖与益生元等功能性原料与终端"
+ },
+ {
+  "code": "WINE",
+  "name": "酒类制造",
+  "layer": "下游",
+  "group_name": "饮料酒",
+  "sort_order": 18,
+  "desc": "白酒、黄酒、米酒、果酒、葡萄酒等酿造"
+ },
+ {
+  "code": "DAIRY",
+  "name": "乳制品及果汁饮料",
+  "layer": "下游",
+  "group_name": "饮料酒",
+  "sort_order": 19,
+  "desc": "液态奶、酸奶、奶酪、含乳饮料与果汁饮料"
+ },
+ {
+  "code": "BIOMAT",
+  "name": "生物基新材料",
+  "layer": "下游",
+  "group_name": "科技产品",
+  "sort_order": 20,
+  "desc": "生物基材料、特种淀粉、可降解材料、功能性原料"
+ },
+ {
+  "code": "BIOMED",
+  "name": "生物医药与体外诊断",
+  "layer": "下游",
+  "group_name": "科技产品",
+  "sort_order": 21,
+  "desc": "诊断试剂与设备、生物制造、中草药生物技术、辐照灭菌"
+ },
+ {
+  "code": "PACK",
+  "name": "包装制品与印刷",
+  "layer": "平台",
+  "group_name": "生产性服务",
+  "sort_order": 22,
+  "desc": "纸箱、软包装复合、食品级包材、彩印"
+ },
+ {
+  "code": "COLD",
+  "name": "冷链仓储与物流",
+  "layer": "平台",
+  "group_name": "生产性服务",
+  "sort_order": 23,
+  "desc": "产地预冷、冷库仓储、冷链配送、集配中心"
+ },
+ {
+  "code": "TEST",
+  "name": "检验检测服务",
+  "layer": "平台",
+  "group_name": "生产性服务",
+  "sort_order": 24,
+  "desc": "食品检测、质量认证、体系核查与标准制定"
+ },
+ {
+  "code": "RD",
+  "name": "研发中试与成果转化",
+  "layer": "平台",
+  "group_name": "生产性服务",
+  "sort_order": 25,
+  "desc": "中试放大、配方研发、概念验证、成果转化与技术转移"
+ },
+ {
+  "code": "AERO",
+  "name": "低空经济与无人机",
+  "layer": "平台",
+  "group_name": "装备与设施",
+  "sort_order": 26,
+  "desc": "无人机整机制造与飞控、飞防服务、低空运营与教培研考"
+ },
+ {
+  "code": "ENV",
+  "name": "环保工程与生态治理",
+  "layer": "平台",
+  "group_name": "装备与设施",
+  "sort_order": 27,
+  "desc": "环境监测、污染治理、固废资源化、节水与土壤修复"
+ },
+ {
+  "code": "IRRIGATE",
+  "name": "节水灌溉与农业新能源",
+  "layer": "平台",
+  "group_name": "装备与设施",
+  "sort_order": 28,
+  "desc": "智能灌溉设备、水肥一体化、高标准农田与农光互补"
+ },
+ {
+  "code": "OTHER",
+  "name": "非农业关联产业",
+  "layer": "其他",
+  "group_name": "非农业关联产业",
+  "sort_order": 29,
+  "desc": "建材、装备机电、园区投资运营等与农业产业链无直接配套关系的企业"
+ }
+]

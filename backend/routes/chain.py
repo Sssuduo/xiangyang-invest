@@ -12,7 +12,8 @@ from datetime import datetime
 
 from flask import Blueprint, g, jsonify, request, send_file
 
-from models.chain import ChainAdvice, ChainEnterprise, ChainGap, ChainNode, ChainTarget
+from models.chain import (ChainAdvice, ChainChangelog, ChainEnterprise, ChainGap,
+                          ChainNode, ChainTarget)
 from extensions import db
 from routes.business_auth import business_login_required, visitor_block
 
@@ -22,14 +23,28 @@ chain_bp = Blueprint('chain', __name__, url_prefix='/api/chain')
 bp = chain_bp
 
 # 图例：环节层级配色（与前端统一）
-LAYER_ORDER = ['上游', '中游', '下游', '平台']
+LAYER_ORDER = ['上游', '中游', '下游', '平台', '其他']
 LAYER_COLORS = {
     '上游': '#5b9bd5',
     '中游': '#2f7f5f',
     '下游': '#c98b2e',
     '平台': '#7b6fd4',
+    '其他': '#8c8c8c',
 }
 LEVEL_COLORS = {'高': '#f56c6c', '中': '#e6a23c', '低': '#909399'}
+
+# 大类分组配色（层级 → 大类 → 环节 三级结构）
+GROUP_COLORS = {
+    '农业生产投入品': '#5b9bd5',
+    '食品与农产品加工': '#2f7f5f',
+    '食品加工': '#c98b2e',
+    '饮料酒': '#a0518c',
+    '纤维与纺织': '#7b6fd4',
+    '科技产品': '#13c2c2',
+    '生产性服务': '#d48806',
+    '装备与设施': '#4a7ebb',
+    '非农业关联产业': '#8c8c8c',
+}
 
 # 优先级六因子定义（供前端可视化规则表）
 FACTOR_RULES = [
@@ -178,21 +193,67 @@ def get_overview():
             'count': len([t for t in targets if t.invest_fit_level == lv]),
         })
 
+    # 大类分组统计（层级 → 大类 → 环节 三级结构）
+    group_stats = []
+    seen_groups = []
+    for n in sorted(nodes, key=lambda x: x.sort_order):
+        gname = n.group_name or '未分组'
+        if gname not in seen_groups:
+            seen_groups.append(gname)
+    for gname in seen_groups:
+        g_nodes = [n for n in nodes if (n.group_name or '未分组') == gname]
+        codes = {n.code for n in g_nodes}
+        ents = [e for e in enterprises if e.node_code in codes]
+        gaps_in = [g for g in gaps if g.node_code in codes]
+        layers = sorted({n.layer for n in g_nodes})
+        group_stats.append({
+            'group_name': gname,
+            'color': GROUP_COLORS.get(gname, '#5b9bd5'),
+            'layer': layers[0] if len(layers) == 1 else '、'.join(layers),
+            'node_count': len(g_nodes),
+            'enterprise_count': len(ents),
+            'gap_count': len(gaps_in),
+            'high_gap_count': len([g for g in gaps_in if g.level == '高']),
+            'target_count': len([t for t in targets if t.node_code in codes]),
+        })
+
+    # 属地分布（本地企业）
+    region_ent_stats = []
+    for r in ('襄州区', '经开区'):
+        items = [e for e in enterprises if e.district == r]
+        region_ent_stats.append({
+            'district': r,
+            'count': len(items),
+            'leader_count': len([e for e in items if e.role == '链主']),
+            'hightech_count': len([e for e in items if e.is_hightech]),
+            'scale_count': len([e for e in items if e.is_scale]),
+            'smei_count': len([e for e in items if e.is_smei]),
+            'kexiao_count': len([e for e in items if e.is_kexiao]),
+            'strength_avg': round(sum(e.strength or 0 for e in items) / len(items), 1) if items else 0,
+        })
+
     return jsonify({'code': 0, 'data': {
         'node_count': len(nodes),
         'enterprise_count': len(enterprises),
         'gap_count': len(gaps),
         'target_count': len(targets),
         'advice_count': ChainAdvice.query.count(),
+        'changelog_count': ChainChangelog.query.count(),
         'hightech_count': len([e for e in enterprises if e.is_hightech]),
         'scale_count': len([e for e in enterprises if e.is_scale]),
+        'smei_count': len([e for e in enterprises if e.is_smei]),
+        'kexiao_count': len([e for e in enterprises if e.is_kexiao]),
         'leader_count': len([e for e in enterprises if e.role == '链主']),
         'local_target_count': len([t for t in targets if t.is_local]),
         'outprov_target_count': len([t for t in targets if t.region_type == '省外']),
         'high_fit_count': len([t for t in targets if t.invest_fit_level == '高']),
         'xiangzhou_local_count': len([t for t in targets if t.is_xiangzhou_local]),
+        'xiangzhou_enterprise_count': len([e for e in enterprises if e.district == '襄州区']),
+        'donzin_enterprise_count': len([e for e in enterprises if e.district == '经开区']),
         'strength_avg': round(sum(e.strength or 0 for e in enterprises) / len(enterprises), 1) if enterprises else 0,
         'layer_stats': layer_stats,
+        'group_stats': group_stats,
+        'region_ent_stats': region_ent_stats,
         'level_stats': level_stats,
         'role_stats': role_stats,
         'region_stats': region_stats,
@@ -227,12 +288,16 @@ def get_nodes():
             'code': n.code,
             'name': n.name,
             'layer': n.layer,
+            'group_name': n.group_name or '',
+            'group_color': GROUP_COLORS.get(n.group_name or '', '#5b9bd5'),
             'sort_order': n.sort_order,
             'description': n.description or '',
             'color': LAYER_COLORS.get(n.layer, '#5b9bd5'),
             'enterprise_count': len(ents),
             'hightech_count': len([e for e in ents if e.is_hightech]),
             'scale_count': len([e for e in ents if e.is_scale]),
+            'smei_count': len([e for e in ents if e.is_smei]),
+            'kexiao_count': len([e for e in ents if e.is_kexiao]),
             'leader_count': len([e for e in ents if e.role == '链主']),
             'leader_names': [e.name for e in ents if e.role == '链主'],
             'has_gap': gap is not None,
@@ -284,6 +349,8 @@ def get_enterprises():
         d['node_name'] = node.name if node else ''
         d['layer'] = node.layer if node else ''
         d['layer_color'] = LAYER_COLORS.get(node.layer, '#5b9bd5') if node else '#5b9bd5'
+        d['group_name'] = (node.group_name or '') if node else ''
+        d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
         data.append(d)
     return jsonify({'code': 0, 'data': data, 'total': len(data)})
 
@@ -302,6 +369,8 @@ def get_gaps():
         d['node_name'] = node.name if node else ''
         d['layer'] = node.layer if node else ''
         d['layer_color'] = LAYER_COLORS.get(node.layer, '#5b9bd5') if node else '#5b9bd5'
+        d['group_name'] = (node.group_name or '') if node else ''
+        d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
         d['level_color'] = LEVEL_COLORS.get(g.level, '#909399')
         d['target_count'] = len([t for t in targets if t.gap_id == g.id])
         data.append(d)
@@ -355,6 +424,8 @@ def get_targets():
         d['node_name'] = node.name if node else ''
         d['layer'] = node.layer if node else ''
         d['layer_color'] = LAYER_COLORS.get(node.layer, '#5b9bd5') if node else '#5b9bd5'
+        d['group_name'] = (node.group_name or '') if node else ''
+        d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
         data.append(d)
     return jsonify({'code': 0, 'data': data, 'total': len(data)})
 
@@ -401,23 +472,37 @@ def get_advice():
     return jsonify({'code': 0, 'data': data})
 
 
+@bp.route('/changelog', methods=['GET'])
+@business_login_required
+def get_changelog():
+    """更新日志（每次更新的修改内容 + 风险提示 + 下一步工作）"""
+    items = ChainChangelog.query.order_by(
+        ChainChangelog.sort_order.desc(), ChainChangelog.id.desc()).all()
+    return jsonify({'code': 0, 'data': [c.to_dict() for c in items]})
+
+
 # ===== 导出接口 =====
 
 CSV_DATASETS = {
     'enterprises': ('环节供给总表', [
-        '序号', '企业名称', '产业', '所属环节', '层级', '角色', '高企', '规上', '属地',
+        '序号', '企业名称', '产业', '所属大类', '所属环节', '层级', '角色',
+        '高企', '规上', '专精特新', '科小入库', '龙头称号', '属地',
         '注册资本(万元)', '近三年营收', '近三年净利', '融资情况', '对外投资', '投资签约',
         '企业实力分', '归类依据',
     ]),
     'gaps': ('产业链缺口表', [
-        '优先级', '分档', '环节', '缺口标题', '需求刚性(25)', '支撑企业数(20)', '本地缺失度(20)',
+        '优先级', '分档', '所属大类', '环节', '缺口标题',
+        '需求刚性(25)', '支撑企业数(20)', '本地缺失度(20)',
         '链主牵引(10)', '落地可行性(10)', '企业与承载实力(15)', '总分',
         '支撑本地企业数', '共性配套需求', '分析研判',
     ]),
     'targets': ('目标企业清单', [
-        '对应缺口', '优先级分档', '目标企业', '所属环节', '省份', '城市', '地域类型',
+        '对应缺口', '优先级分档', '目标企业', '所属大类', '所属环节', '省份', '城市', '地域类型',
         '链作用', '投资可行性', '建议落地形式', '可对接本地链主', '注册资本(万元)',
         '近三年营收', '规模资质', '上市情况', '匹配总分', '匹配理由', '来源链接', '复核状态',
+    ]),
+    'changelog': ('更新日志', [
+        '版本号', '更新日期', '更新标题', '总体说明', '修改内容', '风险提示', '下一步工作',
     ]),
 }
 
@@ -438,9 +523,12 @@ def export_csv(dataset):
         for e in ChainEnterprise.query.order_by(ChainEnterprise.seq).all():
             node = node_map.get(e.node_code)
             rows.append([
-                e.seq, e.name, e.industry, node.name if node else '', node.layer if node else '',
+                e.seq, e.name, e.industry,
+                (node.group_name if node else ''), node.name if node else '', node.layer if node else '',
                 e.role, '是' if e.is_hightech else '否', '是' if e.is_scale else '否',
-                e.region, e.reg_capital or 0, e.revenue_3y or '', e.netprofit_3y or '',
+                '是' if e.is_smei else '否', '是' if e.is_kexiao else '否',
+                e.leader_level or '', e.region,
+                e.reg_capital or 0, e.revenue_3y or '', e.netprofit_3y or '',
                 e.funding or '', e.investments or '', e.signed_deal or '',
                 e.strength or 0, e.basis,
             ])
@@ -448,9 +536,19 @@ def export_csv(dataset):
         for g in ChainGap.query.order_by(ChainGap.total_score.desc()).all():
             node = node_map.get(g.node_code)
             rows.append([
-                g.total_score, g.level, node.name if node else '', g.title,
+                g.total_score, g.level, (node.group_name if node else ''),
+                node.name if node else '', g.title,
                 g.f1, g.f2, g.f3, g.f4, g.f5, g.f6, g.total_score, g.supporter_count,
                 g.demand, g.analysis_note,
+            ])
+    elif dataset == 'changelog':
+        for c in ChainChangelog.query.order_by(ChainChangelog.sort_order.desc()).all():
+            d = c.to_dict()
+            rows.append([
+                d['version'], d['log_date'], d['title'], d['summary'],
+                '\n'.join(f'{i}. {x}' for i, x in enumerate(d['changes'], 1)),
+                '\n'.join(f'{i}. {x}' for i, x in enumerate(d['risks'], 1)),
+                '\n'.join(f'{i}. {x}' for i, x in enumerate(d['next_steps'], 1)),
             ])
     else:
         for t in ChainTarget.query.order_by(ChainTarget.total_score.desc()).all():
@@ -460,13 +558,22 @@ def export_csv(dataset):
                 ml = json.loads(t.match_local_chain) if t.match_local_chain else []
             except Exception:
                 ml = []
+            try:
+                sl = json.loads(t.source_links) if t.source_links else []
+            except Exception:
+                sl = []
+            if not sl and t.source_url:
+                sl = [{'title': '信息来源', 'url': t.source_url}]
+            link_txt = '\n'.join(f'{i}. {s.get("title", "来源")}：{s.get("url", "")}'
+                                 for i, s in enumerate(sl, 1))
             rows.append([
                 gap.title if gap else '', gap.level if gap else '', t.name,
-                node.name if node else '', t.province or '', t.city or '', t.region_type or '',
+                (node.group_name if node else ''), node.name if node else '',
+                t.province or '', t.city or '', t.region_type or '',
                 t.chain_role or '', t.invest_fit_level or '', t.landing_form or '',
                 '、'.join(ml), t.reg_capital or 0, t.revenue_3y or '',
                 t.scale or '', t.listed or '', t.total_score, t.evidence,
-                t.source_url, t.review_status,
+                link_txt or t.source_url, t.review_status,
             ])
 
     output = io.StringIO()
@@ -551,29 +658,46 @@ def export_word():
         set_font(r, '黑体' if level == 1 else '楷体', Pt(16 if level == 1 else 15), True)
         return p
 
+    def add_rich(paragraph, text, font='仿宋', size=Pt(16)):
+        """写入一段文字，支持 **加粗** 标记（关键句强调）。"""
+        import re
+        pos = 0
+        for m in re.finditer(r'\*\*(.+?)\*\*', text, re.S):
+            if m.start() > pos:
+                r = paragraph.add_run(text[pos:m.start()])
+                set_font(r, font, size)
+            r = paragraph.add_run(m.group(1))
+            set_font(r, font, size, True)
+            pos = m.end()
+        if pos < len(text):
+            r = paragraph.add_run(text[pos:])
+            set_font(r, font, size)
+        return paragraph
+
     def add_body(text):
-        for line in (text or '').split('\n'):
-            if not line.strip():
+        """按空行分段写入正文，段内行距 1.5、首行缩进两字。"""
+        for para in (text or '').split('\n\n'):
+            lines = [ln.strip() for ln in para.split('\n') if ln.strip()]
+            if not lines:
                 continue
             p = doc.add_paragraph()
             p.paragraph_format.first_line_indent = Pt(32)
             p.paragraph_format.line_spacing = 1.5
-            r = p.add_run(line.strip())
-            set_font(r, '仿宋', Pt(16))
+            p.paragraph_format.space_after = Pt(6)
+            add_rich(p, ''.join(lines))
 
     for advice in ChainAdvice.query.order_by(ChainAdvice.sort_order).all():
         add_heading(advice.title)
         if advice.kv:
             p = doc.add_paragraph()
             p.paragraph_format.first_line_indent = Pt(32)
-            r = p.add_run(advice.kv)
-            set_font(r, '楷体', Pt(14))
+            add_rich(p, advice.kv, font='楷体', size=Pt(14))
         add_body(advice.content)
 
     add_heading('附表一：产业链缺口与优先级一览')
-    table = doc.add_table(rows=1, cols=8)
+    table = doc.add_table(rows=1, cols=9)
     table.style = 'Table Grid'
-    hdr = ['优先级', '分档', '环节', '缺口标题', '支撑企业数', '目标企业数', '链作用分布', '企业实力']
+    hdr = ['优先级', '分档', '所属大类', '环节', '缺口标题', '支撑企业数', '目标企业数', '链作用分布', '企业实力']
     for i, h in enumerate(hdr):
         cell = table.rows[0].cells[i]
         cell.text = h
@@ -589,12 +713,13 @@ def export_word():
         row = table.add_row().cells
         row[0].text = str(g.total_score)
         row[1].text = g.level
-        row[2].text = node.name if node else ''
-        row[3].text = g.title
-        row[4].text = str(g.supporter_count)
-        row[5].text = str(len(gtargets))
-        row[6].text = role_txt or '—'
-        row[7].text = f'{g.f6}/15'
+        row[2].text = node.group_name if node else ''
+        row[3].text = node.name if node else ''
+        row[4].text = g.title
+        row[5].text = str(g.supporter_count)
+        row[6].text = str(len(gtargets))
+        row[7].text = role_txt or '—'
+        row[8].text = f'{g.f6}/15'
         for cell in row:
             for pp in cell.paragraphs:
                 for rr in pp.runs:
@@ -626,9 +751,9 @@ def export_word():
                     set_font(rr, '仿宋', Pt(10.5))
 
     add_heading('附表三：本地企业实力一览（注册资本 / 财报 / 融资 / 投资 / 签约）')
-    table3 = doc.add_table(rows=1, cols=6)
+    table3 = doc.add_table(rows=1, cols=8)
     table3.style = 'Table Grid'
-    hdr3 = ['企业名称', '所属环节', '注册资本(万元)', '近三年营收', '实力分', '投资签约情况']
+    hdr3 = ['企业名称', '所属环节', '资质', '注册资本(万元)', '近三年营收', '实力分', '投资签约情况', '属地']
     for i, h in enumerate(hdr3):
         cell = table3.rows[0].cells[i]
         cell.text = h
@@ -637,17 +762,59 @@ def export_word():
                 set_font(rr, '黑体', Pt(11), True)
     for e in ChainEnterprise.query.order_by(ChainEnterprise.seq).all():
         node = node_map.get(e.node_code)
+        quals = '、'.join([x for x in [
+            '高企' if e.is_hightech else '',
+            '规上' if e.is_scale else '',
+            '专精特新' if e.is_smei else '',
+            '科小' if e.is_kexiao else '',
+        ] if x]) or '—'
         row = table3.add_row().cells
         row[0].text = e.name
         row[1].text = node.name if node else ''
-        row[2].text = str(e.reg_capital or 0)
-        row[3].text = e.revenue_3y or '—'
-        row[4].text = str(e.strength or 0)
-        row[5].text = (e.signed_deal or '—')[:120]
+        row[2].text = quals
+        row[3].text = str(e.reg_capital or 0)
+        row[4].text = e.revenue_3y or '—'
+        row[5].text = str(e.strength or 0)
+        row[6].text = (e.signed_deal or '—')[:120]
+        row[7].text = e.region or '—'
         for cell in row:
             for pp in cell.paragraphs:
                 for rr in pp.runs:
                     set_font(rr, '仿宋', Pt(10.5))
+
+    # ---- 更新日志章节 ----
+    changelogs = ChainChangelog.query.order_by(
+        ChainChangelog.sort_order.desc(), ChainChangelog.id.desc()).all()
+    if changelogs:
+        add_heading('附表四：更新日志')
+        for c in changelogs:
+            d = c.to_dict()
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(10)
+            p.paragraph_format.space_after = Pt(4)
+            r = p.add_run(f"{d['version']}　{d['log_date']}　{d['title']}")
+            set_font(r, '黑体', Pt(14), True)
+            if d['summary']:
+                p2 = doc.add_paragraph()
+                p2.paragraph_format.first_line_indent = Pt(28)
+                p2.paragraph_format.line_spacing = 1.4
+                add_rich(p2, d['summary'], font='楷体', size=Pt(12))
+            for label, items in (('修改内容', d['changes']),
+                                 ('风险提示', d['risks']),
+                                 ('下一步工作', d['next_steps'])):
+                if not items:
+                    continue
+                p3 = doc.add_paragraph()
+                p3.paragraph_format.space_before = Pt(6)
+                p3.paragraph_format.line_spacing = 1.4
+                r3 = p3.add_run(f'{label}：')
+                set_font(r3, '黑体', Pt(12), True)
+                for i, item in enumerate(items, 1):
+                    pi = doc.add_paragraph()
+                    pi.paragraph_format.left_indent = Pt(32)
+                    pi.paragraph_format.first_line_indent = Pt(-0)
+                    pi.paragraph_format.line_spacing = 1.4
+                    add_rich(pi, f'{i}. {item}', font='仿宋', size=Pt(12))
 
     buf = io.BytesIO()
     doc.save(buf)

@@ -143,13 +143,94 @@ export default defineConfig({
             shots.append(('01-graph', OUT + '/chain-01-graph.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
 
+            # 图谱页：三级层级（大类分组条 + 大类面板 + 属地分布）
+            graph_probe = page.evaluate("""() => {
+                return {
+                    groupBars: document.querySelectorAll('.group-bar-text').length,
+                    groupCards: document.querySelectorAll('.group-card').length,
+                    regionEnt: document.querySelectorAll('.region-ent-item').length,
+                    statCards: document.querySelectorAll('.stat-card').length,
+                    nodeCount: document.querySelectorAll('.node-group').length,
+                };
+            }""")
+            print('图谱页探针:', graph_probe)
+            assert graph_probe['groupBars'] >= 8, f'大类分组条偏少：{graph_probe["groupBars"]}'
+            assert graph_probe['groupCards'] == 9, f'大类卡片应为 9：{graph_probe["groupCards"]}'
+            assert graph_probe['regionEnt'] == 2, '属地分布应为 2 条'
+            assert graph_probe['statCards'] == 12, f'统计卡片应为 12：{graph_probe["statCards"]}'
+
             # 页签二：缺口与优先级
             tabs = page.locator('.chain-tabs .el-tabs__item')
             print('页签数:', tabs.count())
             tabs.nth(1).click()
-            page.wait_for_timeout(1800)
+            page.wait_for_timeout(2200)
             shots.append(('02-gap', OUT + '/chain-02-gap.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
+
+            # 缺口卡片：雷达图 + 两列布局 + 悬停提示
+            gap_probe = page.evaluate("""() => {
+                const cards = document.querySelectorAll('.gap-card');
+                const radars = document.querySelectorAll('.gap-radar');
+                const canvases = document.querySelectorAll('.gap-radar canvas');
+                // 两列布局判定：第 1、2 张卡片顶部对齐且 x 相差 > 200
+                let twoCol = false;
+                if (cards.length >= 2) {
+                    const a = cards[0].getBoundingClientRect();
+                    const b = cards[1].getBoundingClientRect();
+                    twoCol = Math.abs(a.top - b.top) < 4 && (b.left - a.left) > 200;
+                }
+                const canvasSizes = [];
+                canvases.forEach(c => canvasSizes.push({w: c.width, h: c.height}));
+                return {
+                    cards: cards.length,
+                    radars: radars.length,
+                    canvases: canvases.length,
+                    zeroCanvas: canvasSizes.filter(s => s.w === 0 || s.h === 0).length,
+                    twoCol,
+                    gridCols: getComputedStyle(document.querySelector('.gap-cards')).gridTemplateColumns,
+                    factorRows: document.querySelectorAll('.gap-factor-row').length,
+                };
+            }""")
+            print('缺口雷达图探针:', gap_probe)
+            assert gap_probe['cards'] == 18, f'缺口卡片应为 18：{gap_probe["cards"]}'
+            assert gap_probe['radars'] == 18, f'雷达图容器应为 18：{gap_probe["radars"]}'
+            assert gap_probe['canvases'] >= 1, '雷达图 canvas 未初始化'
+            assert gap_probe['zeroCanvas'] == 0, f'存在 0×0 雷达图 canvas：{gap_probe}'
+            assert gap_probe['twoCol'], f'缺口卡片未两列排布：{gap_probe["gridCols"]}'
+            assert gap_probe['factorRows'] == 18 * 6, '六因子明细行数不对'
+
+            # 悬停雷达图 → 自建信息层出现且含六因子
+            radar_el = page.locator('.gap-radar').first
+            radar_el.scroll_into_view_if_needed()
+            page.wait_for_timeout(500)
+            box = radar_el.bounding_box()
+            # 雷达中心（center 50%/52%），往上偏移一点确保落在多边形内
+            cx = box['x'] + box['width'] / 2
+            cy = box['y'] + box['height'] * 0.52
+            page.mouse.move(cx, cy)
+            page.wait_for_timeout(400)
+            page.mouse.move(cx + 2, cy - 6)
+            page.wait_for_timeout(700)
+            tip_probe = page.evaluate("""() => {
+                const tip = document.querySelector('.gap-radar-tip');
+                if (!tip) return null;
+                const rows = [...tip.querySelectorAll('.gap-radar-tip-row')];
+                return {
+                    title: tip.querySelector('.gap-radar-tip-title')?.innerText || '',
+                    rowCount: rows.length,
+                    names: rows.map(r => r.querySelector('.gap-radar-tip-name')?.innerText || ''),
+                    vals: rows.map(r => r.querySelector('.gap-radar-tip-val')?.innerText || ''),
+                    activeCount: rows.filter(r => r.classList.contains('active')).length,
+                };
+            }""")
+            print('雷达图悬浮信息层:', tip_probe)
+            assert tip_probe, '雷达图悬停未显示信息层'
+            assert tip_probe['rowCount'] == 6, f'信息层应有 6 个因子行：{tip_probe["rowCount"]}'
+            assert '需求刚性' in tip_probe['names'], '信息层缺少「需求刚性」'
+            assert any('/25' in v for v in tip_probe['vals']), '信息层未显示得分/满分'
+            assert tip_probe['activeCount'] == 1, '悬停未高亮所指向的因子轴'
+            shots.append(('02b-gap-radar', OUT + '/chain-02b-gap-radar.png'))
+            page.screenshot(path=shots[-1][1], full_page=False)
 
             # 页签三：目标企业库
             tabs.nth(2).click()
@@ -164,27 +245,71 @@ export default defineConfig({
             page.screenshot(path=shots[-1][1], full_page=True)
             outprov_text = page.locator('.result-count').first.inner_text()
             print('省外筛选结果:', outprov_text)
-            assert '80 家' in outprov_text, f'省外筛选数量异常: {outprov_text}'
+            assert '109 家' in outprov_text, f'省外筛选数量异常: {outprov_text}'
+
+            # 冻结首列：横向滚动后首列位置不变（限定目标企业库表格）
+            freeze_probe = page.evaluate("""() => {
+                const root = document.querySelector('.target-table');
+                if (!root) return null;
+                // Element Plus 表格的真实横向滚动容器是 el-scrollbar__wrap
+                const wraps = [...root.querySelectorAll('.el-scrollbar__wrap')].filter(w => w.scrollWidth > w.clientWidth + 20);
+                const wrap = wraps[0];
+                const cell = root.querySelector('.el-table__row td .cell');
+                if (!wrap || !cell) return {noScroll: true, wrapCount: wraps.length};
+                const before = cell.getBoundingClientRect().left;
+                wrap.scrollLeft = 400;
+                const after = cell.getBoundingClientRect().left;
+                const scrolled = wrap.scrollLeft;
+                wrap.scrollLeft = 0;
+                return {
+                    before, after, scrolled,
+                    maxScroll: wrap.scrollWidth - wrap.clientWidth,
+                    scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth,
+                    fixedCells: root.querySelectorAll('.el-table-fixed-column--left').length,
+                };
+            }""")
+            print('冻结首列探针:', freeze_probe)
+            assert freeze_probe and not freeze_probe.get('noScroll'), '未找到可横向滚动的表格容器'
+            assert freeze_probe['maxScroll'] > 100, \
+                f'目标企业表横向可滚动距离过小：{freeze_probe["maxScroll"]}'
+            assert freeze_probe['scrolled'] > 100, '横向滚动未生效'
+            assert abs(freeze_probe['before'] - freeze_probe['after']) < 2, \
+                f'首列未冻结（滚动前后位置变化 {freeze_probe["before"]} → {freeze_probe["after"]}）'
+            assert freeze_probe['fixedCells'] > 0, '首列未渲染为固定列'
 
             # 目标企业库：打开详情抽屉
-            page.locator('.el-table__row .el-button', has_text='详情').first.click()
-            page.wait_for_timeout(1600)
+            page.locator('.target-table .el-table__row .el-button', has_text='详情').first.click()
+            page.wait_for_timeout(2000)
             shots.append(('03c-detail', OUT + '/chain-03c-detail.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
             drawer_probe = page.evaluate("""() => {
-                const d = document.querySelector('.el-drawer__body');
+                const d = document.querySelector('.chain-drawer .el-drawer__body');
+                const drawer = document.querySelector('.chain-drawer');
                 if (!d) return null;
+                const items = [...document.querySelectorAll('.chain-drawer .source-item')];
                 return {
                     hasStrength: d.innerText.includes('企业实力'),
                     hasRole: d.innerText.includes('链作用'),
                     hasFit: d.innerText.includes('投资可行性'),
                     hasSixFactor: d.innerText.includes('六因子匹配得分'),
+                    hasGroup: d.innerText.includes('所属环节') || d.innerText.includes('大类'),
                     scrollH: d.scrollHeight,
+                    drawerWidth: drawer ? Math.round(drawer.getBoundingClientRect().width) : 0,
+                    bodyWidth: Math.round(d.getBoundingClientRect().width),
+                    sourceCount: items.length,
+                    sourceTitles: items.slice(0, 3).map(i => i.querySelector('.source-title')?.innerText || ''),
+                    sourceHasUrl: items.every(i => !!(i.querySelector('.source-url') || {}).innerText),
                 };
             }""")
             print('详情抽屉探针:', drawer_probe)
             assert drawer_probe and drawer_probe['hasStrength'], '详情抽屉缺少企业实力区块'
             assert drawer_probe and drawer_probe['hasSixFactor'], '详情抽屉缺少六因子得分'
+            assert drawer_probe and drawer_probe['drawerWidth'] >= 700, \
+                f'详情抽屉未加宽：{drawer_probe["drawerWidth"]}px'
+            assert drawer_probe and drawer_probe['sourceCount'] >= 3, \
+                f'来源链接应多条（≥3）：{drawer_probe["sourceCount"]}'
+            assert drawer_probe and drawer_probe['sourceHasUrl'], '来源链接缺 URL'
+            print('来源链接小标题:', drawer_probe['sourceTitles'])
             page.keyboard.press('Escape')
             page.wait_for_timeout(800)
 
@@ -194,9 +319,34 @@ export default defineConfig({
 
             # 页签四：招商建议
             tabs.nth(3).click()
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(1800)
             shots.append(('04-advice', OUT + '/chain-04-advice.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
+
+            # 更新日志 + 建议排版（分段 + 加粗）
+            advice_probe = page.evaluate("""() => {
+                const logs = document.querySelectorAll('.changelog-card');
+                const paras = document.querySelectorAll('.advice-para');
+                const strongs = document.querySelectorAll('.advice-content strong');
+                const risk = document.querySelectorAll('.changelog-block.risk li');
+                const next = document.querySelectorAll('.changelog-block.next li');
+                return {
+                    logs: logs.length,
+                    version: (document.querySelector('.changelog-head .el-tag') || {}).innerText || '',
+                    paras: paras.length,
+                    strongs: strongs.length,
+                    riskItems: risk.length,
+                    nextItems: next.length,
+                    changeItems: document.querySelectorAll('.changelog-block:not(.risk):not(.next) li').length,
+                };
+            }""")
+            print('建议/日志探针:', advice_probe)
+            assert advice_probe['logs'] >= 1, '缺少更新日志卡片'
+            assert advice_probe['changeItems'] >= 5, '更新日志修改内容条目偏少'
+            assert advice_probe['riskItems'] >= 1, '更新日志缺少风险提示'
+            assert advice_probe['nextItems'] >= 1, '更新日志缺少下一步工作'
+            assert advice_probe['paras'] >= 5, '建议未按段落拆分'
+            assert advice_probe['strongs'] >= 3, '建议关键句未加粗'
 
             # 关键几何探针
             probe = page.evaluate("""() => {
@@ -220,7 +370,8 @@ export default defineConfig({
                 const radar = document.querySelector('.chart-box canvas');
                 out.radarCanvas = radar ? { w: radar.width, h: radar.height } : null;
                 // 新增面板的溢出检查
-                const panels = ['.strength-panel', '.role-fit-panel', '.region-panel', '.quick-filters'];
+                const panels = ['.strength-panel', '.role-fit-panel', '.region-panel', '.quick-filters',
+                                '.group-panel', '.region-ent-panel', '.changelog-blocks', '.gap-cards'];
                 out.panels = {};
                 panels.forEach(sel => {
                     const el = document.querySelector(sel);

@@ -162,6 +162,7 @@ export default defineConfig({
             # 页签二：缺口与优先级
             tabs = page.locator('.chain-tabs .el-tabs__item')
             print('页签数:', tabs.count())
+            assert tabs.count() == 5, f'页签应为 5 个（更新日志已独立）：{tabs.count()}'
             tabs.nth(1).click()
             page.wait_for_timeout(2200)
             shots.append(('02-gap', OUT + '/chain-02-gap.png'))
@@ -323,30 +324,89 @@ export default defineConfig({
             shots.append(('04-advice', OUT + '/chain-04-advice.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
 
-            # 更新日志 + 建议排版（分段 + 加粗）
+            # 建议排版探针：段落数 / 加粗数 / 列表项 / 文本占宽比（防大片空白）
             advice_probe = page.evaluate("""() => {
-                const logs = document.querySelectorAll('.changelog-card');
                 const paras = document.querySelectorAll('.advice-para');
                 const strongs = document.querySelectorAll('.advice-content strong');
-                const risk = document.querySelectorAll('.changelog-block.risk li');
-                const next = document.querySelectorAll('.changelog-block.next li');
+                const items = document.querySelectorAll('.advice-ul li');
+                // 样式命中探针：v-html 注入的节点不带 scoped 属性，
+                // 样式若未写 :deep() 则完全不生效（段落不分行 / 列表无缩进）
+                const firstPara = paras[0];
+                const firstLine = document.querySelector('.advice-line');
+                const firstUl = document.querySelector('.advice-ul');
+                const firstLi = document.querySelector('.advice-ul li');
+                const lineCS = firstLine ? getComputedStyle(firstLine) : null;
+                const ulCS = firstUl ? getComputedStyle(firstUl) : null;
+                const liBefore = firstLi ? getComputedStyle(firstLi, '::before').content : '';
+                // 文本实际占宽比：用 Range 量每段真实文本宽度 vs 段落宽度
+                let ratioSum = 0, ratioN = 0;
+                const paras2 = [...document.querySelectorAll('.advice-para')].filter(p => {
+                    const t = (p.innerText || '').trim();
+                    return t.length > 60 && !p.querySelector('.advice-ul');
+                });
+                for (const p of paras2) {
+                    const r = p.getBoundingClientRect();
+                    const rg = document.createRange();
+                    rg.selectNodeContents(p);
+                    const tw = rg.getBoundingClientRect().width;
+                    if (r.width > 0) { ratioSum += tw / r.width; ratioN++; }
+                }
                 return {
-                    logs: logs.length,
-                    version: (document.querySelector('.changelog-head .el-tag') || {}).innerText || '',
                     paras: paras.length,
                     strongs: strongs.length,
+                    items: items.length,
+                    avgRatio: ratioN ? ratioSum / ratioN : 1,
+                    sampled: ratioN,
+                    lineDisplay: lineCS ? lineCS.display : null,
+                    ulDisplay: ulCS ? ulCS.display : null,
+                    ulPadding: ulCS ? ulCS.paddingLeft : null,
+                    liBefore: liBefore,
+                };
+            }""")
+            print('建议页探针:', advice_probe)
+            assert advice_probe['paras'] >= 5, '建议未按段落拆分'
+            assert advice_probe['strongs'] >= 3, '建议关键句未加粗'
+            assert advice_probe['items'] >= 20, '建议列表项渲染异常'
+            # 样式命中断言（:deep() 漏写会静默失效）
+            assert advice_probe['lineDisplay'] == 'block', (
+                f'.advice-line 未生效（display={advice_probe["lineDisplay"]}），样式可能缺 :deep()')
+            assert advice_probe['ulDisplay'] == 'block' and advice_probe['ulPadding'] != '0px', (
+                f'.advice-ul 未生效（display={advice_probe["ulDisplay"]} padding={advice_probe["ulPadding"]}）')
+            assert advice_probe['liBefore'] not in ('none', ''), '列表圆点未生效（::before 缺 :deep()）'
+            # 散文段文本应基本占满行宽（占宽比 < 0.75 说明仍在硬折行、右侧大片空白）
+            assert advice_probe['sampled'] >= 3, '可用于测量的长段落太少'
+            assert advice_probe['avgRatio'] > 0.75, (
+                f'建议正文占宽比仅 {advice_probe["avgRatio"]:.2f}，仍有硬折行导致右侧空白')
+
+            # 页签五：更新日志（独立页签）
+            tabs.nth(4).click()
+            page.wait_for_timeout(1500)
+            shots.append(('05-changelog', OUT + '/chain-05-changelog.png'))
+            page.screenshot(path=shots[-1][1], full_page=True)
+
+            log_probe = page.evaluate("""() => {
+                const logs = document.querySelectorAll('.changelog-card');
+                const risk = document.querySelectorAll('.changelog-block.risk li');
+                const next = document.querySelectorAll('.changelog-block.next li');
+                // 更新日志页签内的日志卡片数必须独立于建议页
+                const inPane = document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .changelog-card').length;
+                return {
+                    logs: logs.length,
+                    inPane: inPane,
+                    version: (document.querySelector('.changelog-head .el-tag') || {}).innerText || '',
                     riskItems: risk.length,
                     nextItems: next.length,
                     changeItems: document.querySelectorAll('.changelog-block:not(.risk):not(.next) li').length,
+                    adviceInPane: document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .advice-card').length,
                 };
             }""")
-            print('建议/日志探针:', advice_probe)
-            assert advice_probe['logs'] >= 1, '缺少更新日志卡片'
-            assert advice_probe['changeItems'] >= 5, '更新日志修改内容条目偏少'
-            assert advice_probe['riskItems'] >= 1, '更新日志缺少风险提示'
-            assert advice_probe['nextItems'] >= 1, '更新日志缺少下一步工作'
-            assert advice_probe['paras'] >= 5, '建议未按段落拆分'
-            assert advice_probe['strongs'] >= 3, '建议关键句未加粗'
+            print('更新日志页探针:', log_probe)
+            assert log_probe['logs'] >= 1, '缺少更新日志卡片'
+            assert log_probe['inPane'] >= 1, '更新日志未独立成页签'
+            assert log_probe['changeItems'] >= 5, '更新日志修改内容条目偏少'
+            assert log_probe['riskItems'] >= 1, '更新日志缺少风险提示'
+            assert log_probe['nextItems'] >= 1, '更新日志缺少下一步工作'
+            assert log_probe['adviceInPane'] == 0, '更新日志页签不应混入招商建议卡片'
 
             # 关键几何探针
             probe = page.evaluate("""() => {

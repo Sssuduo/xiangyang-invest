@@ -708,54 +708,6 @@
 
         <!-- ========== 页签四：招商建议与材料 ========== -->
         <el-tab-pane label="招商建议与材料" name="advice">
-          <!-- 更新日志 -->
-          <div class="section-header">
-            <el-icon class="section-icon"><Clock /></el-icon>
-            <span class="section-title">更新日志</span>
-            <span class="section-extra">每次更新的修改内容、风险提示与下一步工作</span>
-            <span class="toolbar-spacer" />
-            <el-button size="small" plain @click="handleExportCsv('changelog')">
-              <el-icon><Download /></el-icon> 导出日志
-            </el-button>
-          </div>
-          <div class="changelog-list">
-            <div v-for="c in changelog" :key="c.id" class="changelog-card">
-              <div class="changelog-head">
-                <el-tag type="primary" effect="dark" size="small">{{ c.version }}</el-tag>
-                <span class="changelog-date">{{ c.log_date }}</span>
-                <span class="changelog-title">{{ c.title }}</span>
-              </div>
-              <p v-if="c.summary" class="changelog-summary">{{ c.summary }}</p>
-              <div class="changelog-blocks">
-                <div class="changelog-block">
-                  <div class="changelog-block-title">
-                    <el-icon><EditPen /></el-icon> 修改内容
-                  </div>
-                  <ul>
-                    <li v-for="(x, i) in c.changes" :key="i">{{ x }}</li>
-                  </ul>
-                </div>
-                <div class="changelog-block risk">
-                  <div class="changelog-block-title">
-                    <el-icon><WarningFilled /></el-icon> 风险提示
-                  </div>
-                  <ul>
-                    <li v-for="(x, i) in c.risks" :key="i">{{ x }}</li>
-                  </ul>
-                </div>
-                <div class="changelog-block next">
-                  <div class="changelog-block-title">
-                    <el-icon><CircleCheck /></el-icon> 下一步工作
-                  </div>
-                  <ul>
-                    <li v-for="(x, i) in c.next_steps" :key="i">{{ x }}</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div v-if="!changelog.length" class="plain-text">暂无更新日志</div>
-          </div>
-
           <div class="section-header">
             <el-icon class="section-icon"><Promotion /></el-icon>
             <span class="section-title">招商建议</span>
@@ -809,6 +761,56 @@
               <div class="export-name">更新日志</div>
               <div class="export-desc">CSV · 历次修改内容、风险提示与下一步工作</div>
             </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- ========== 页签五：更新日志 ========== -->
+        <el-tab-pane label="更新日志" name="changelog">
+          <div class="section-header">
+            <el-icon class="section-icon"><Clock /></el-icon>
+            <span class="section-title">更新日志</span>
+            <span class="section-extra">每次更新的修改内容、风险提示与下一步工作</span>
+            <span class="toolbar-spacer" />
+            <el-button size="small" plain @click="handleExportCsv('changelog')">
+              <el-icon><Download /></el-icon> 导出日志
+            </el-button>
+          </div>
+          <div class="changelog-list">
+            <div v-for="c in changelog" :key="c.id" class="changelog-card">
+              <div class="changelog-head">
+                <el-tag type="primary" effect="dark" size="small">{{ c.version }}</el-tag>
+                <span class="changelog-date">{{ c.log_date }}</span>
+                <span class="changelog-title">{{ c.title }}</span>
+              </div>
+              <p v-if="c.summary" class="changelog-summary">{{ c.summary }}</p>
+              <div class="changelog-blocks">
+                <div class="changelog-block">
+                  <div class="changelog-block-title">
+                    <el-icon><EditPen /></el-icon> 修改内容
+                  </div>
+                  <ul>
+                    <li v-for="(x, i) in c.changes" :key="i">{{ x }}</li>
+                  </ul>
+                </div>
+                <div class="changelog-block risk">
+                  <div class="changelog-block-title">
+                    <el-icon><WarningFilled /></el-icon> 风险提示
+                  </div>
+                  <ul>
+                    <li v-for="(x, i) in c.risks" :key="i">{{ x }}</li>
+                  </ul>
+                </div>
+                <div class="changelog-block next">
+                  <div class="changelog-block-title">
+                    <el-icon><CircleCheck /></el-icon> 下一步工作
+                  </div>
+                  <ul>
+                    <li v-for="(x, i) in c.next_steps" :key="i">{{ x }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div v-if="!changelog.length" class="plain-text">暂无更新日志</div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -1316,15 +1318,42 @@ function factorChips(item) {
  * 富文本渲染：段落分段 + **加粗** 关键句。
  * 内容来自平台内部种子数据（可信），但仍做基础 HTML 转义，避免尖括号被当作标签。
  */
+// 富文本渲染：**加粗** → <strong>；段内单换行按语义区分处理
+//   · 以「· / • / 数字. 」开头的行 → 列表项 <li>
+//   · 以两空格缩进开头的行     → 上一条目的续行（悬挂缩进）
+//   · 其余单换行              → 独立成行的普通行 .advice-line
+// 注意：正文数据已清除「写作时的排版折行」，段内换行只承担语义，不再撑出大片空白。
+// ⚠️ 生成的 HTML 由 v-html 注入，节点不带 scoped 的 data-v 属性，
+//    对应样式必须写 :deep()，否则永远命中不了。
 function renderRichText(text) {
   if (!text) return ''
   const esc = String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+  const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   return esc
     .split(/\n{2,}/)
-    .map(p => `<p class="advice-para">${p.replace(/\n/g, '<br />').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>`)
+    .map(para => {
+      const lines = para.split('\n')
+      let html = ''
+      let openUl = false
+      for (const raw of lines) {
+        const isItem = /^\s*[·•]\s*\S/.test(raw) || /^\s*\d+\s*[.、)）]\s*\S/.test(raw)
+        const isCont = /^\s{2,}\S/.test(raw)
+        if (isItem) {
+          if (!openUl) { html += '<ul class="advice-ul">'; openUl = true }
+          html += `<li>${inline(raw.trim())}</li>`
+        } else if (isCont && openUl) {
+          html += `<li class="advice-li-cont">${inline(raw.trim())}</li>`
+        } else {
+          if (openUl) { html += '</ul>'; openUl = false }
+          html += `<span class="advice-line">${inline(raw.trim())}</span>`
+        }
+      }
+      if (openUl) html += '</ul>'
+      return `<p class="advice-para">${html}</p>`
+    })
     .join('')
 }
 
@@ -2035,10 +2064,27 @@ watch(showGapRadar, (val) => {
   font-size: 12px; color: #4a5568; margin-bottom: 10px;
 }
 .advice-kv .el-icon { color: #409eff; }
+/* ⚠️ 以下规则必须带 :deep()：正文由 v-html 注入，节点上不带 Vue scoped 的 data-v 属性，
+   若直接写 .advice-para {...}，编译后为 .advice-para[data-v-xxx]，永远命中不了
+   （表现为段落不分行、列表无缩进、标签行挤成一行）。 */
 .advice-content { font-size: 14px; color: #303133; line-height: 2; }
-.advice-para { margin: 0 0 10px; text-indent: 2em; }
-.advice-para:last-child { margin-bottom: 0; }
+.advice-content :deep(.advice-para) { margin: 0 0 10px; text-indent: 2em; }
+.advice-content :deep(.advice-para:last-child) { margin-bottom: 0; }
 .advice-content :deep(strong) { color: #1a3a5c; font-weight: 700; }
+/* 段内普通换行（小标题独占一行时不再首行缩进） */
+.advice-content :deep(.advice-line) { display: block; text-indent: 2em; line-height: 2; }
+.advice-content :deep(.advice-line + .advice-line) { margin-top: 2px; }
+/* 列表：悬挂缩进，条目与续行对齐 */
+.advice-content :deep(.advice-ul) { margin: 4px 0 0; padding-left: 2em; list-style: none; }
+.advice-content :deep(.advice-ul li) {
+  position: relative; padding-left: 1.4em; margin-bottom: 3px; text-indent: 0;
+}
+.advice-content :deep(.advice-ul li::before) {
+  content: ''; position: absolute; left: 0.25em; top: 0.78em;
+  width: 5px; height: 5px; border-radius: 50%; background: #409eff;
+}
+.advice-content :deep(.advice-ul li.advice-li-cont) { margin-top: -3px; margin-bottom: 5px; }
+.advice-content :deep(.advice-ul li.advice-li-cont::before) { content: none; }
 
 /* 更新日志 */
 .changelog-list { display: flex; flex-direction: column; gap: 14px; }

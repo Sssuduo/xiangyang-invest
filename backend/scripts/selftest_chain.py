@@ -172,6 +172,37 @@ with app.app_context():
         assert d['next_steps'], f'更新日志 {d["version"]} 缺少下一步工作'
     print('[日志] 更新日志含修改内容 / 风险提示 / 下一步工作 ✓')
 
+    # ---- 建议正文排版：不得残留「写作时的排版折行」 ----
+    # 纯散文段（不含列表项、也不含小标题行）必须整段合并为一行，
+    # 否则前端会硬换行、右侧留大片空白
+    import re as _re
+    _item_re = _re.compile(r'^\s*[·•]\s*\S|^\s*\d+\s*[.、)）]\s*\S')
+    _head_re = _re.compile(r'^\s*\*\*[^*]+\*\*\s*$')      # 小标题独占行（合法）
+    _label_re = _re.compile(r'^\s*\*\*[^*]+\*\*\s*[：:]')  # 标签行（合法）
+    _bad_wrap = 0
+    for a in ChainAdvice.query.all():
+        for para in (a.content or '').split('\n\n'):
+            lines = [x for x in para.split('\n') if x.strip()]
+            if len(lines) <= 1:
+                continue
+            if any(_item_re.match(x) for x in lines):
+                continue   # 列表段允许多行
+            if any(_head_re.match(x) for x in lines):
+                continue   # 含小标题独立行的段落合法
+            if any(_label_re.match(x) for x in lines):
+                continue   # 含标签行（**谈判切入点**：…）的段落合法
+            _bad_wrap += 1
+    assert _bad_wrap == 0, f'仍有 {_bad_wrap} 个散文段残留排版折行（会导致右侧空白）'
+    print('[排版] 建议正文无残留排版折行 ✓')
+
+    # ---- 建议正文不得出现「加粗整句与后续正文挤在同一行且无换行」 ----
+    # 注意：「**小标题。**紧接正文」是有意的紧凑写法（加粗小标题 + 同段正文），不算缺陷；
+    #       此处只拦截加粗标记被拆散、或整段被强制折行的情况（由上方排版断言覆盖）。
+    for a in ChainAdvice.query.all():
+        c = a.content or ''
+        assert c.count('**') % 2 == 0, f'建议 {a.title[:16]} 加粗标记数量不成对'
+    print('[排版] 加粗标记完整成对 ✓')
+
     # ---- 六因子分项满分校验 ----
     assert cold.f6 is not None, '缺口缺少 F6 企业实力因子'
 

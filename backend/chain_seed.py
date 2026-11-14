@@ -7,16 +7,22 @@
 3. 公开渠道检索（企业官网/百科/工商公示/政务与行业媒体）——目标企业与承载条件
 
 数据文件（backend/chain_data/）：
-- ent62.json    62 家本地企业主数据（含注册资本/营收/融资/投资/签约五维核实结果）
-- gaps.json    13 个共性配套缺口（六因子优先级评分）
-- targets.json 102 家目标企业（省外 80 + 襄阳市域内 13 + 湖北省内市域外 9）
-- advice.json  12 条招商建议
+- nodes.json    29 个环节（三级：层级 → 大类 → 环节）
+- ent90.json    90 家本地企业主数据（含注册资本/营收/融资/投资/签约五维核实结果）
+- gaps.json     18 个共性配套缺口（六因子优先级评分）
+- targets.json  131 家目标企业（省外 109 + 襄阳市域内 13 + 湖北省内市域外 9）
+- advice.json   12 条招商建议
+- changelog.json 更新日志（修改内容 / 风险提示 / 下一步工作）
 
-入库为幂等：当链环节本体结构与本版不一致（旧版数据）时自动重建。
+入库为幂等：
+1. 环节本体结构与本版不一致（旧版数据）→ 全量重建；
+2. 环节结构一致但种子文件内容变化（如建议文案排版调整、新增更新日志）→
+   按数据指纹判定重建，保证文案与日志能同步到数据库。
 """
 import json
 import logging
 import os
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -57,16 +63,62 @@ def _load(name):
         return json.load(fp)
 
 
+# 参与指纹计算的种子文件（内容变化即需重新入库）
+_SEED_FILES = ('nodes.json', 'ent90.json', 'gaps.json',
+               'targets.json', 'advice.json', 'changelog.json')
+
+
+def _data_fingerprint():
+    """计算种子文件内容指纹（md5）。
+
+    环节结构不变、但建议文案/更新日志等内容变化时，靠它触发重新入库，
+    否则节点集合比对会判定「结构一致」而跳过，导致新文案进不了库。
+    """
+    import hashlib
+    h = hashlib.md5()
+    for name in _SEED_FILES:
+        path = os.path.join(DATA_DIR, name)
+        if not os.path.exists(path):
+            continue
+        h.update(name.encode('utf-8'))
+        with open(path, 'rb') as fp:
+            h.update(fp.read())
+    return h.hexdigest()
+
+
 def _need_rebuild():
     """判断库中是否已是本版结构。"""
-    from models.chain import ChainNode
+    from models.chain import ChainChangelog, ChainNode
     existing = {n.code for n in ChainNode.query.all()}
     if not existing:
         return False
     if any(code in existing for code in LEGACY_NODE_CODES):
         return True
     # 节点集合必须与当前版本完全一致（缺失或新增都要重建）
-    return existing != set(EXPECTED_NODE_CODES)
+    if existing != set(EXPECTED_NODE_CODES):
+        return True
+    # 结构一致但种子内容已更新（如新增更新日志、建议文案排版调整）→ 也要重建
+    from models.chain import ChainAdvice
+    expect_versions = {c.get('version') for c in _load('changelog.json')} \
+        if os.path.exists(os.path.join(DATA_DIR, 'changelog.json')) else set()
+    db_versions = {c.version for c in ChainChangelog.query.all()}
+    if expect_versions != db_versions:
+        logger.info('[产业链招商] 更新日志版本与种子不一致，触发重建')
+        return True
+    # 建议条数或正文内容与种子不一致（文案调整但条数不变也要能识别）
+    advice_list = _load('advice.json')
+    if ChainAdvice.query.count() != len(advice_list):
+        return True
+    db_digest = hashlib.md5(''.join(
+        (a.content or '') for a in ChainAdvice.query.order_by(ChainAdvice.id).all()
+    ).encode('utf-8')).hexdigest()
+    seed_digest = hashlib.md5(''.join(
+        (a.get('content') or '') for a in advice_list
+    ).encode('utf-8')).hexdigest()
+    if db_digest != seed_digest:
+        logger.info('[产业链招商] 招商建议内容与种子不一致，触发重建')
+        return True
+    return False
 
 
 def _clear_all():
@@ -179,7 +231,8 @@ def seed_chain_data(app):
                 changes=json.dumps(c.get('changes', []), ensure_ascii=False),
                 risks=json.dumps(c.get('risks', []), ensure_ascii=False),
                 next_steps=json.dumps(c.get('next_steps', []), ensure_ascii=False),
-                sort_order=i))
+                # 查询按 sort_order 降序，故越新的日志给越大的序号（种子文件按新→旧排列）
+                sort_order=len(changelog) - i + 1))
 
         db.session.commit()
         outprov = len([t for t in targets if t['region_type'] == '省外'])

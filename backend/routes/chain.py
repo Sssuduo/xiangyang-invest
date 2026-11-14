@@ -675,16 +675,46 @@ def export_word():
         return paragraph
 
     def add_body(text):
-        """按空行分段写入正文，段内行距 1.5、首行缩进两字。"""
+        """按空行分段写入正文，段内行距 1.5、首行缩进两字。
+
+        段内换行有两类语义：
+          · 以「· / 数字. 」开头的列表项 → 单独成段，悬挂缩进
+          · 其余（含缩进续行）→ 续行接在上一列表项之后
+        """
+        import re as _re
         for para in (text or '').split('\n\n'):
             lines = [ln.strip() for ln in para.split('\n') if ln.strip()]
             if not lines:
                 continue
-            p = doc.add_paragraph()
-            p.paragraph_format.first_line_indent = Pt(32)
-            p.paragraph_format.line_spacing = 1.5
-            p.paragraph_format.space_after = Pt(6)
-            add_rich(p, ''.join(lines))
+            item_re = _re.compile(r'^[·•]\s*\S|^\d+\s*[.、)）]\s*\S')
+            cur = None          # 当前列表项的段落
+            cur_cont = []       # 当前列表项的续行文本
+            for ln in lines:
+                if item_re.match(ln):
+                    if cur is not None:
+                        _flush_item(cur, cur_cont)
+                    cur = ln
+                    cur_cont = []
+                elif cur is not None:
+                    cur_cont.append(ln)
+                else:
+                    p = doc.add_paragraph()
+                    p.paragraph_format.first_line_indent = Pt(32)
+                    p.paragraph_format.line_spacing = 1.5
+                    p.paragraph_format.space_after = Pt(6)
+                    add_rich(p, ln)
+            if cur is not None:
+                _flush_item(cur, cur_cont)
+
+    def _flush_item(item, cont_lines):
+        """写出一个列表项（条目 + 续行合并），使用悬挂缩进。"""
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.left_indent = Pt(32)
+        pf.first_line_indent = Pt(-32)
+        pf.line_spacing = 1.5
+        pf.space_after = Pt(6)
+        add_rich(p, item + ('，'.join(cont_lines) if cont_lines else ''))
 
     for advice in ChainAdvice.query.order_by(ChainAdvice.sort_order).all():
         add_heading(advice.title)

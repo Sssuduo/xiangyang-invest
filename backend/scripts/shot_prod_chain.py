@@ -101,6 +101,7 @@ def main():
 
         tabs = page.locator('.chain-tabs .el-tabs__item')
         print('页签数:', tabs.count())
+        assert tabs.count() == 5, f'页签应为 5 个（更新日志已独立）：{tabs.count()}'
         for idx, (name, fn) in enumerate([
             ('缺口与优先级', 'prod-chain-02-gap.png'),
             ('目标企业库', 'prod-chain-03-target.png'),
@@ -282,26 +283,77 @@ def main():
         assert any('所属环节' in c for c in cols['headers']), '表格缺少所属环节列'
         print('✓ 企业实力 / 所属大类 / 所属环节 列存在')
 
-        # 招商建议页：更新日志三栏 + 建议分段加粗
+        # 招商建议页：建议分段加粗 + 导出卡片 + 正文占宽比（防右侧大片空白）
         tabs.nth(3).click()
         page.wait_for_timeout(1800)
-        adv_probe = page.evaluate("""() => ({
-            logs: document.querySelectorAll('.changelog-card').length,
+        adv_probe = page.evaluate("""() => {
+            const paras = [...document.querySelectorAll('.advice-para')];
+            const strongs = document.querySelectorAll('.advice-content strong');
+            const items = document.querySelectorAll('.advice-ul li');
+            const firstLine = document.querySelector('.advice-line');
+            const firstUl = document.querySelector('.advice-ul');
+            const firstLi = document.querySelector('.advice-ul li');
+            const lineCS = firstLine ? getComputedStyle(firstLine) : null;
+            const ulCS = firstUl ? getComputedStyle(firstUl) : null;
+            const liBefore = firstLi ? getComputedStyle(firstLi, '::before').content : '';
+            let ratioSum = 0, ratioN = 0;
+            for (const p of paras) {
+                const t = (p.innerText || '').trim();
+                if (t.length <= 60 || p.querySelector('.advice-ul')) continue;
+                const r = p.getBoundingClientRect();
+                const rg = document.createRange();
+                rg.selectNodeContents(p);
+                const tw = rg.getBoundingClientRect().width;
+                if (r.width > 0) { ratioSum += tw / r.width; ratioN++; }
+            }
+            return {
+                paras: paras.length,
+                strongs: strongs.length,
+                items: items.length,
+                avgRatio: ratioN ? ratioSum / ratioN : 1,
+                sampled: ratioN,
+                lineDisplay: lineCS ? lineCS.display : null,
+                ulDisplay: ulCS ? ulCS.display : null,
+                ulPadding: ulCS ? ulCS.paddingLeft : null,
+                liBefore: liBefore,
+                exportCards: document.querySelectorAll('.export-card').length,
+                logs: document.querySelectorAll('.changelog-card').length,
+            };
+        }""")
+        print('建议页探针:', adv_probe)
+        assert adv_probe['paras'] >= 5 and adv_probe['strongs'] >= 3, '建议未分段/加粗'
+        assert adv_probe['items'] >= 20, '建议列表项渲染异常'
+        assert adv_probe['exportCards'] == 5, f'导出卡片应为 5：{adv_probe["exportCards"]}'
+        assert adv_probe['lineDisplay'] == 'block', (
+            f'.advice-line 未生效（display={adv_probe["lineDisplay"]}）')
+        assert adv_probe['ulDisplay'] == 'block' and adv_probe['ulPadding'] != '0px', (
+            f'.advice-ul 未生效（display={adv_probe["ulDisplay"]}）')
+        assert adv_probe['liBefore'] not in ('none', ''), '列表圆点未生效'
+        assert adv_probe['sampled'] >= 3, '可用于测量的长段落太少'
+        assert adv_probe['avgRatio'] > 0.75, (
+            f'建议正文占宽比仅 {adv_probe["avgRatio"]:.2f}，仍有硬折行导致右侧空白')
+        page.screenshot(path=os.path.join(OUT, 'prod-chain-08-advice.png'), full_page=True)
+        print('✓ 建议排版')
+
+        # 更新日志页签（独立第 5 个页签）
+        tabs.nth(4).click()
+        page.wait_for_timeout(1500)
+        log_probe = page.evaluate("""() => ({
+            inPane: document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .changelog-card').length,
             changeItems: document.querySelectorAll('.changelog-block:not(.risk):not(.next) li').length,
             riskItems: document.querySelectorAll('.changelog-block.risk li').length,
             nextItems: document.querySelectorAll('.changelog-block.next li').length,
-            paras: document.querySelectorAll('.advice-para').length,
-            strongs: document.querySelectorAll('.advice-content strong').length,
-            exportCards: document.querySelectorAll('.export-card').length,
+            adviceInPane: document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .advice-card').length,
+            blocks: document.querySelectorAll('.changelog-blocks').length,
         })""")
-        print('建议/日志探针:', adv_probe)
-        assert adv_probe['logs'] >= 1, '缺少更新日志'
-        assert adv_probe['changeItems'] >= 5, '更新日志修改内容偏少'
-        assert adv_probe['riskItems'] >= 1 and adv_probe['nextItems'] >= 1, '风险/下一步缺失'
-        assert adv_probe['paras'] >= 5 and adv_probe['strongs'] >= 3, '建议未分段/加粗'
-        assert adv_probe['exportCards'] == 5, f'导出卡片应为 5：{adv_probe["exportCards"]}'
-        page.screenshot(path=os.path.join(OUT, 'prod-chain-08-advice-changelog.png'), full_page=True)
-        print('✓ 更新日志与建议排版')
+        print('更新日志页探针:', log_probe)
+        assert log_probe['inPane'] >= 1, '更新日志未独立成页签'
+        assert log_probe['changeItems'] >= 5, '更新日志修改内容偏少'
+        assert log_probe['riskItems'] >= 1 and log_probe['nextItems'] >= 1, '风险/下一步缺失'
+        assert log_probe['adviceInPane'] == 0, '更新日志页签不应混入招商建议卡片'
+        assert log_probe['blocks'] == 1, '更新日志三栏布局异常'
+        page.screenshot(path=os.path.join(OUT, 'prod-chain-09-changelog.png'), full_page=True)
+        print('✓ 更新日志独立页签')
 
         if errors:
             print('!! 页面错误:')

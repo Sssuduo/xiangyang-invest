@@ -1,11 +1,12 @@
 """产业链招商 —— 数据模型
 
 农高区（襄州片区）企业产业链图谱分析：
-- chain_nodes       产业链环节本体（上游/中游/下游/平台支撑）
-- chain_enterprises 企业主数据（本次分析范围：襄阳国家农高区企业统计表 62 家）
+- chain_nodes       产业链环节本体（层级 → 大类 → 环节 三级结构）
+- chain_enterprises 企业主数据（90 家 = 襄州区属地 62 + 东津新区 28）
 - chain_gaps        共性配套缺口（含优先级六因子得分）
-- chain_targets     目标企业候选（联网采集，保留来源链接）
+- chain_targets     目标企业候选（联网采集，保留多个来源链接）
 - chain_advice      招商建议（文字材料）
+- chain_changelog   更新日志（修改内容 + 风险提示 + 下一步工作）
 
 优先级六因子（总分 100）：
   F1 需求刚性 25 / F2 支撑企业数 20 / F3 本地缺失度 20
@@ -17,13 +18,14 @@ from extensions import db
 
 
 class ChainNode(db.Model):
-    """产业链环节本体"""
+    """产业链环节本体（层级 → 大类 → 环节 三级结构）"""
     __tablename__ = 'chain_nodes'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(64), nullable=False, unique=True)
     name = db.Column(db.String(128), nullable=False)
-    layer = db.Column(db.String(32), nullable=False, default='上游')  # 上游/中游/下游/平台
+    layer = db.Column(db.String(32), nullable=False, default='上游')  # 上游/中游/下游/平台/其他
+    group_name = db.Column(db.String(64), default='')   # 所属大类
     sort_order = db.Column(db.Integer, default=0)
     description = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -35,8 +37,48 @@ class ChainNode(db.Model):
             'code': self.code,
             'name': self.name,
             'layer': self.layer,
+            'group_name': self.group_name or '',
             'sort_order': self.sort_order,
             'description': self.description or '',
+        }
+
+
+class ChainChangelog(db.Model):
+    """更新日志（每次更新的修改内容 + 风险提示 + 下一步工作）"""
+    __tablename__ = 'chain_changelog'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    version = db.Column(db.String(32), nullable=False)      # 版本号
+    log_date = db.Column(db.String(16), default='')         # 更新日期
+    title = db.Column(db.String(255), default='')           # 更新标题
+    summary = db.Column(db.Text, default='')                # 总体说明
+    changes = db.Column(db.Text, default='[]')              # 修改内容（JSON 数组）
+    risks = db.Column(db.Text, default='[]')                # 风险提示（JSON 数组）
+    next_steps = db.Column(db.Text, default='[]')           # 下一步工作（JSON 数组）
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        import json
+
+        def _load(v):
+            try:
+                arr = json.loads(v) if v else []
+                return arr if isinstance(arr, list) else []
+            except Exception:
+                return []
+
+        return {
+            'id': self.id,
+            'version': self.version or '',
+            'log_date': self.log_date or '',
+            'title': self.title or '',
+            'summary': self.summary or '',
+            'changes': _load(self.changes),
+            'risks': _load(self.risks),
+            'next_steps': _load(self.next_steps),
+            'sort_order': self.sort_order or 0,
         }
 
 
@@ -53,6 +95,8 @@ class ChainEnterprise(db.Model):
     is_hightech = db.Column(db.Boolean, default=False)     # 高企
     leader_level = db.Column(db.String(255), default='')   # 龙头/资质称号
     is_scale = db.Column(db.Boolean, default=False)        # 规上
+    is_smei = db.Column(db.Boolean, default=False)         # 专精特新
+    is_kexiao = db.Column(db.Boolean, default=False)       # 科小入库
     region = db.Column(db.String(128), default='')         # 属地
     basis = db.Column(db.Text, default='')                 # 环节归类依据
     source = db.Column(db.String(128), default='襄阳国家农高区企业情况统计表')
@@ -95,6 +139,8 @@ class ChainEnterprise(db.Model):
             'is_hightech': bool(self.is_hightech),
             'leader_level': self.leader_level or '',
             'is_scale': bool(self.is_scale),
+            'is_smei': bool(self.is_smei),
+            'is_kexiao': bool(self.is_kexiao),
             'region': self.region or '',
             'basis': self.basis or '',
             'source': self.source or '',
@@ -187,6 +233,7 @@ class ChainTarget(db.Model):
     scale = db.Column(db.String(255), default='')
     listed = db.Column(db.String(128), default='')         # 上市情况
     source_url = db.Column(db.String(512), default='')
+    source_links = db.Column(db.Text, default='[]')         # 多个来源链接（JSON 数组，含小标题）
     evidence = db.Column(db.Text, default='')              # 匹配理由
     scores = db.Column(db.Text, default='{}')              # 六因子分项（JSON）
     total_score = db.Column(db.Integer, default=0)
@@ -220,6 +267,12 @@ class ChainTarget(db.Model):
             ml = json.loads(self.match_local_chain) if self.match_local_chain else []
         except Exception:
             ml = []
+        try:
+            sl = json.loads(self.source_links) if self.source_links else []
+        except Exception:
+            sl = []
+        if not sl and self.source_url:
+            sl = [{'title': '信息来源', 'url': self.source_url}]
         return {
             'id': self.id,
             'gap_id': self.gap_id,
@@ -234,6 +287,7 @@ class ChainTarget(db.Model):
             'scale': self.scale or '',
             'listed': self.listed or '',
             'source_url': self.source_url or '',
+            'source_links': sl,
             'evidence': self.evidence or '',
             'scores': sc,
             'total_score': self.total_score or 0,

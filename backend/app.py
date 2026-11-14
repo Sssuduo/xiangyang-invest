@@ -118,6 +118,9 @@ def _run_auto_migrations(app):
             ('tags', 'TEXT'),
         ],
         # 产业链招商：企业实力五维 + 六因子评分 + 省外目标企业判据
+        'chain_nodes': [
+            ('group_name', 'VARCHAR(64)'),
+        ],
         'chain_enterprises': [
             ('district', 'VARCHAR(64)'),
             ('reg_capital', 'INTEGER'),
@@ -137,6 +140,8 @@ def _run_auto_migrations(app):
             ('strength', 'INTEGER'),
             ('strength_detail', 'TEXT'),
             ('strength_trend', 'VARCHAR(32)'),
+            ('is_smei', 'BOOLEAN'),
+            ('is_kexiao', 'BOOLEAN'),
         ],
         'chain_gaps': [
             ('f6', 'INTEGER'),
@@ -160,6 +165,7 @@ def _run_auto_migrations(app):
             ('signed_deal', 'TEXT'),
             ('strength', 'INTEGER'),
             ('confidence', 'VARCHAR(16)'),
+            ('source_links', 'TEXT'),
         ],
         # 后续如有新增字段，在此追加即可
     }
@@ -173,6 +179,7 @@ def _run_auto_migrations(app):
         'chain_gaps',
         'chain_targets',
         'chain_advice',
+        'chain_changelog',
     ]
 
     # 表名 → 模型映射（AUTO_CREATE_TABLES 中的表统一走 db.create_all 的对应模型）
@@ -183,6 +190,7 @@ def _run_auto_migrations(app):
         'chain_gaps': 'models.chain:ChainGap',
         'chain_targets': 'models.chain:ChainTarget',
         'chain_advice': 'models.chain:ChainAdvice',
+        'chain_changelog': 'models.chain:ChainChangelog',
     }
 
     with app.app_context():

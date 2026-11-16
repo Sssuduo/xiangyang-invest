@@ -524,20 +524,45 @@
 
               <!-- 目标企业表格：置于卡片下半部，默认收起，可单独展开/收起 -->
               <div class="gap-targets" @click.stop>
-                <button type="button" class="gap-targets-toggle" @click="toggleGapTargets(gap.id)">
-                  <el-icon><Grid /></el-icon>
-                  <span>目标企业 {{ gap.target_count }} 家</span>
-                  <el-icon class="gap-targets-arrow" :class="{ open: isGapTargetsExpanded(gap.id) }">
-                    <ArrowDown />
-                  </el-icon>
-                </button>
+                <div class="gap-targets-bar">
+                  <button type="button" class="gap-targets-toggle" @click="toggleGapTargets(gap.id)">
+                    <el-icon><Grid /></el-icon>
+                    <span>目标企业 {{ gap.target_count }} 家</span>
+                    <el-icon class="gap-targets-arrow" :class="{ open: isGapTargetsExpanded(gap.id) }">
+                      <ArrowDown />
+                    </el-icon>
+                  </button>
+                  <el-button
+                    size="small" :icon="Download" class="gap-targets-export"
+                    @click.stop="exportGapTargets(gap)"
+                  >
+                    导出目标企业
+                  </el-button>
+                </div>
                 <el-table
                   v-if="isGapTargetsExpanded(gap.id)"
                   :data="gap.target_list || []"
                   border size="small" class="gap-target-table"
                 >
-                  <el-table-column prop="name" label="目标企业" min-width="190" show-overflow-tooltip />
-                  <el-table-column label="所在地" width="150" show-overflow-tooltip>
+                  <el-table-column label="目标企业" min-width="150" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <span class="gap-target-name" @click="showTargetDetail(row)">{{ row.name }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="符合状态" width="104" align="center">
+                    <template #default="{ row }">
+                      <el-select
+                        :model-value="row.review_status" size="small"
+                        :disabled="!canEdit"
+                        @change="(v) => handleReviewChange(row, v)"
+                      >
+                        <el-option label="待复核" value="待复核" />
+                        <el-option label="已复核" value="已复核" />
+                        <el-option label="已排除" value="已排除" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="所在地" width="140" show-overflow-tooltip>
                     <template #default="{ row }">
                       <span>{{ [row.province, row.city].filter(Boolean).join(' · ') || '—' }}</span>
                     </template>
@@ -562,12 +587,12 @@
                       <span v-else>—</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="落地形式" min-width="260" show-overflow-tooltip>
+                  <el-table-column label="落地形式" min-width="220" show-overflow-tooltip>
                     <template #default="{ row }">
                       <span>{{ row.landing_form || '—' }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="匹配分" width="76" align="center" sortable :sort-by="row => row.total_score">
+                  <el-table-column label="匹配分" width="90" align="center" sortable :sort-by="row => row.total_score">
                     <template #default="{ row }">
                       <span class="gap-target-score">{{ row.total_score }}</span>
                     </template>
@@ -575,6 +600,11 @@
                   <el-table-column label="实力" width="66" align="center" sortable :sort-by="row => row.strength">
                     <template #default="{ row }">
                       <span :style="{ color: strengthColor(row.strength), fontWeight: 600 }">{{ row.strength }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="72" align="center" fixed="right">
+                    <template #default="{ row }">
+                      <el-button size="small" link type="primary" @click="showTargetDetail(row)">详情</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -678,6 +708,11 @@
             class="target-table"
           >
             <el-table-column prop="name" label="目标企业" min-width="190" fixed="left" show-overflow-tooltip />
+            <el-table-column label="所在地" width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span>{{ [row.province, row.city].filter(Boolean).join(' · ') || row.region || '—' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="gap_title" label="对应缺口" min-width="150" show-overflow-tooltip />
             <el-table-column label="缺口分档" width="90" align="center">
               <template #default="{ row }">
@@ -697,22 +732,6 @@
             <el-table-column label="所属环节" width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 <span>{{ row.node_name || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="省份" width="80" align="center">
-              <template #default="{ row }">
-                <span v-if="row.province" class="prov-tag">{{ row.province }}</span>
-                <span v-else>—</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="地域类型" width="120" align="center">
-              <template #default="{ row }">
-                <span
-                  v-if="row.region_type"
-                  class="region-type-tag"
-                  :style="{ background: (REGION_COLORS[row.region_type] || '#909399') + '1f', color: REGION_COLORS[row.region_type] || '#909399' }"
-                >{{ row.region_type }}</span>
-                <span v-else>—</span>
               </template>
             </el-table-column>
             <el-table-column label="链作用" width="90" align="center">
@@ -735,7 +754,6 @@
                 <span v-else>—</span>
               </template>
             </el-table-column>
-            <el-table-column prop="region" label="所在地" width="120" show-overflow-tooltip />
             <el-table-column prop="products" label="主营方向" min-width="170" show-overflow-tooltip />
             <el-table-column label="落地形式" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
@@ -757,7 +775,7 @@
                 >{{ row.strength ?? '—' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="复核状态" width="100" align="center">
+            <el-table-column label="符合状态" width="104" align="center">
               <template #default="{ row }">
                 <el-select
                   :model-value="row.review_status" size="small"
@@ -770,14 +788,9 @@
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right" align="center">
+            <el-table-column label="操作" width="80" fixed="right" align="center">
               <template #default="{ row }">
                 <el-button size="small" link type="primary" @click="showTargetDetail(row)">详情</el-button>
-                <el-button
-                  size="small" link type="warning"
-                  v-if="canConvert"
-                  @click="handleConvert(row)"
-                >转为线索</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1006,7 +1019,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   Share, Connection, Star, Warning, Aim, OfficeBuilding, Grid, DataAnalysis,
   Document, SetUp, WarningFilled, ChatDotSquare, Search, InfoFilled, Files,
@@ -1375,7 +1388,6 @@ const selectedNodeName = computed(() => {
 })
 
 const canEdit = computed(() => businessAuth.hasPermission('chain', 'edit'))
-const canConvert = computed(() => businessAuth.hasPermission('chain', 'convert'))
 
 function levelColor(level) {
   return LEVEL_COLORS[level] || '#909399'
@@ -1585,7 +1597,24 @@ function toggleAllGapTargets() {
   }
 }
 
-function showTargetDetail(row) {
+/**
+ * 打开目标企业详情抽屉
+ * 缺口卡片内嵌表格只带精简字段，详情统一按 id 回后端取完整数据，
+ * 保证两个入口（缺口卡片 / 目标企业库）看到的是同一份内容。
+ */
+async function showTargetDetail(row) {
+  if (!row || !row.id) return
+  try {
+    const res = await chainApi.getTarget(row.id)
+    if (res.code === 0) {
+      currentTarget.value = res.data
+      detailVisible.value = true
+      return
+    }
+  } catch (err) {
+    ElMessage.error(err.message || '加载目标企业详情失败')
+    return
+  }
   currentTarget.value = row
   detailVisible.value = true
 }
@@ -1595,29 +1624,38 @@ async function handleReviewChange(row, status) {
     const res = await chainApi.updateReview(row.id, status)
     if (res.code === 0) {
       row.review_status = status
-      ElMessage.success('复核状态已更新')
+      // 缺口卡片内嵌表格与目标企业库是两份数据源，同步刷新避免状态显示不一致
+      syncReviewStatus(row.id, status)
+      ElMessage.success('符合状态已更新')
     }
   } catch (err) {
     ElMessage.error(err.message || '更新失败')
   }
 }
 
-async function handleConvert(row) {
-  try {
-    await ElMessageBox.confirm(
-      `确认将「${row.name}」转为招商线索？将进入「招商线索研判」流程。`,
-      '转为招商线索',
-      { type: 'warning', confirmButtonText: '确认转换', cancelButtonText: '取消' }
-    )
-  } catch { return }
-
-  try {
-    const res = await chainApi.convertTarget(row.id)
-    if (res.code === 0) {
-      ElMessage.success(res.message || '已转为招商线索')
+/** 把复核状态同步到目标企业库列表与各缺口卡片的内嵌表格 */
+function syncReviewStatus(targetId, status) {
+  const patch = (list) => {
+    for (const t of (list || [])) {
+      if (t.id === targetId) {
+        t.review_status = status
+        return true
+      }
     }
+    return false
+  }
+  patch(targets.value)
+  for (const g of gaps.value) patch(g.target_list)
+}
+
+/** 导出缺口卡片内的目标企业清单（九列口径） */
+async function exportGapTargets(gap) {
+  try {
+    const blob = await chainApi.exportCsv('gap_targets', { gap_id: gap.id })
+    downloadBlob(blob, `产业链招商-缺口目标企业-${gap.title}.csv`)
+    ElMessage.success('导出成功')
   } catch (err) {
-    ElMessage.error(err.message || '转换失败')
+    ElMessage.error(err.message || '导出失败')
   }
 }
 
@@ -1629,6 +1667,7 @@ async function handleExportCsv(dataset) {
       enterprises: '环节供给总表',
       gaps: '产业链缺口表',
       targets: '目标企业清单',
+      gap_targets: '缺口目标企业清单',
       changelog: '更新日志',
     }
     downloadBlob(blob, `产业链招商-${names[dataset]}.csv`)
@@ -2096,6 +2135,10 @@ watch(showGapRadar, (val) => {
 
 /* 缺口卡片下半部分：目标企业表格（默认收起） */
 .gap-targets { margin-top: 10px; border-top: 1px dashed #ebeef5; padding-top: 8px; }
+/* 表格工具行：左侧展开/收起，右侧导出 */
+.gap-targets-bar { display: flex; align-items: center; gap: 10px; }
+.gap-targets-bar .gap-targets-toggle { flex: 1; min-width: 0; }
+.gap-targets-export { flex-shrink: 0; }
 .gap-targets-toggle {
   display: flex; align-items: center; gap: 6px; width: 100%;
   background: none; border: none; padding: 3px 2px; cursor: pointer;
@@ -2109,6 +2152,9 @@ watch(showGapRadar, (val) => {
 .gap-target-table :deep(.el-table__cell) { padding: 5px 0; }
 .gap-target-table :deep(.el-table th.el-table__cell) { background: #f7f9fc; }
 .gap-target-score { font-weight: 700; color: #1a3a5c; }
+/* 目标企业名称可点击打开详情抽屉 */
+.gap-target-name { color: #2b7fd4; cursor: pointer; }
+.gap-target-name:hover { text-decoration: underline; }
 
 /* 图谱大类标题条 */
 .group-bar-text { font-size: 12px; font-weight: 700; }

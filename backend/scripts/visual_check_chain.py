@@ -267,18 +267,75 @@ export default defineConfig({
             single_probe = page.evaluate("""() => {
                 const tables = document.querySelectorAll('.gap-target-table');
                 const first = tables[0];
+                const allBtns = [...document.querySelectorAll('.gap-target-table .el-button')];
                 return {
                     tables: tables.length,
                     rows: first ? first.querySelectorAll('tbody tr').length : 0,
                     headers: first ? [...first.querySelectorAll('thead th')].map(h => h.innerText.trim()) : [],
+                    exportBtns: document.querySelectorAll('.gap-targets-export').length,
+                    detailBtns: first ? first.querySelectorAll('tbody .el-button').length : 0,
+                    statusSelects: first ? first.querySelectorAll('tbody .el-select').length : 0,
+                    convertBtns: allBtns.filter(b => b.innerText.includes('转为线索')).length,
                 };
             }""")
             print('单张展开探针:', single_probe)
             assert single_probe['tables'] == 1, f'单独展开应只渲染 1 张表格：{single_probe["tables"]}'
             assert single_probe['rows'] == 20, f'缺口 1 应有 20 行目标企业：{single_probe["rows"]}'
             assert any('目标企业' in h for h in single_probe['headers']), '表格缺少目标企业列'
+            assert any('符合状态' in h for h in single_probe['headers']), '表格缺少符合状态列'
+            assert any('操作' in h for h in single_probe['headers']), '表格缺少操作列'
+            assert single_probe['exportBtns'] == 18, \
+                f'导出按钮应每张卡片一个：{single_probe["exportBtns"]}'
+            assert single_probe['detailBtns'] == 20, \
+                f'每行应有 1 个详情按钮：{single_probe["detailBtns"]}'
+            assert single_probe['statusSelects'] == 20, \
+                f'每行应有 1 个符合状态下拉：{single_probe["statusSelects"]}'
+            assert single_probe['convertBtns'] == 0, '内嵌表格不应出现「转为线索」按钮'
             shots.append(('02c-gap-targets-single', OUT + '/chain-02c-gap-targets-single.png'))
             page.screenshot(path=shots[-1][1], full_page=False)
+
+            # ---- 缺口卡片内嵌表格：点击目标企业名称打开详情抽屉 ----
+            page.locator('.gap-target-name').first.click()
+            page.wait_for_timeout(2000)
+            gap_drawer_probe = page.evaluate("""() => {
+                const drawer = document.querySelector('.chain-drawer');
+                const body = document.querySelector('.chain-drawer .el-drawer__body');
+                if (!body) return null;
+                return {
+                    open: !!drawer,
+                    text: body.innerText.slice(0, 400),
+                    hasSixFactor: body.innerText.includes('六因子匹配得分'),
+                    hasStrength: body.innerText.includes('企业实力'),
+                    hasSources: body.innerText.includes('来源'),
+                    sourceCount: document.querySelectorAll('.chain-drawer .source-item').length,
+                };
+            }""")
+            print('缺口卡片详情抽屉探针:', gap_drawer_probe)
+            assert gap_drawer_probe, '点击目标企业名称未打开详情抽屉'
+            assert gap_drawer_probe['hasSixFactor'], '缺口抽屉缺六因子得分区块'
+            assert gap_drawer_probe['hasStrength'], '缺口抽屉缺企业实力区块'
+            assert gap_drawer_probe['sourceCount'] >= 3, \
+                f'缺口抽屉来源链接应多条（≥3）：{gap_drawer_probe["sourceCount"]}'
+            shots.append(('02c2-gap-detail', OUT + '/chain-02c2-gap-detail.png'))
+            page.screenshot(path=shots[-1][1], full_page=False)
+            page.keyboard.press('Escape')
+            page.wait_for_timeout(900)
+
+            # ---- 缺口卡片表格右上角导出（九列口径）----
+            with page.expect_download(timeout=30000) as dl_info:
+                page.locator('.gap-targets-export').first.click()
+            _dl = dl_info.value
+            _csv = _dl.path()
+            with open(_csv, 'rb') as f:
+                _txt = f.read().decode('utf-8-sig')
+            _lines = [x for x in _txt.split('\r\n') if x.strip()]
+            _hdr = _lines[2] if len(_lines) > 2 else ''
+            for _h in ('目标企业', '产业类别', '产业环节', '对应缺口', '地址',
+                       '可对接本地链主', '注册资本(万元)', '近三年营收', '规模资质'):
+                assert _h in _hdr, f'导出表头缺「{_h}」：{_hdr}'
+            assert len(_lines) == 20 + 3, \
+                f'缺口 1 导出应为 20 家 + 3 行表头，实际 {len(_lines)} 行'
+            print(f'[导出] 缺口卡片下载成功：{_dl.suggested_filename}（{len(_lines)} 行）✓')
 
             # 全部展开
             btn_exp = page.locator('.section-header .el-button', has_text='全部展开目标企业').first
@@ -337,6 +394,35 @@ export default defineConfig({
             page.wait_for_timeout(1500)
             shots.append(('03-target', OUT + '/chain-03-target.png'))
             page.screenshot(path=shots[-1][1], full_page=True)
+
+            # 目标企业库列结构：去掉省份/地域类型，所在地置于第二列，转为线索入口下线
+            lib_probe = page.evaluate("""() => {
+                const root = document.querySelector('.target-table');
+                if (!root) return null;
+                const headers = [...root.querySelectorAll('thead th')]
+                    .map(h => h.innerText.trim()).filter(Boolean);
+                const btns = [...root.querySelectorAll('.el-button')].map(b => b.innerText.trim());
+                return {
+                    headers,
+                    firstCol: headers[0] || '',
+                    secondCol: headers[1] || '',
+                    hasProvince: headers.some(h => h.includes('省份')),
+                    hasRegionType: headers.some(h => h.includes('地域类型')),
+                    hasStatus: headers.some(h => h.includes('符合状态')),
+                    convertBtns: btns.filter(b => b.includes('转为线索')).length,
+                };
+            }""")
+            print('目标企业库列结构探针:', lib_probe)
+            assert lib_probe, '未找到目标企业库表格'
+            assert lib_probe['firstCol'] == '目标企业', \
+                f'首列应为「目标企业」：{lib_probe["firstCol"]}'
+            assert lib_probe['secondCol'] == '所在地', \
+                f'第二列应为「所在地」：{lib_probe["secondCol"]}'
+            assert not lib_probe['hasProvince'], '「省份」列应已去掉'
+            assert not lib_probe['hasRegionType'], '「地域类型」列应已去掉'
+            assert lib_probe['hasStatus'], '缺少「符合状态」列'
+            assert lib_probe['convertBtns'] == 0, '「转为线索」按钮应已下线'
+            print('列序:', ' | '.join(lib_probe['headers']))
 
             # 目标企业库：点击「省外企业」快捷筛选（数量从概览接口动态取，避免硬编码随数据漂移）
             outprov_expect = page.evaluate("""async () => {

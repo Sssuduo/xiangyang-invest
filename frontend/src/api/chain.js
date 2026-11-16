@@ -63,6 +63,14 @@ export const chainApi = {
   },
 
   /**
+   * 目标企业详情（含环节与缺口信息）
+   * @param {Number} id - 目标企业ID
+   */
+  getTarget(id) {
+    return request.get(`/chain/targets/${id}`)
+  },
+
+  /**
    * 将目标企业转为招商线索
    * @param {Number} id - 目标企业ID
    */
@@ -81,10 +89,14 @@ export const chainApi = {
 
   /**
    * 导出 CSV（带 BOM，Excel 直接打开）
-   * @param {String} dataset - enterprises / gaps / targets / changelog
+   * @param {String} dataset - enterprises / gaps / targets / gap_targets / changelog
+   * @param {Object} params - 附加查询参数，如 { gap_id: 1 } 导出单个缺口的目标企业
    */
-  async exportCsv(dataset) {
-    const response = await fetch(`/api/chain/export/${dataset}.csv`, {
+  async exportCsv(dataset, params) {
+    const query = (params && Object.keys(params).length)
+      ? '?' + new URLSearchParams(params).toString()
+      : ''
+    const response = await fetch(`/api/chain/export/${dataset}.csv${query}`, {
       method: 'GET',
       credentials: 'include',
     })

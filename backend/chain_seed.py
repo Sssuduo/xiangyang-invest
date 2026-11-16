@@ -109,12 +109,20 @@ def _need_rebuild():
     advice_list = _load('advice.json')
     if ChainAdvice.query.count() != len(advice_list):
         return True
-    db_digest = hashlib.md5(''.join(
-        (a.content or '') for a in ChainAdvice.query.order_by(ChainAdvice.id).all()
-    ).encode('utf-8')).hexdigest()
-    seed_digest = hashlib.md5(''.join(
-        (a.get('content') or '') for a in advice_list
-    ).encode('utf-8')).hexdigest()
+    # 比对内容 + kv + gap_id + sort_order：任一变化都需重建
+    def _advice_digest(rows, seed=False):
+        buf = []
+        for a in rows:
+            if seed:
+                buf.append('%s|%s|%s|%s' % (a.get('content') or '', a.get('kv') or '',
+                                            a.get('gap_id'), a.get('sort_order', 0)))
+            else:
+                buf.append('%s|%s|%s|%s' % (a.content or '', a.kv or '',
+                                            a.gap_id, a.sort_order or 0))
+        return hashlib.md5(''.join(buf).encode('utf-8')).hexdigest()
+
+    db_digest = _advice_digest(ChainAdvice.query.order_by(ChainAdvice.sort_order).all())
+    seed_digest = _advice_digest(advice_list, seed=True)
     if db_digest != seed_digest:
         logger.info('[产业链招商] 招商建议内容与种子不一致，触发重建')
         return True
@@ -223,7 +231,8 @@ def seed_chain_data(app):
         for a in advice:
             db.session.add(ChainAdvice(
                 gap_id=a['gap_id'], title=a['title'], content=a['content'],
-                kv=a['kv'], sort_order=a['gap_id']))
+                # 排序用 advice.json 的显式 sort_order（gap_id 可能为 -1，不能当序号用）
+                kv=a['kv'], sort_order=a.get('sort_order', 0)))
 
         for i, c in enumerate(changelog, 1):
             db.session.add(ChainChangelog(

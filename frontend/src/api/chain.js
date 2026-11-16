@@ -49,6 +49,13 @@ export const chainApi = {
   },
 
   /**
+   * 评判规则：优先级六因子 + 企业实力五维 + 链作用与投资可行性判定口径
+   */
+  getRules() {
+    return request.get('/chain/rules')
+  },
+
+  /**
    * 招商建议
    */
   getAdvice() {

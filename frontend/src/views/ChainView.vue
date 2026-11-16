@@ -322,83 +322,8 @@
 
         <!-- ========== 页签二：缺口分析 ========== -->
         <el-tab-pane label="缺口与优先级" name="gap">
-          <!-- 优先级规则可视化 -->
-          <div class="section-header">
-            <el-icon class="section-icon"><SetUp /></el-icon>
-            <span class="section-title">优先级评分规则（六因子）</span>
-            <span class="section-extra">总分 = 六因子加权合计，满分 100 分</span>
-          </div>
-          <div class="rules-panel">
-            <div class="rule-factors">
-              <div v-for="f in ruleFactors" :key="f.key" class="factor-item">
-                <div class="factor-head">
-                  <span class="factor-name">{{ f.name }}</span>
-                  <span class="factor-weight">{{ f.max }} 分</span>
-                </div>
-                <div class="factor-bar">
-                  <div class="factor-bar-fill" :style="{ width: (f.max / 25 * 100) + '%' }" />
-                </div>
-                <div class="factor-desc">{{ f.desc }}</div>
-              </div>
-            </div>
-            <div class="rule-levels">
-              <div v-for="lv in ruleLevels" :key="lv.level" class="level-item">
-                <span class="level-badge" :style="{ background: lv.color }">{{ lv.level }}</span>
-                <div class="level-body">
-                  <span class="level-range">{{ lv.range }}</span>
-                  <span class="level-desc">{{ lv.desc }}</span>
-                </div>
-              </div>
-              <div class="veto-rule">
-                <el-icon><WarningFilled /></el-icon>
-                <span>{{ ruleVeto }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 企业实力五维（F6 因子内部构成） -->
-          <div class="section-header">
-            <el-icon class="section-icon"><TrendCharts /></el-icon>
-            <span class="section-title">企业实力评价（五维，用于 F6 因子）</span>
-            <span class="section-extra">全部基于公开工商与财务信息，查不到即置空，不做推测</span>
-          </div>
-          <div class="strength-panel">
-            <div v-for="s in ruleStrengthFactors" :key="s.key" class="strength-item">
-              <div class="strength-head">
-                <span class="strength-name">{{ s.name }}</span>
-                <span class="strength-weight">{{ s.max }} 分</span>
-              </div>
-              <div class="factor-bar">
-                <div class="factor-bar-fill strength-fill" :style="{ width: (s.max / 25 * 100) + '%' }" />
-              </div>
-              <div class="strength-desc">{{ s.desc }}</div>
-            </div>
-          </div>
-
-          <!-- 链作用 + 投资可行性 判定口径 -->
-          <div class="section-header">
-            <el-icon class="section-icon"><Guide /></el-icon>
-            <span class="section-title">链作用与投资可行性判定口径</span>
-            <span class="section-extra">判断引入后能否补链、延链、强链</span>
-          </div>
-          <div class="role-fit-panel">
-            <div class="role-block">
-              <div class="block-title">链作用三分类</div>
-              <div v-for="r in ruleChainRoles" :key="r.role" class="role-item">
-                <span class="role-badge" :style="{ background: r.color }">{{ r.role }}</span>
-                <span class="role-desc">{{ r.desc }}</span>
-                <span class="role-count">{{ (chainRoleStats.find(x => x.role === r.role) || {}).count || 0 }} 家</span>
-              </div>
-            </div>
-            <div class="role-block">
-              <div class="block-title">投资可行性分档</div>
-              <div v-for="f in ruleInvestFit" :key="f.level" class="role-item">
-                <span class="role-badge" :style="{ background: f.color }">{{ f.level }}</span>
-                <span class="role-desc">{{ f.desc }}</span>
-                <span class="role-count">{{ (fitStats.find(x => x.level === f.level) || {}).count || 0 }} 家</span>
-              </div>
-            </div>
-          </div>
+          <!-- 评分规则（六因子 / 企业实力五维 / 链作用与投资可行性判定口径）
+               已移至「评判规则」独立页签 -->
 
           <!-- 省外企业可获得性分布 -->
           <div class="section-header">
@@ -903,6 +828,185 @@
             <div v-if="!changelog.length" class="plain-text">暂无更新日志</div>
           </div>
         </el-tab-pane>
+
+        <!-- ========== 页签六：评判规则 ========== -->
+        <el-tab-pane label="评判规则" name="rules">
+          <!-- 口径总览 -->
+          <div class="rules-intro">
+            <div class="rules-intro-item">
+              <span class="ri-label">数据来源</span>
+              <span class="ri-text">
+                企业工商登记、年度报告与公开报道；查不到的字段一律按「无数据」取值，不做推测、不填 0
+              </span>
+            </div>
+            <div class="rules-intro-item">
+              <span class="ri-label">适用范围</span>
+              <span class="ri-text">
+                共性配套缺口 {{ rules.gap_count || 0 }} 项 · 目标企业 {{ rules.target_count || 0 }} 家 ·
+                本地企业 {{ rules.enterprise_count || 0 }} 家
+              </span>
+            </div>
+            <div class="rules-intro-item">
+              <span class="ri-label">评分函数</span>
+              <span class="ri-text">
+                仓内唯一来源 backend/chain_scoring.py，自检脚本逐家回算库内记录，差异为 0
+              </span>
+            </div>
+          </div>
+
+          <!-- 模块一：优先级评分规则（六因子） -->
+          <div class="section-header">
+            <el-icon class="section-icon"><SetUp /></el-icon>
+            <span class="section-title">优先级评分规则（六因子）</span>
+            <span class="section-extra">六个因子各按自身上限取值，用于缺口优先级与目标企业匹配总分</span>
+          </div>
+          <div class="rule-factor-grid">
+            <div v-for="f in ruleFactors" :key="f.key" class="rf-card">
+              <div class="rf-head">
+                <span class="rf-name">{{ f.name }}</span>
+                <span class="rf-max">{{ f.max }} 分</span>
+              </div>
+              <div class="factor-bar">
+                <div class="factor-bar-fill" :style="{ width: (f.max / 25 * 100) + '%' }" />
+              </div>
+              <div class="rf-weight">权重 {{ Math.round((f.weight || 0) * 100) }}%（目标企业匹配总分）</div>
+              <div class="rf-desc">{{ f.desc }}</div>
+              <div class="rf-basis">
+                <span class="rf-basis-label">判定依据</span>
+                <span>{{ f.basis }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 总分公式 -->
+          <div class="formula-list">
+            <div v-for="fm in ruleFormulas" :key="fm.name" class="formula-item">
+              <div class="formula-head">
+                <span class="formula-name">{{ fm.name }}</span>
+                <span class="formula-expr">{{ fm.expr }}</span>
+              </div>
+              <div class="formula-desc">{{ fm.desc }}</div>
+            </div>
+          </div>
+
+          <!-- 分档与否决规则 -->
+          <div class="rule-levels-row">
+            <div class="rule-levels">
+              <div v-for="lv in ruleLevels" :key="lv.level" class="level-item">
+                <span class="level-badge" :style="{ background: lv.color }">{{ lv.level }}</span>
+                <div class="level-body">
+                  <span class="level-range">{{ lv.range }}</span>
+                  <span class="level-desc">{{ lv.desc }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="veto-rule">
+              <el-icon><WarningFilled /></el-icon>
+              <span>{{ ruleVeto }}</span>
+            </div>
+          </div>
+
+          <!-- 模块二：企业实力评价（五维，用于 F6 因子） -->
+          <div class="section-header">
+            <el-icon class="section-icon"><TrendCharts /></el-icon>
+            <span class="section-title">企业实力评价（五维，用于 F6 因子）</span>
+            <span class="section-extra">
+              五维合计 100 分；下列为库内目标企业 {{ rules.target_count || 0 }} 家的实际取值分布
+            </span>
+          </div>
+          <div class="strength-grid">
+            <div v-for="s in ruleStrengthFactors" :key="s.key" class="st-card">
+              <div class="st-head">
+                <span class="st-name">{{ s.name }}</span>
+                <span class="st-max">{{ s.max }} 分</span>
+              </div>
+              <div class="factor-bar">
+                <div class="factor-bar-fill strength-fill" :style="{ width: (s.max / 25 * 100) + '%' }" />
+              </div>
+              <div class="st-brackets">{{ s.brackets }}</div>
+              <div class="rf-basis">
+                <span class="rf-basis-label">判定依据</span>
+                <span>{{ s.basis }}</span>
+              </div>
+              <div class="st-dist">
+                <div class="st-dist-title">
+                  实际取值分布
+                  <span class="st-dist-avg">平均 {{ dimAvg(s.key) }} 分</span>
+                </div>
+                <div v-for="d in dimDist(s.key)" :key="d.value" class="st-dist-row">
+                  <span class="st-dist-value">{{ d.value }} 分</span>
+                  <div class="st-dist-bar">
+                    <div
+                      class="st-dist-fill"
+                      :style="{ width: (d.count / (rules.target_count || 1) * 100) + '%' }"
+                    />
+                  </div>
+                  <span class="st-dist-count">{{ d.count }} 家</span>
+                </div>
+                <div v-if="!dimDist(s.key).length" class="plain-text">暂无数据</div>
+              </div>
+            </div>
+          </div>
+          <div class="strength-total">
+            目标企业 {{ rules.target_count || 0 }} 家平均实力
+            <b>{{ strengthAvgTarget }}</b> 分 ·
+            本地企业 {{ rules.enterprise_count || 0 }} 家平均实力
+            <b>{{ strengthAvgEnterprise }}</b> 分
+          </div>
+
+          <!-- 模块三：链作用与投资可行性判定口径 -->
+          <div class="section-header">
+            <el-icon class="section-icon"><Guide /></el-icon>
+            <span class="section-title">链作用与投资可行性判定口径</span>
+            <span class="section-extra">判断引入后能否补链、延链、强链，以及到襄州投资的落地概率</span>
+          </div>
+          <div class="role-fit-panel">
+            <div class="role-block">
+              <div class="block-title">链作用三分类</div>
+              <div v-for="r in ruleChainRoles" :key="r.role" class="role-item rule-item-detail">
+                <div class="role-line">
+                  <span class="role-badge" :style="{ background: r.color }">{{ r.role }}</span>
+                  <span class="role-desc">{{ r.desc }}</span>
+                  <span class="role-count">{{ roleCount(r.role) }} 家</span>
+                </div>
+                <div class="rf-basis">
+                  <span class="rf-basis-label">判定依据</span>
+                  <span>{{ r.basis }}</span>
+                </div>
+                <div class="rf-impact">{{ r.impact }}</div>
+              </div>
+            </div>
+            <div class="role-block">
+              <div class="block-title">投资可行性分档</div>
+              <div v-for="f in ruleInvestFit" :key="f.level" class="role-item rule-item-detail">
+                <div class="role-line">
+                  <span class="role-badge" :style="{ background: f.color }">{{ f.level }}</span>
+                  <span class="role-desc">{{ f.desc }}</span>
+                  <span class="role-count">{{ fitCount(f.level) }} 家</span>
+                </div>
+                <div class="rf-basis">
+                  <span class="rf-basis-label">判定依据</span>
+                  <span>{{ f.basis }}</span>
+                </div>
+                <div class="rf-impact">{{ f.impact }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 目标企业匹配总分取值口径 -->
+          <div class="section-header">
+            <el-icon class="section-icon"><DataAnalysis /></el-icon>
+            <span class="section-title">目标企业匹配总分取值口径</span>
+            <span class="section-extra">六因子先折算为百分制，再按权重加权得到匹配总分</span>
+          </div>
+          <el-table :data="ruleTargetScore" border size="small" class="target-score-table">
+            <el-table-column prop="name" label="因子" min-width="150" />
+            <el-table-column label="权重" width="100" align="center">
+              <template #default="{ row }">{{ Math.round((row.weight || 0) * 100) }}%</template>
+            </el-table-column>
+            <el-table-column prop="desc" label="取值口径" min-width="420" show-overflow-tooltip />
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -1170,12 +1274,45 @@ function fmtSeries(text) {
 }
 
 // ===== 计算属性 =====
-const ruleFactors = computed(() => overview.value.rules?.factors || [])
-const ruleLevels = computed(() => overview.value.rules?.levels || [])
-const ruleVeto = computed(() => overview.value.rules?.veto || '')
-const ruleStrengthFactors = computed(() => overview.value.rules?.strength_factors || [])
-const ruleChainRoles = computed(() => overview.value.rules?.chain_roles || [])
-const ruleInvestFit = computed(() => overview.value.rules?.invest_fit || [])
+// 评判规则页签的数据来自 /api/chain/rules（含判定依据与实际取值分布）
+const rules = ref({})
+const ruleFactors = computed(() => rules.value.factors || [])
+const ruleLevels = computed(() => rules.value.levels || [])
+const ruleVeto = computed(() => rules.value.veto || '')
+const ruleStrengthFactors = computed(() => rules.value.strength_factors || [])
+const ruleChainRoles = computed(() => rules.value.chain_roles || [])
+const ruleInvestFit = computed(() => rules.value.invest_fit || [])
+const ruleFormulas = computed(() => rules.value.formulas || [])
+const ruleTargetScore = computed(() => rules.value.target_score || [])
+const strengthAvgTarget = computed(() => rules.value.strength_stats?.target?.avg_total ?? 0)
+const strengthAvgEnterprise = computed(() => rules.value.strength_stats?.enterprise?.avg_total ?? 0)
+
+/** 某维度的实际取值分布（目标企业库口径） */
+function dimDist(key) {
+  const dims = rules.value.strength_stats?.target?.dimensions || []
+  const d = dims.find(x => x.key === key)
+  return d ? d.dist : []
+}
+
+/** 某维度的实际平均分 */
+function dimAvg(key) {
+  const dims = rules.value.strength_stats?.target?.dimensions || []
+  const d = dims.find(x => x.key === key)
+  return d ? d.avg : 0
+}
+
+/** 链作用家数 */
+function roleCount(role) {
+  const c = (rules.value.role_counts || []).find(x => x.role === role)
+  return c ? c.count : 0
+}
+
+/** 投资可行性家数 */
+function fitCount(level) {
+  const c = (rules.value.fit_counts || []).find(x => x.level === level)
+  return c ? c.count : 0
+}
+
 const regionStats = computed(() => overview.value.region_stats || [])
 const chainRoleStats = computed(() => overview.value.chain_role_stats || [])
 const fitStats = computed(() => overview.value.fit_stats || [])
@@ -1538,6 +1675,11 @@ async function fetchChangelog() {
   if (res.code === 0) changelog.value = res.data || []
 }
 
+async function fetchRules() {
+  const res = await chainApi.getRules()
+  if (res.code === 0) rules.value = res.data || {}
+}
+
 async function fetchNodeEnterprises() {
   entLoading.value = true
   try {
@@ -1554,7 +1696,7 @@ async function loadAll() {
   try {
     await Promise.all([
       fetchOverview(), fetchNodes(), fetchGaps(), fetchTargets(),
-      fetchAdvice(), fetchTargetFilters(), fetchChangelog(),
+      fetchAdvice(), fetchTargetFilters(), fetchChangelog(), fetchRules(),
     ])
     await fetchNodeEnterprises()
   } catch (err) {
@@ -2013,17 +2155,9 @@ watch(showGapRadar, (val) => {
 .layer-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
 .plain-text { color: #909399; font-size: 12px; }
 
-/* 规则面板 */
-.rules-panel { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; }
-@media (max-width: 1100px) { .rules-panel { grid-template-columns: 1fr; } }
-.rule-factors { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
-.factor-item { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 14px; }
-.factor-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.factor-name { font-size: 13px; font-weight: 600; color: #303133; }
-.factor-weight { font-size: 13px; font-weight: 700; color: #409eff; }
+/* 规则条（评判规则页签复用） */
 .factor-bar { height: 8px; background: #ebeef5; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
 .factor-bar-fill { height: 100%; background: linear-gradient(90deg, #5b9bd5, #409eff); border-radius: 4px; }
-.factor-desc { font-size: 12px; color: #909399; line-height: 1.6; }
 
 .rule-levels { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 14px; }
 .level-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
@@ -2184,17 +2318,8 @@ watch(showGapRadar, (val) => {
   font-size: 12px; font-weight: 600; text-align: center;
 }
 
-/* 企业实力五维面板 */
-.strength-panel {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px; margin-bottom: 6px;
-}
-.strength-item { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 14px; }
-.strength-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.strength-name { font-size: 13px; font-weight: 600; color: #303133; }
-.strength-weight { font-size: 13px; font-weight: 700; color: #14b8a6; }
+/* 企业实力五维配色（评判规则页签复用） */
 .factor-bar-fill.strength-fill { background: linear-gradient(90deg, #0d9488, #14b8a6); }
-.strength-desc { font-size: 12px; color: #909399; line-height: 1.6; }
 
 /* 链作用 / 投资可行性 判定面板 */
 .role-fit-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 6px; }
@@ -2210,6 +2335,79 @@ watch(showGapRadar, (val) => {
 }
 .role-desc { flex: 1; color: #606266; line-height: 1.6; }
 .role-count { flex-shrink: 0; color: #909399; font-weight: 600; }
+
+/* ===== 评判规则页签 ===== */
+.rules-intro {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;
+  background: #f7f9fc; border: 1px solid #ebeef5; border-radius: 8px; padding: 14px 16px;
+}
+.rules-intro-item { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 1.6; }
+.ri-label {
+  flex-shrink: 0; padding: 1px 8px; border-radius: 9px; font-size: 12px; font-weight: 600;
+  background: #e8f1fb; color: #2b7fd4; white-space: nowrap;
+}
+.ri-text { color: #606266; }
+
+/* 六因子卡片 */
+.rule-factor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.rf-card { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 14px; }
+.rf-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.rf-name { font-size: 13px; font-weight: 600; color: #303133; }
+.rf-max { font-size: 13px; font-weight: 700; color: #409eff; }
+.rf-weight { font-size: 11px; color: #909399; margin-bottom: 6px; }
+.rf-desc { font-size: 12px; color: #606266; line-height: 1.6; }
+.rf-basis {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ebeef5;
+  font-size: 12px; color: #606266; line-height: 1.6;
+}
+.rf-basis-label {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px;
+  background: #eef5fd; color: #2b7fd4; font-size: 11px; font-weight: 600;
+}
+.rf-impact { margin-top: 6px; font-size: 11px; color: #14b8a6; line-height: 1.6; }
+
+/* 总分公式 */
+.formula-list {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 14px;
+}
+.formula-item { background: #f0f7ff; border: 1px solid #d4e4f7; border-radius: 8px; padding: 12px 14px; }
+.formula-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.formula-name { font-size: 13px; font-weight: 700; color: #1a3a5c; }
+.formula-expr { font-family: Consolas, Monaco, monospace; font-size: 13px; color: #2b7fd4; font-weight: 600; }
+.formula-desc { font-size: 12px; color: #606266; line-height: 1.6; }
+
+/* 分档与否决规则 */
+.rule-levels-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 1100px) { .rule-levels-row { grid-template-columns: 1fr; } }
+.rule-levels-row .veto-rule { align-self: start; }
+
+/* 企业实力五维卡片 */
+.strength-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 14px; }
+.st-card { background: #fbfcfd; border: 1px solid #ebeef5; border-radius: 8px; padding: 12px 14px; }
+.st-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.st-name { font-size: 13px; font-weight: 600; color: #303133; }
+.st-max { font-size: 13px; font-weight: 700; color: #14b8a6; }
+.st-brackets { font-size: 11px; color: #909399; line-height: 1.6; margin: 4px 0 6px; }
+.st-dist { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #ebeef5; }
+.st-dist-title { font-size: 12px; font-weight: 600; color: #1a3a5c; margin-bottom: 6px; }
+.st-dist-avg { float: right; font-weight: 400; color: #909399; }
+.st-dist-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.st-dist-value { width: 48px; flex-shrink: 0; font-size: 11px; color: #606266; }
+.st-dist-bar { flex: 1; height: 6px; background: #ebeef5; border-radius: 3px; overflow: hidden; }
+.st-dist-fill { height: 100%; background: linear-gradient(90deg, #0d9488, #14b8a6); border-radius: 3px; }
+.st-dist-count { width: 44px; flex-shrink: 0; text-align: right; font-size: 11px; color: #909399; }
+.strength-total {
+  margin-top: 12px; font-size: 13px; color: #606266;
+  background: #f7f9fc; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 14px;
+}
+.strength-total b { color: #1a3a5c; font-size: 15px; }
+
+/* 链作用 / 可行性 明细 */
+.rule-item-detail { display: block; margin-bottom: 14px; }
+.rule-item-detail:last-child { margin-bottom: 0; }
+.role-line { display: flex; align-items: flex-start; gap: 9px; }
+.role-line .role-desc { flex: 1; }
+.target-score-table { margin-top: 4px; }
 
 /* 地域来源分布 */
 .region-panel {

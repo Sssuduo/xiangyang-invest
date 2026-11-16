@@ -102,7 +102,7 @@ def main():
 
         tabs = page.locator('.chain-tabs .el-tabs__item')
         print('页签数:', tabs.count())
-        assert tabs.count() == 5, f'页签应为 5 个（更新日志已独立）：{tabs.count()}'
+        assert tabs.count() == 6, f'页签应为 6 个（更新日志、评判规则各自独立）：{tabs.count()}'
         for idx, (name, fn) in enumerate([
             ('缺口与优先级', 'prod-chain-02-gap.png'),
             ('目标企业库', 'prod-chain-03-target.png'),
@@ -491,6 +491,44 @@ def main():
         assert log_probe['changeItems'] >= log_probe['inPane'] * 5, '更新日志修改内容条目偏少'
         page.screenshot(path=os.path.join(OUT, 'prod-chain-09-changelog.png'), full_page=True)
         print('✓ 更新日志独立页签')
+
+        # 评判规则页签（独立第 6 个页签）
+        tabs.nth(5).click()
+        page.wait_for_timeout(1500)
+        rules_probe = page.evaluate("""() => {
+            const pane = document.querySelector('.el-tab-pane[aria-hidden="false"]');
+            if (!pane) return null;
+            const txt = pane.innerText;
+            return {
+                factorCards: pane.querySelectorAll('.rf-card').length,
+                formulaCards: pane.querySelectorAll('.formula-item').length,
+                strengthCards: pane.querySelectorAll('.st-card').length,
+                distRows: pane.querySelectorAll('.st-dist-row').length,
+                roleItems: pane.querySelectorAll('.rule-item-detail').length,
+                basisLabels: pane.querySelectorAll('.rf-basis-label').length,
+                scoreTableRows: pane.querySelectorAll('.target-score-table tbody tr').length,
+                hasVeto: txt.includes('否决规则'),
+                hasTargetScore: txt.includes('目标企业匹配总分'),
+                adviceInPane: document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .advice-card').length,
+                overflow: [...pane.querySelectorAll('.rf-card, .st-card, .formula-item, .role-block')]
+                    .filter(el => el.scrollWidth > el.clientWidth + 2).length,
+            };
+        }""")
+        print('评判规则页探针:', rules_probe)
+        assert rules_probe, '评判规则页签未激活'
+        assert rules_probe['factorCards'] == 6, f'六因子卡片应为 6 个：{rules_probe["factorCards"]}'
+        assert rules_probe['formulaCards'] == 2, f'总分公式应为 2 套：{rules_probe["formulaCards"]}'
+        assert rules_probe['strengthCards'] == 5, f'企业实力五维卡片应为 5 个：{rules_probe["strengthCards"]}'
+        assert rules_probe['roleItems'] == 6, f'链作用与可行性条目应为 6 条：{rules_probe["roleItems"]}'
+        assert rules_probe['basisLabels'] == 17, f'判定依据应为 17 条：{rules_probe["basisLabels"]}'
+        assert rules_probe['distRows'] >= 10, '五维实际取值分布行数偏少'
+        assert rules_probe['scoreTableRows'] == 6, f'六因子口径表应为 6 行：{rules_probe["scoreTableRows"]}'
+        assert rules_probe['hasVeto'], '缺少否决规则'
+        assert rules_probe['hasTargetScore'], '缺少目标企业匹配总分口径'
+        assert rules_probe['adviceInPane'] == 0, '评判规则页签不应混入招商建议卡片'
+        assert rules_probe['overflow'] == 0, '评判规则卡片存在横向溢出'
+        page.screenshot(path=os.path.join(OUT, 'prod-chain-10-rules.png'), full_page=True)
+        print('✓ 评判规则独立页签')
 
         if errors:
             print('!! 页面错误:')

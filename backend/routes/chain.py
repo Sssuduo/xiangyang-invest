@@ -14,6 +14,7 @@ from flask import Blueprint, g, jsonify, request, send_file
 
 from models.chain import (ChainAdvice, ChainChangelog, ChainEnterprise, ChainGap,
                           ChainNode, ChainTarget)
+from chain_scoring import STRENGTH_MAX, score_strength
 from extensions import db
 from routes.business_auth import business_login_required, visitor_block
 
@@ -47,37 +48,118 @@ GROUP_COLORS = {
 }
 
 # 优先级六因子定义（供前端可视化规则表）
+# weight 为该因子在「目标企业匹配总分」中的加权系数；缺口优先级总分为六因子直接加总
 FACTOR_RULES = [
-    {'key': 'f1', 'name': '需求刚性', 'max': 25, 'desc': '本地企业对配套环节的采购/使用需求是否不可替代'},
-    {'key': 'f2', 'name': '支撑企业数', 'max': 20, 'desc': '提出该配套需求的企业数量与规模（支撑面）'},
-    {'key': 'f3', 'name': '本地缺失度', 'max': 20, 'desc': '本地该环节供给空缺程度，越空缺得分越高'},
-    {'key': 'f4', 'name': '链主牵引', 'max': 10, 'desc': '是否有本地链主企业明确提出并可带动配套落地'},
-    {'key': 'f5', 'name': '落地可行性', 'max': 10, 'desc': '承载条件、市场半径、政策与建设时序的可操作性'},
-    {'key': 'f6', 'name': '企业与承载实力', 'max': 15,
-     'desc': '相关企业综合实力：注册资本、近三年财报趋势、融资、投资、投资签约五维客观评分'},
+    {'key': 'f1', 'name': '需求刚性', 'max': 25, 'weight': 0.25,
+     'desc': '本地企业对配套环节的采购/使用需求是否不可替代',
+     'basis': '按提出需求的本地企业家数、采购或使用频次与不可替代程度打分；多家企业稳定外采、'
+              '且本地无同类替代供给时给高分'},
+    {'key': 'f2', 'name': '支撑企业数', 'max': 20, 'weight': 0.20,
+     'desc': '提出该配套需求的企业数量与规模（支撑面）',
+     'basis': '按本地提出该配套需求的企业家数打分（各缺口「支撑企业」字段即支撑面），'
+              '企业越多、规模越集中分数越高'},
+    {'key': 'f3', 'name': '本地缺失度', 'max': 20, 'weight': 0.20,
+     'desc': '本地该环节供给空缺程度，越空缺得分越高',
+     'basis': '按本地该环节实际供给家数与品类缺口打分：本地无主体、或仅单一品类供给的环节给高分'},
+    {'key': 'f4', 'name': '链主牵引', 'max': 10, 'weight': 0.10,
+     'desc': '是否有本地链主企业明确提出并可带动配套落地',
+     'basis': '按是否有本地链主明确提出需求并可带动配套落地打分；目标企业侧按可对接本地链主家数取值'
+              '（≥2 家 86 / 1 家 80 / 无 70）'},
+    {'key': 'f5', 'name': '落地可行性', 'max': 10, 'weight': 0.10,
+     'desc': '承载条件、市场半径、政策与建设时序的可操作性',
+     'basis': '按承载条件、市场半径、政策与建设时序打分；引入路径不在招商引资口径内的环节'
+              '（如市级统筹、基金方引进）大幅压低'},
+    {'key': 'f6', 'name': '企业与承载实力', 'max': 15, 'weight': 0.15,
+     'desc': '相关企业综合实力：注册资本、近三年财报趋势、融资、投资、投资签约五维客观评分',
+     'basis': '缺口侧按本地相关企业综合实力与承载条件折算为 0-15 分档值；'
+              '目标企业侧直接取企业实力五维总分（0-100）'},
 ]
 
 # 企业实力五维（F6 因子内部构成，供前端说明）
 STRENGTH_RULES = [
-    {'key': 'capital', 'name': '注册资本', 'max': 25, 'desc': '按注册资本规模分档：1 亿元以上 25 / 5000 万-1 亿 21 / 2000-5000 万 17 / 1000-2000 万 13 / 500-1000 万 9 / 500 万以下 5'},
-    {'key': 'revenue', 'name': '营收规模', 'max': 25, 'desc': '近三年营收最高年度折算：10 亿以上 25 / 5-10 亿 21 / 1-5 亿 17 / 3000 万-1 亿 13 / 1000-3000 万 9 / 1000 万以下 6'},
-    {'key': 'trend', 'name': '财报趋势', 'max': 15, 'desc': '增长 15 / 持平 10 / 下滑 4 / 无公开数据 8'},
-    {'key': 'funding', 'name': '融资与投资', 'max': 20, 'desc': '有股权融资 15 分；有对外投资再加 5 分，上限 20'},
-    {'key': 'signed', 'name': '投资签约', 'max': 15, 'desc': '已签约/开工/投产/落地 15 / 有投资记录 11 / 无 4'},
+    {'key': 'capital', 'name': '注册资本', 'max': 25,
+     'desc': '按注册资本规模分档：1 亿元以上 25 / 5000 万-1 亿 21 / 2000-5000 万 17 / 1000-2000 万 13 / 500-1000 万 9 / 500 万以下 5',
+     'brackets': '1 亿元以上 25 ｜ 5000 万-1 亿 21 ｜ 2000-5000 万 17 ｜ 1000-2000 万 13 ｜ 500-1000 万 9 ｜ 500 万以下 5 ｜ 未披露 8',
+     'basis': '取公开工商登记的注册资本（万元）直接分档；查不到按「未披露」记 8 分，不按 0 分处理'},
+    {'key': 'revenue', 'name': '营收规模', 'max': 25,
+     'desc': '近三年营收最高年度折算：10 亿以上 25 / 5-10 亿 21 / 1-5 亿 17 / 3000 万-1 亿 13 / 1000-3000 万 9 / 1000 万以下 6',
+     'brackets': '10 亿以上 25 ｜ 5-10 亿 21 ｜ 1-5 亿 17 ｜ 3000 万-1 亿 13 ｜ 1000-3000 万 9 ｜ 1000 万以下 6 ｜ 无公开营收 6',
+     'basis': '取近三年营收中最高的一年折算后分档；无公开营收数据按 6 分处理'},
+    {'key': 'trend', 'name': '财报趋势', 'max': 15,
+     'desc': '有公开财报数据（近三年营收或净利）10 / 无公开数据 8',
+     'brackets': '有公开财报数据 10 ｜ 无公开数据 8',
+     'basis': '以公开财报数据的有无判断可用性，不对未披露企业推测增速，故本维度实际只取 10 分与 8 分两档'},
+    {'key': 'funding', 'name': '融资与投资', 'max': 20,
+     'desc': '有股权融资 15 分；有对外投资再加 5 分，上限 20',
+     'brackets': '有股权融资且有对外投资 20 ｜ 仅股权融资 15 ｜ 无融资记录 5',
+     'basis': '依据公开披露的股权融资与对外投资信息判断，两者兼备取上限'},
+    {'key': 'signed', 'name': '投资签约', 'max': 15,
+     'desc': '已签约/开工/投产/落地 15 / 有投资记录 11 / 无 4',
+     'brackets': '已签约·开工·投产·落地 15 ｜ 有对外投资记录 11 ｜ 无 4',
+     'basis': '依据已公开的投资签约、开工或投产信息判断'},
 ]
 
 # 链作用定义（补链/延链/强链）
 CHAIN_ROLE_RULES = [
-    {'role': '补链', 'color': '#f56c6c', 'desc': '本地该环节完全缺失，引入即可补上空白'},
-    {'role': '延链', 'color': '#e6a23c', 'desc': '本地已有主体，可上规模或上品类'},
-    {'role': '强链', 'color': '#2f7f5f', 'desc': '可做本地链主，或与本地链主形成配套绑定'},
+    {'role': '补链', 'color': '#f56c6c',
+     'desc': '本地该环节完全缺失，引入即可补上空白',
+     'basis': '本地该环节无供给主体，或仅 1 家且品类单一、无法覆盖本地企业提出的多品类需求，'
+              '引入后直接补齐环节空白',
+     'impact': '匹配分 f1 取 90、f3 取 88（空白越大、引入价值越高）'},
+    {'role': '延链', 'color': '#e6a23c',
+     'desc': '本地已有主体，可上规模或上品类',
+     'basis': '本地已有 2 家及以上供给主体，引入后可在既有品类上扩规模、补品类，'
+              '或与本地主体形成错位竞争',
+     'impact': '匹配分 f1 取 80、f3 取 78'},
+    {'role': '强链', 'color': '#2f7f5f',
+     'desc': '可做本地链主，或与本地链主形成配套绑定',
+     'basis': '企业自身规模与品牌可支撑本地链主角色，或可与 2 家以上本地链主形成配套绑定'
+              '（可对接本地链主 ≥2 家）',
+     'impact': '匹配分 f1 取 86、f3 取 84'},
 ]
 
 # 投资可行性分档
 INVEST_FIT_RULES = [
-    {'level': '高', 'color': '#f56c6c', 'desc': '有异地扩产计划、已在中部布局或政府合作意愿明确，落地概率高'},
-    {'level': '中', 'color': '#e6a23c', 'desc': '具备扩张意愿或技术互补性，宜以分厂、区域仓配、技术输出等轻量形态切入'},
-    {'level': '低', 'color': '#909399', 'desc': '存在失信、立案、亏损等风险，或异地投资必要性弱，不列入主攻名单'},
+    {'level': '高', 'color': '#f56c6c',
+     'desc': '有异地扩产计划、已在中部布局或政府合作意愿明确，落地概率高',
+     'basis': '公开信息显示已有异地扩产计划、在中部设立产能或与地方签约合作，'
+              '且与本地原料、订单能直接闭合',
+     'impact': '匹配分 f2 取 84、f5 取 88'},
+    {'level': '中', 'color': '#e6a23c',
+     'desc': '具备扩张意愿或技术互补性，宜以分厂、区域仓配、技术输出等轻量形态切入',
+     'basis': '有扩张意愿或技术互补空间，但异地新增基地边际收益有限'
+              '（主业收缩、产能落点已定、利润对原料价格高度敏感等）',
+     'impact': '匹配分 f2 取 72、f5 取 70'},
+    {'level': '低', 'color': '#909399',
+     'desc': '存在失信、立案、亏损等风险，或异地投资必要性弱，不列入主攻名单',
+     'basis': '存在失信被执行、证监会立案、连续亏损、商誉减值、短期借款逾期等风险事项，'
+              '或异地投资必要性弱',
+     'impact': '匹配分 f2 取 55、f5 取 50'},
+]
+
+# 两套总分公式
+FORMULAS = [
+    {'name': '缺口优先级总分', 'expr': '总分 = F1 + F2 + F3 + F4 + F5 + F6',
+     'desc': '六个因子各按自身上限取值（25/20/20/10/10/15）后直接加总，满分 100 分；'
+             '分档为高 ≥80 / 中 60-79 / 低 <60'},
+    {'name': '目标企业匹配总分', 'expr': '匹配总分 = round(f1×0.25 + f2×0.20 + f3×0.20 + f4×0.10 + f5×0.10 + f6×0.15)',
+     'desc': '六因子先按目标企业口径折算为百分制，再按权重加权，满分 100 分'},
+]
+
+# 目标企业六因子取值口径（与 chain_scoring.target_scores 一致）
+TARGET_SCORE_RULES = [
+    {'key': 'f1', 'name': '需求刚性', 'weight': 0.25,
+     'desc': '按链作用取值：补链 90 / 延链 80 / 强链 86 / 其他 76'},
+    {'key': 'f2', 'name': '支撑企业数', 'weight': 0.20,
+     'desc': '按投资可行性取值：高 84 / 中 72 / 低 55'},
+    {'key': 'f3', 'name': '本地缺失度', 'weight': 0.20,
+     'desc': '按链作用取值：补链 88 / 延链 78 / 强链 84 / 其他 76'},
+    {'key': 'f4', 'name': '链主牵引', 'weight': 0.10,
+     'desc': '按可对接本地链主家数取值：≥2 家 86 / 1 家 80 / 无 70'},
+    {'key': 'f5', 'name': '落地可行性', 'weight': 0.10,
+     'desc': '按投资可行性取值：高 88 / 中 70 / 低 50 / 其他 65'},
+    {'key': 'f6', 'name': '企业与承载实力', 'weight': 0.15,
+     'desc': '直接取企业实力五维总分（0-100 分）'},
 ]
 
 LEVEL_RULES = [
@@ -486,6 +568,95 @@ def get_target_detail(target_id):
     d['gap_level'] = gap.level if gap else ''
     d['gap_score'] = gap.total_score if gap else 0
     return jsonify({'code': 0, 'data': d})
+
+
+@bp.route('/rules', methods=['GET'])
+@business_login_required
+def get_rules():
+    """评判规则：优先级六因子 + 企业实力五维 + 链作用与投资可行性判定口径
+
+    内容：
+    1. 缺口优先级六因子（含义、权重、判定依据）；
+    2. 企业实力五维（分档明细、判定依据）与两套总分公式；
+    3. 链作用三分类与投资可行性分档的判定依据及对匹配分的影响；
+    4. 企业实力五维的实际取值分布（用与入库同一套评分函数现算）。
+    """
+    targets = ChainTarget.query.all()
+    enterprises = ChainEnterprise.query.all()
+
+    def _rec(row):
+        return {
+            'reg_capital': row.reg_capital,
+            'revenue_3y': row.revenue_3y,
+            'netprofit_3y': row.netprofit_3y,
+            'funding': row.funding,
+            'investments': row.investments,
+            'signed_deal': row.signed_deal,
+        }
+
+    def _dim_stats(rows):
+        """五维实际取值分布（现算，不读缓存分数字段）"""
+        names = (('capital', '注册资本'), ('revenue', '营收规模'),
+                 ('trend', '财报趋势'), ('funding', '融资与投资'),
+                 ('signed', '投资签约'))
+        dist = {k: {} for k, _ in names}
+        totals = []
+        for r in rows:
+            total, det = score_strength(_rec(r))
+            totals.append(total)
+            for k, v in det.items():
+                dist[k][v] = dist[k].get(v, 0) + 1
+        dims = []
+        for k, name in names:
+            items = [{'value': v, 'count': c}
+                     for v, c in sorted(dist[k].items(), key=lambda x: -x[0])]
+            total_n = sum(dist[k].values()) or 1
+            dims.append({
+                'key': k, 'name': name, 'max': STRENGTH_MAX[k],
+                'avg': round(sum(v * c for v, c in dist[k].items()) / total_n, 1),
+                'dist': items,
+            })
+        return {
+            'dimensions': dims,
+            'count': len(rows),
+            'avg_total': round(sum(totals) / len(totals), 1) if totals else 0,
+        }
+
+    role_counts = []
+    for r in ('补链', '延链', '强链'):
+        items = [t for t in targets if t.chain_role == r]
+        role_counts.append({
+            'role': r, 'count': len(items),
+            'high_fit': len([t for t in items if t.invest_fit_level == '高']),
+        })
+    fit_counts = []
+    for lv in ('高', '中', '低'):
+        items = [t for t in targets if t.invest_fit_level == lv]
+        fit_counts.append({
+            'level': lv, 'color': LEVEL_COLORS.get(lv, '#909399'),
+            'count': len(items),
+            'strong': len([t for t in items if t.chain_role == '强链']),
+        })
+
+    return jsonify({'code': 0, 'data': {
+        'factors': FACTOR_RULES,
+        'strength_factors': STRENGTH_RULES,
+        'chain_roles': CHAIN_ROLE_RULES,
+        'invest_fit': INVEST_FIT_RULES,
+        'levels': LEVEL_RULES,
+        'veto': VETO_RULE,
+        'formulas': FORMULAS,
+        'target_score': TARGET_SCORE_RULES,
+        'strength_stats': {
+            'target': _dim_stats(targets),
+            'enterprise': _dim_stats(enterprises),
+        },
+        'role_counts': role_counts,
+        'fit_counts': fit_counts,
+        'gap_count': ChainGap.query.count(),
+        'target_count': len(targets),
+        'enterprise_count': len(enterprises),
+    }})
 
 
 @bp.route('/target-filters', methods=['GET'])

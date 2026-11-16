@@ -358,10 +358,18 @@ def get_enterprises():
 @bp.route('/gaps', methods=['GET'])
 @business_login_required
 def get_gaps():
-    """共性配套缺口（含六因子得分与目标企业数）"""
+    """共性配套缺口（含六因子得分与目标企业数）
+
+    附带 target_list：该缺口下的目标企业精简信息（按匹配分降序），
+    供前端在缺口卡片下半部分直接展开表格，无需二次请求。
+    """
     gaps = ChainGap.query.order_by(ChainGap.total_score.desc()).all()
-    targets = ChainTarget.query.all()
+    targets = ChainTarget.query.order_by(ChainTarget.total_score.desc()).all()
     node_map = _node_map()
+    # 按缺口归集目标企业
+    targets_by_gap = {}
+    for t in targets:
+        targets_by_gap.setdefault(t.gap_id, []).append(t)
     data = []
     for g in gaps:
         d = g.to_dict()
@@ -372,7 +380,21 @@ def get_gaps():
         d['group_name'] = (node.group_name or '') if node else ''
         d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
         d['level_color'] = LEVEL_COLORS.get(g.level, '#909399')
-        d['target_count'] = len([t for t in targets if t.gap_id == g.id])
+        gap_targets = targets_by_gap.get(g.id, [])
+        d['target_count'] = len(gap_targets)
+        # 卡片内嵌表格用的精简字段（不含长文本，控制响应体积）
+        d['target_list'] = [{
+            'id': t.id,
+            'name': t.name,
+            'province': t.province or '',
+            'city': t.city or '',
+            'region_type': t.region_type or '',
+            'chain_role': t.chain_role or '',
+            'invest_fit_level': t.invest_fit_level or '',
+            'landing_form': t.landing_form or '',
+            'total_score': t.total_score or 0,
+            'strength': t.strength or 0,
+        } for t in gap_targets]
         data.append(d)
     return jsonify({'code': 0, 'data': data})
 
@@ -463,11 +485,13 @@ def get_advice():
     data = []
     for a in items:
         d = a.to_dict()
-        gap = gap_map.get(a.gap_id)
+        gap = gap_map.get(a.gap_id) if a.gap_id > 0 else None
         d['gap_score'] = gap.total_score if gap else 0
         d['gap_level'] = gap.level if gap else ''
         d['node_name'] = node_map.get(gap.node_code).name if gap and gap.node_code in node_map else ''
-        d['target_count'] = len(ChainTarget.query.filter_by(gap_id=a.gap_id).all()) if a.gap_id else 0
+        # gap_id <= 0 表示不关联具体缺口（总体判断 / 风险提示 / 下一步工作）
+        d['target_count'] = (len(ChainTarget.query.filter_by(gap_id=a.gap_id).all())
+                             if a.gap_id > 0 else 0)
         data.append(d)
     return jsonify({'code': 0, 'data': data})
 

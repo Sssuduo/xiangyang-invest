@@ -427,11 +427,21 @@
             <span class="section-title">共性配套缺口清单</span>
             <span class="section-extra">按优先级总分降序 · 每张卡片含六因子雷达图，悬停查看得分构成</span>
             <span class="toolbar-spacer" />
+            <el-radio-group v-model="gapColumns" size="small">
+              <el-radio-button :value="1">每行一列</el-radio-button>
+              <el-radio-button :value="2">每行两列</el-radio-button>
+            </el-radio-group>
+            <el-button
+              size="small" @click="toggleAllGapTargets"
+              :icon="allGapTargetsExpanded ? Fold : Expand"
+            >
+              {{ allGapTargetsExpanded ? '全部收起目标企业' : '全部展开目标企业' }}
+            </el-button>
             <el-switch
               v-model="showGapRadar" active-text="显示雷达图" size="small"
             />
           </div>
-          <div class="gap-cards">
+          <div class="gap-cards" :class="['cols-' + gapColumns]">
             <div
               v-for="gap in gaps" :key="gap.id"
               class="gap-card" :class="['lv-' + gap.level, { 'with-radar': showGapRadar }]"
@@ -452,55 +462,122 @@
                 <span class="meta-item">目标企业 <b>{{ gap.target_count }}</b> 家</span>
               </div>
 
-              <!-- 六因子雷达图 + 因子得分条 -->
-              <div v-if="showGapRadar" class="gap-radar-wrap">
-                <div class="gap-radar-box">
-                  <div :ref="el => setGapRadarRef(gap.id, el)" class="gap-radar"></div>
-                  <!-- 自建悬浮信息层（radar 序列不支持 axis 触发，item 触发需精确命中数据点） -->
-                  <div
-                    v-if="hoverTip.id === gap.id"
-                    class="gap-radar-tip"
-                    :style="{ borderColor: gap.level_color }"
-                  >
-                    <div class="gap-radar-tip-title">
-                      {{ gap.title }} · {{ gap.total_score }} 分
+              <!-- 雷达图与文字评述左右并排：左雷达图 + 因子得分条，右文字评述 -->
+              <div class="gap-body">
+                <div class="gap-visual">
+                  <!-- 六因子雷达图 + 因子得分条 -->
+                  <div v-if="showGapRadar" class="gap-radar-wrap">
+                    <div class="gap-radar-box">
+                      <div :ref="el => setGapRadarRef(gap.id, el)" class="gap-radar"></div>
+                      <!-- 自建悬浮信息层（radar 序列不支持 axis 触发，item 触发需精确命中数据点） -->
+                      <div
+                        v-if="hoverTip.id === gap.id"
+                        class="gap-radar-tip"
+                        :style="{ borderColor: gap.level_color }"
+                      >
+                        <div class="gap-radar-tip-title">
+                          {{ gap.title }} · {{ gap.total_score }} 分
+                        </div>
+                        <div
+                          v-for="(f, i) in factorChips(gap)" :key="f.key"
+                          class="gap-radar-tip-row"
+                          :class="{ active: i === hoverTip.axis }"
+                        >
+                          <span class="gap-radar-tip-name" :style="{ color: f.color }">{{ f.name }}</span>
+                          <span class="gap-radar-tip-val">
+                            <b>{{ f.value }}</b><i>/{{ f.max }}</i>
+                          </span>
+                        </div>
+                      </div>
                     </div>
+                    <div class="gap-factor-list">
+                      <div v-for="f in factorChips(gap)" :key="f.key" class="gap-factor-row">
+                        <span class="gap-factor-name" :style="{ color: f.color }">{{ f.name }}</span>
+                        <div class="gap-factor-track">
+                          <div class="gap-factor-fill" :style="{ width: f.pct + '%', background: f.color }" />
+                        </div>
+                        <span class="gap-factor-val">{{ f.value }}<i>/{{ f.max }}</i></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="factor-stack">
                     <div
-                      v-for="(f, i) in factorChips(gap)" :key="f.key"
-                      class="gap-radar-tip-row"
-                      :class="{ active: i === hoverTip.axis }"
+                      v-for="f in factorChips(gap)" :key="f.key"
+                      class="factor-seg"
+                      :style="{ width: f.pct + '%', background: f.color }"
+                      :title="f.name + ' ' + f.value + '/' + f.max"
                     >
-                      <span class="gap-radar-tip-name" :style="{ color: f.color }">{{ f.name }}</span>
-                      <span class="gap-radar-tip-val">
-                        <b>{{ f.value }}</b><i>/{{ f.max }}</i>
-                      </span>
+                      <span v-if="f.pct > 8">{{ f.name }}</span>
                     </div>
                   </div>
                 </div>
-                <div class="gap-factor-list">
-                  <div v-for="f in factorChips(gap)" :key="f.key" class="gap-factor-row">
-                    <span class="gap-factor-name" :style="{ color: f.color }">{{ f.name }}</span>
-                    <div class="gap-factor-track">
-                      <div class="gap-factor-fill" :style="{ width: f.pct + '%', background: f.color }" />
-                    </div>
-                    <span class="gap-factor-val">{{ f.value }}<i>/{{ f.max }}</i></span>
+
+                <!-- 文字评述：需求研判 + 分析说明 -->
+                <div class="gap-comment">
+                  <div class="gap-demand">{{ gap.demand }}</div>
+                  <div class="gap-note">
+                    <el-icon><ChatDotSquare /></el-icon>
+                    <span>{{ gap.analysis_note }}</span>
                   </div>
                 </div>
               </div>
-              <div v-else class="factor-stack">
-                <div
-                  v-for="f in factorChips(gap)" :key="f.key"
-                  class="factor-seg"
-                  :style="{ width: f.pct + '%', background: f.color }"
-                  :title="f.name + ' ' + f.value + '/' + f.max"
+
+              <!-- 目标企业表格：置于卡片下半部，默认收起，可单独展开/收起 -->
+              <div class="gap-targets" @click.stop>
+                <button type="button" class="gap-targets-toggle" @click="toggleGapTargets(gap.id)">
+                  <el-icon><Grid /></el-icon>
+                  <span>目标企业 {{ gap.target_count }} 家</span>
+                  <el-icon class="gap-targets-arrow" :class="{ open: isGapTargetsExpanded(gap.id) }">
+                    <ArrowDown />
+                  </el-icon>
+                </button>
+                <el-table
+                  v-if="isGapTargetsExpanded(gap.id)"
+                  :data="gap.target_list || []"
+                  border size="small" class="gap-target-table"
                 >
-                  <span v-if="f.pct > 8">{{ f.name }}</span>
-                </div>
-              </div>
-              <div class="gap-demand">{{ gap.demand }}</div>
-              <div class="gap-note">
-                <el-icon><ChatDotSquare /></el-icon>
-                <span>{{ gap.analysis_note }}</span>
+                  <el-table-column prop="name" label="目标企业" min-width="190" show-overflow-tooltip />
+                  <el-table-column label="所在地" width="150" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <span>{{ [row.province, row.city].filter(Boolean).join(' · ') || '—' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="链作用" width="82" align="center">
+                    <template #default="{ row }">
+                      <span
+                        v-if="row.chain_role"
+                        class="role-tag"
+                        :style="{ background: (ROLE_COLORS[row.chain_role] || '#909399') + '1f', color: ROLE_COLORS[row.chain_role] || '#909399' }"
+                      >{{ row.chain_role }}</span>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="可行性" width="82" align="center">
+                    <template #default="{ row }">
+                      <span
+                        v-if="row.invest_fit_level"
+                        class="fit-tag"
+                        :style="{ background: (FIT_COLORS[row.invest_fit_level] || '#909399') + '1f', color: FIT_COLORS[row.invest_fit_level] || '#909399' }"
+                      >{{ row.invest_fit_level }}</span>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="落地形式" min-width="260" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <span>{{ row.landing_form || '—' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="匹配分" width="76" align="center" sortable :sort-by="row => row.total_score">
+                    <template #default="{ row }">
+                      <span class="gap-target-score">{{ row.total_score }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="实力" width="66" align="center" sortable :sort-by="row => row.strength">
+                    <template #default="{ row }">
+                      <span :style="{ color: strengthColor(row.strength), fontWeight: 600 }">{{ row.strength }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </div>
           </div>
@@ -934,7 +1011,7 @@ import {
   Share, Connection, Star, Warning, Aim, OfficeBuilding, Grid, DataAnalysis,
   Document, SetUp, WarningFilled, ChatDotSquare, Search, InfoFilled, Files,
   Promotion, Guide, TrendCharts, MapLocation, RefreshLeft, Link, Clock,
-  EditPen, CircleCheck, TopRight, Download,
+  EditPen, CircleCheck, TopRight, Download, ArrowDown, Expand, Fold,
 } from '@element-plus/icons-vue'
 import BusinessNavbar from '@/components/common/BusinessNavbar.vue'
 import { chainApi, downloadBlob } from '@/api/chain'
@@ -976,6 +1053,14 @@ const gapRadarRefs = ref({})
 const gapRadarCharts = {}
 /** 缺口卡片高度模式：标准 / 加高（含雷达图） */
 const showGapRadar = ref(true)
+/** 缺口卡片每行列数：1 = 每行一列（默认），2 = 每行两列 */
+const gapColumns = ref(1)
+/** 展开目标企业表格的缺口 id 集合 */
+const expandedGapTargets = ref(new Set())
+/** 是否已全部展开（用于切换按钮的文案与图标） */
+const allGapTargetsExpanded = computed(() => (
+  gaps.value.length > 0 && expandedGapTargets.value.size >= gaps.value.length
+))
 /** 雷达图悬浮信息层：{ id, x, y } —— x/y 为相对雷达容器的像素坐标 */
 const hoverTip = ref({ id: 0, x: 0, y: 0 })
 
@@ -1479,6 +1564,27 @@ function handleGapClick(gap) {
   fetchTargets()
 }
 
+/** 单个缺口的目标企业表格展开/收起 */
+function toggleGapTargets(gapId) {
+  const next = new Set(expandedGapTargets.value)
+  if (next.has(gapId)) next.delete(gapId)
+  else next.add(gapId)
+  expandedGapTargets.value = next
+}
+
+function isGapTargetsExpanded(gapId) {
+  return expandedGapTargets.value.has(gapId)
+}
+
+/** 全部展开/收起目标企业表格 */
+function toggleAllGapTargets() {
+  if (allGapTargetsExpanded.value) {
+    expandedGapTargets.value = new Set()
+  } else {
+    expandedGapTargets.value = new Set(gaps.value.map(g => g.id))
+  }
+}
+
 function showTargetDetail(row) {
   currentTarget.value = row
   detailVisible.value = true
@@ -1900,9 +2006,10 @@ watch(showGapRadar, (val) => {
   padding: 9px 12px; font-size: 12px; color: #8b6914; line-height: 1.6;
 }
 
-/* 缺口卡片：每行两个 */
-.gap-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
-@media (max-width: 1280px) { .gap-cards { grid-template-columns: 1fr; } }
+/* 缺口卡片：默认每行一个（可切换为每行两个） */
+.gap-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.gap-cards.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1280px) { .gap-cards.cols-2 { grid-template-columns: 1fr; } }
 .gap-card {
   background: #fff; border: 1px solid #ebeef5; border-left: 4px solid #909399;
   border-radius: 8px; padding: 14px 16px; cursor: pointer;
@@ -1922,6 +2029,12 @@ watch(showGapRadar, (val) => {
 .meta-item { display: inline-flex; align-items: center; gap: 5px; }
 .meta-item b { color: #303133; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* 卡片主体：左雷达图（含因子得分条），右文字评述 */
+.gap-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.gap-cards.cols-2 .gap-body { grid-template-columns: minmax(0, 1fr); }
+.gap-visual { min-width: 0; }
+.gap-comment { min-width: 0; display: flex; flex-direction: column; }
 
 /* 缺口卡片内嵌雷达图 + 因子明细 */
 .gap-radar-wrap {
@@ -1980,6 +2093,22 @@ watch(showGapRadar, (val) => {
   font-size: 12px; color: #4a5568; line-height: 1.7;
 }
 .gap-note .el-icon { color: #409eff; margin-top: 2px; flex-shrink: 0; }
+
+/* 缺口卡片下半部分：目标企业表格（默认收起） */
+.gap-targets { margin-top: 10px; border-top: 1px dashed #ebeef5; padding-top: 8px; }
+.gap-targets-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: none; padding: 3px 2px; cursor: pointer;
+  font-size: 12px; color: #409eff; font-family: inherit; text-align: left;
+}
+.gap-targets-toggle:hover { color: #2b7fd4; }
+.gap-targets-toggle .el-icon { flex-shrink: 0; }
+.gap-targets-arrow { transition: transform 0.2s; }
+.gap-targets-arrow.open { transform: rotate(180deg); }
+.gap-target-table { margin-top: 8px; }
+.gap-target-table :deep(.el-table__cell) { padding: 5px 0; }
+.gap-target-table :deep(.el-table th.el-table__cell) { background: #f7f9fc; }
+.gap-target-score { font-weight: 700; color: #1a3a5c; }
 
 /* 图谱大类标题条 */
 .group-bar-text { font-size: 12px; font-weight: 700; }

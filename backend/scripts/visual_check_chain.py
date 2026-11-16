@@ -162,7 +162,7 @@ export default defineConfig({
             # 页签二：缺口与优先级
             tabs = page.locator('.chain-tabs .el-tabs__item')
             print('页签数:', tabs.count())
-            assert tabs.count() == 5, f'页签应为 5 个（更新日志已独立）：{tabs.count()}'
+            assert tabs.count() == 6, f'页签应为 6 个（更新日志、评判规则各自独立）：{tabs.count()}'
             tabs.nth(1).click()
             page.wait_for_timeout(2200)
             shots.append(('02-gap', OUT + '/chain-02-gap.png'))
@@ -599,6 +599,57 @@ export default defineConfig({
             assert log_probe['nextItems'] >= 1, '更新日志缺少下一步工作'
             assert log_probe['adviceInPane'] == 0, '更新日志页签不应混入招商建议卡片'
 
+            # 页签六：评判规则（独立页签）
+            tabs.nth(5).click()
+            page.wait_for_timeout(1500)
+            shots.append(('06-rules', OUT + '/chain-06-rules.png'))
+            page.screenshot(path=shots[-1][1], full_page=True)
+
+            rules_probe = page.evaluate("""() => {
+                const pane = document.querySelector('.el-tab-pane[aria-hidden="false"]');
+                if (!pane) return null;
+                const txt = pane.innerText;
+                return {
+                    factorCards: pane.querySelectorAll('.rf-card').length,
+                    formulaCards: pane.querySelectorAll('.formula-item').length,
+                    strengthCards: pane.querySelectorAll('.st-card').length,
+                    distRows: pane.querySelectorAll('.st-dist-row').length,
+                    roleBlocks: pane.querySelectorAll('.role-block').length,
+                    roleItems: pane.querySelectorAll('.rule-item-detail').length,
+                    basisLabels: pane.querySelectorAll('.rf-basis-label').length,
+                    impactRows: pane.querySelectorAll('.rf-impact').length,
+                    scoreTableRows: pane.querySelectorAll('.target-score-table tbody tr').length,
+                    hasVeto: txt.includes('否决规则'),
+                    hasLevels: txt.includes('总分 ≥ 80'),
+                    hasTargetScore: txt.includes('目标企业匹配总分'),
+                    hasGapScore: txt.includes('缺口优先级总分'),
+                    adviceInPane: document.querySelectorAll('.el-tab-pane[aria-hidden="false"] .advice-card').length,
+                    overflow: [...pane.querySelectorAll('.rf-card, .st-card, .formula-item, .role-block')]
+                        .filter(el => el.scrollWidth > el.clientWidth + 2).length,
+                };
+            }""")
+            print('评判规则页探针:', rules_probe)
+            assert rules_probe, '评判规则页签未激活'
+            assert rules_probe['factorCards'] == 6, f'六因子卡片应为 6 个：{rules_probe["factorCards"]}'
+            assert rules_probe['formulaCards'] == 2, f'总分公式应为 2 套：{rules_probe["formulaCards"]}'
+            assert rules_probe['strengthCards'] == 5, f'企业实力五维卡片应为 5 个：{rules_probe["strengthCards"]}'
+            assert rules_probe['roleBlocks'] == 2, f'链作用/可行性分块应为 2 个：{rules_probe["roleBlocks"]}'
+            assert rules_probe['roleItems'] == 6, \
+                f'链作用 3 类 + 可行性 3 档应各 3 条：{rules_probe["roleItems"]}'
+            assert rules_probe['basisLabels'] == 17, \
+                f'判定依据标签应为 6+5+3+3=17 个：{rules_probe["basisLabels"]}'
+            assert rules_probe['impactRows'] == 6, \
+                f'匹配分影响说明应为 6 条：{rules_probe["impactRows"]}'
+            assert rules_probe['distRows'] >= 10, '五维实际取值分布行数偏少'
+            assert rules_probe['scoreTableRows'] == 6, \
+                f'目标企业六因子口径表应为 6 行：{rules_probe["scoreTableRows"]}'
+            assert rules_probe['hasVeto'], '缺少否决规则'
+            assert rules_probe['hasLevels'], '缺少优先级分档'
+            assert rules_probe['hasTargetScore'] and rules_probe['hasGapScore'], '缺少两套总分公式说明'
+            assert rules_probe['adviceInPane'] == 0, '评判规则页签不应混入招商建议卡片'
+            assert rules_probe['overflow'] == 0, f'评判规则卡片存在横向溢出：{rules_probe["overflow"]}'
+            print('✓ 评判规则页签')
+
             # 关键几何探针
             probe = page.evaluate("""() => {
                 const out = {};
@@ -622,7 +673,8 @@ export default defineConfig({
                 out.radarCanvas = radar ? { w: radar.width, h: radar.height } : null;
                 // 新增面板的溢出检查
                 const panels = ['.strength-panel', '.role-fit-panel', '.region-panel', '.quick-filters',
-                                '.group-panel', '.region-ent-panel', '.changelog-blocks', '.gap-cards'];
+                                '.group-panel', '.region-ent-panel', '.changelog-blocks', '.gap-cards',
+                                '.rules-intro', '.rule-factor-grid', '.strength-grid'];
                 out.panels = {};
                 panels.forEach(sel => {
                     const el = document.querySelector(sel);

@@ -260,7 +260,7 @@ assert res.get_json().get('code') == 0, 'demo 登录失败'
 
 for path in ['/api/chain/overview', '/api/chain/nodes', '/api/chain/enterprises',
              '/api/chain/gaps', '/api/chain/targets', '/api/chain/advice',
-             '/api/chain/changelog', '/api/chain/target-filters']:
+             '/api/chain/changelog', '/api/chain/target-filters', '/api/chain/rules']:
     r = client.get(path)
     j = r.get_json()
     assert j.get('code') == 0, f'{path} 返回异常：{j}'
@@ -392,6 +392,64 @@ _txt1 = r.get_data().decode('utf-8-sig')
 assert len([x for x in _txt1.split('\r\n') if x.strip()]) == 20 + 3, \
     '缺口 1 导出应为 20 家目标企业'
 print(f'[导出] gap_targets.csv 九列表头齐全，全量 183 家 / 按 gap_id=1 过滤 20 家 ✓')
+
+# ---- 评判规则接口：六因子 / 五维 / 链作用与可行性判定口径 ----
+rules = client.get('/api/chain/rules').get_json()['data']
+assert len(rules['factors']) == 6, f'优先级六因子应为 6 个：{len(rules["factors"])}'
+assert len(rules['strength_factors']) == 5, f'企业实力五维应为 5 个：{len(rules["strength_factors"])}'
+assert len(rules['chain_roles']) == 3, '链作用应为 3 类'
+assert len(rules['invest_fit']) == 3, '投资可行性应为 3 档'
+assert len(rules['formulas']) == 2, '总分公式应有 2 套（缺口优先级 / 目标企业匹配）'
+assert len(rules['target_score']) == 6, '目标企业六因子取值口径应为 6 条'
+assert rules['veto'], '缺少否决规则'
+# 每个因子必须有判定依据，权重合计为 1
+_w = 0
+for f in rules['factors']:
+    assert f.get('basis'), f'因子「{f["name"]}」缺判定依据'
+    assert f.get('desc'), f'因子「{f["name"]}」缺含义说明'
+    _w += f.get('weight') or 0
+assert abs(_w - 1.0) < 1e-6, f'六因子权重合计应为 1，实际 {_w}'
+for s in rules['strength_factors']:
+    assert s.get('brackets'), f'五维「{s["name"]}」缺分档明细'
+    assert s.get('basis'), f'五维「{s["name"]}」缺判定依据'
+for r in rules['chain_roles']:
+    assert r.get('basis') and r.get('impact'), f'链作用「{r["role"]}」缺判定依据或匹配分影响'
+for f in rules['invest_fit']:
+    assert f.get('basis') and f.get('impact'), f'可行性「{f["level"]}」缺判定依据或匹配分影响'
+# 五维实际取值分布（目标企业 183 家）
+_dims = rules['strength_stats']['target']['dimensions']
+assert len(_dims) == 5, '五维实际分布应为 5 条'
+assert rules['strength_stats']['target']['count'] == 183, '五维分布口径家数不对'
+assert rules['strength_stats']['enterprise']['count'] == 90, '本地企业五维分布口径家数不对'
+for d in _dims:
+    assert d['dist'], f'维度「{d["name"]}」无实际取值分布'
+    assert sum(x['count'] for x in d['dist']) == 183, f'维度「{d["name"]}」分布家数合计不等于 183'
+print(f'[规则] 六因子 {len(rules["factors"])} / 五维 {len(rules["strength_factors"])} / '
+      f'公式 {len(rules["formulas"])} / 目标企业六因子口径 {len(rules["target_score"])} ✓')
+
+# ---- 仓内评分公式回算：企业实力五维与匹配总分须与库内记录 0 差异 ----
+from chain_scoring import score_strength, target_scores  # noqa: E402
+import json as _json  # noqa: E402
+with app.app_context():
+    _strength_diff = _score_diff = 0
+    for t in ChainTarget.query.all():
+        total, _det = score_strength({
+            'reg_capital': t.reg_capital, 'revenue_3y': t.revenue_3y,
+            'netprofit_3y': t.netprofit_3y, 'funding': t.funding,
+            'investments': t.investments, 'signed_deal': t.signed_deal,
+        })
+        if total != (t.strength or 0):
+            _strength_diff += 1
+        try:
+            ml = _json.loads(t.match_local_chain) if t.match_local_chain else []
+        except Exception:
+            ml = []
+        _f, sc = target_scores(t.node_code, t.chain_role, t.invest_fit_level, ml, t.strength or 0)
+        if sc != (t.total_score or 0):
+            _score_diff += 1
+assert _strength_diff == 0, f'企业实力五维回算差异 {_strength_diff} 家'
+assert _score_diff == 0, f'目标企业匹配总分回算差异 {_score_diff} 家'
+print('[评分] 183 家企业实力五维与匹配总分回算 0 差异 ✓')
 
 # Word 导出
 r = client.get('/api/chain/export/word')

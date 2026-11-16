@@ -138,16 +138,36 @@ def main():
         # 缺口页签：六因子 + 企业实力五维 + 链作用面板 + 地域分布
         tabs.nth(1).click()
         page.wait_for_timeout(2000)
-        gap_probe = page.evaluate("""() => ({
-            factorCards: document.querySelectorAll('.rules-panel .factor-item').length,
-            strengthCards: document.querySelectorAll('.strength-panel .strength-item').length,
-            roleBlocks: document.querySelectorAll('.role-fit-panel .role-block').length,
-            regionRows: document.querySelectorAll('.region-panel .region-item').length,
-            gapCards: document.querySelectorAll('.gap-card').length,
-            radarCanvases: document.querySelectorAll('.gap-radar canvas').length,
-            factorRows: document.querySelectorAll('.gap-factor-row').length,
-            gridCols: getComputedStyle(document.querySelector('.gap-cards')).gridTemplateColumns,
-        })""")
+        gap_probe = page.evaluate("""() => {
+            const cards = document.querySelectorAll('.gap-card');
+            let oneCol = false;
+            if (cards.length >= 2) {
+                const a = cards[0].getBoundingClientRect();
+                const b = cards[1].getBoundingClientRect();
+                oneCol = Math.abs(a.left - b.left) < 4 && (b.top - a.top) > 100;
+            }
+            const first = cards[0];
+            const rb = first.querySelector('.gap-radar-box');
+            const cm = first.querySelector('.gap-comment');
+            const sideBySide = (rb && cm)
+                ? cm.getBoundingClientRect().left >= rb.getBoundingClientRect().right - 2
+                : false;
+            return {
+                factorCards: document.querySelectorAll('.rules-panel .factor-item').length,
+                strengthCards: document.querySelectorAll('.strength-panel .strength-item').length,
+                roleBlocks: document.querySelectorAll('.role-fit-panel .role-block').length,
+                regionRows: document.querySelectorAll('.region-panel .region-item').length,
+                gapCards: cards.length,
+                radarCanvases: document.querySelectorAll('.gap-radar canvas').length,
+                factorRows: document.querySelectorAll('.gap-factor-row').length,
+                gridCols: getComputedStyle(document.querySelector('.gap-cards')).gridTemplateColumns,
+                oneCol,
+                sideBySide,
+                toggles: document.querySelectorAll('.gap-targets-toggle').length,
+                inlineTables: document.querySelectorAll('.gap-target-table').length,
+                hasRadioGroup: !!document.querySelector('.el-radio-group'),
+            };
+        }""")
         print('缺口页签探针:', gap_probe)
         assert gap_probe['factorCards'] == 6, f'六因子卡片数异常 {gap_probe["factorCards"]}'
         assert gap_probe['strengthCards'] == 5, f'企业实力维度数异常 {gap_probe["strengthCards"]}'
@@ -156,7 +176,35 @@ def main():
         assert gap_probe['gapCards'] == 18, f'缺口卡片应为 18：{gap_probe["gapCards"]}'
         assert gap_probe['radarCanvases'] == 18, f'雷达图 canvas 应为 18：{gap_probe["radarCanvases"]}'
         assert gap_probe['factorRows'] == 18 * 6, '六因子明细行数异常'
+        assert gap_probe['oneCol'], f'缺口卡片默认应为单列：{gap_probe["gridCols"]}'
+        assert gap_probe['sideBySide'], '文字评述未移至雷达图右侧'
+        assert gap_probe['toggles'] == 18, f'每张卡片应有目标企业折叠按钮：{gap_probe["toggles"]}'
+        assert gap_probe['inlineTables'] == 0, '目标企业表格默认应为收起状态'
+        assert gap_probe['hasRadioGroup'], '缺少每行一列/两列切换按钮'
         print('✓ 缺口页签新增面板全部渲染')
+
+        # 内嵌目标企业表格：全部展开 → 收起
+        btn_exp = page.locator('.section-header .el-button', has_text='全部展开目标企业').first
+            btn_exp.scroll_into_view_if_needed()
+            page.wait_for_timeout(300)
+            btn_exp.click()
+        page.wait_for_timeout(1200)
+        inline_probe = page.evaluate("""() => {
+            const tables = document.querySelectorAll('.gap-target-table');
+            let rows = 0;
+            tables.forEach(t => { rows += t.querySelectorAll('tbody tr').length; });
+            return { tables: tables.length, rows };
+        }""")
+        print('内嵌目标企业表格:', inline_probe)
+        assert inline_probe['tables'] == 18, f'全部展开应渲染 18 张表格：{inline_probe["tables"]}'
+        assert inline_probe['rows'] == 183, f'全部展开应共 183 行：{inline_probe["rows"]}'
+        page.screenshot(path=os.path.join(OUT, 'prod-chain-07b-gap-targets.png'), full_page=False)
+        btn_col = page.locator('.section-header .el-button', has_text='全部收起目标企业').first
+            btn_col.scroll_into_view_if_needed()
+            page.wait_for_timeout(300)
+            btn_col.click()
+        page.wait_for_timeout(800)
+        print('✓ 内嵌目标企业表格')
 
         # 雷达图悬停 → 自建信息层
         radar_el = page.locator('.gap-radar').first
@@ -183,14 +231,19 @@ def main():
         page.screenshot(path=os.path.join(OUT, 'prod-chain-07-gap-radar.png'), full_page=False)
         print('✓ 雷达图悬停')
 
-        # 目标企业库：省外筛选
+        # 目标企业库：省外筛选（家数从概览接口动态取，避免硬编码随数据漂移）
         tabs.nth(2).click()
         page.wait_for_timeout(1500)
+        outprov_expect = page.evaluate("""async (base) => {
+            const r = await fetch(base + '/api/chain/overview', {credentials: 'include'});
+            const j = await r.json();
+            return (j.data && j.data.outprov_target_count) || 0;
+        }""", BASE)
         page.locator('.quick-filters button', has_text='省外企业').first.click()
         page.wait_for_timeout(1600)
         cnt = page.locator('.result-count').first.inner_text()
-        print('省外筛选:', cnt)
-        assert '109 家' in cnt, f'省外筛选数量异常: {cnt}'
+        print('省外筛选:', cnt, '（概览口径 %d 家）' % outprov_expect)
+        assert f'{outprov_expect} 家' in cnt, f'省外筛选数量与概览不一致: {cnt}'
         page.screenshot(path=os.path.join(OUT, 'prod-chain-06-outprov.png'), full_page=True)
         print('✓ 省外筛选')
 

@@ -34,7 +34,7 @@ with app.app_context():
     assert ChainNode.query.count() == 29, '环节数不对（应为 29）'
     assert ChainEnterprise.query.count() == 90, '企业数不对（应为 90）'
     assert ChainGap.query.count() == 18, '缺口数不对（应为 18）'
-    assert ChainTarget.query.count() == 131, '目标企业数不对（应为 131）'
+    assert ChainTarget.query.count() == 183, '目标企业数不对（应为 183）'
     assert ChainAdvice.query.count() == 12, '建议数不对（应为 12）'
     assert ChainChangelog.query.count() >= 1, '缺少更新日志'
 
@@ -62,13 +62,19 @@ with app.app_context():
     test_gap = ChainGap.query.filter_by(node_code='TEST').first()
     rd_gap = ChainGap.query.filter_by(node_code='RD').first()
     assert test_gap and rd_gap, '两个环节都应有缺口记录'
-    # 检验检测优先级必须低于研发中试，且不得进入前五
     gaps_by_score = ChainGap.query.order_by(ChainGap.total_score.desc()).all()
     rank = next(i for i, g in enumerate(gaps_by_score, 1) if g.node_code == 'TEST')
-    assert rank > 5, f'检验检测优先级仍过高（第 {rank} 位）'
-    assert test_gap.total_score < rd_gap.total_score, '检验检测分数应低于研发中试'
-    print(f'[拆分] 检验检测第 {rank} 位 / {test_gap.total_score} 分 < '
-          f'研发中试 {rd_gap.total_score} 分 ✓')
+    # 检验检测需求刚性但外来落地困难 → 不应排在前 3 位主攻序列
+    assert rank >= 4, f'检验检测优先级仍过高（第 {rank} 位）'
+    # 研发中试：引入路径主要在市级统筹与相关基金方，招商可行���低 → 必须落低优先级
+    rd_rank = next(i for i, g in enumerate(gaps_by_score, 1) if g.node_code == 'RD')
+    assert rd_gap.level == '低', f'研发中试应为低优先级，实际 {rd_gap.level}'
+    assert rd_rank > 5, f'研发中试优先级仍过高（第 {rd_rank} 位）'
+    assert rd_gap.f5 <= 2, f'研发中试落地可行性应压至 2 分及以下，实际 {rd_gap.f5}'
+    assert rd_gap.total_score < test_gap.total_score, (
+        f'研发中试 {rd_gap.total_score} 分应低于检验检测 {test_gap.total_score} 分')
+    print(f'[拆分] 检验检测第 {rank} 位 / {test_gap.total_score} 分；'
+          f'研发中试第 {rd_rank} 位 / {rd_gap.total_score} 分（低优先级，F5={rd_gap.f5}）✓')
 
     # ---- 冷链维持不优先 ----
     cold = ChainGap.query.filter_by(node_code='COLD').first()
@@ -108,7 +114,39 @@ with app.app_context():
     no_link = [t.name for t in ChainTarget.query.all() if not t.to_dict()['source_links']]
     assert not no_link, f'{len(no_link)} 家目标企业缺少来源链接：{no_link[:5]}'
     total_links = sum(len(t.to_dict()['source_links']) for t in ChainTarget.query.all())
-    print(f'[来源] 131 家目标企业来源链接全覆盖，共 {total_links} 条 ✓')
+    print(f'[来源] 183 家目标企业来源链接全覆盖，共 {total_links} 条 ✓')
+
+    # ---- 四个重点缺口的目标企业各 20 家 ----
+    for gid, node in ((1, 'ADDI'), (3, 'VEG'), (4, 'PACK'), (9, 'FUNC')):
+        n = ChainTarget.query.filter_by(gap_id=gid).count()
+        assert n == 20, f'缺口 {gid}（{node}）目标企业应为 20 家，实际 {n}'
+        # 缺口必须确实对应目标环节
+        gap = ChainGap.query.filter_by(id=gid).first()
+        assert gap and gap.node_code == node, f'缺口 {gid} 环节应为 {node}'
+        bad = ChainTarget.query.filter_by(gap_id=gid).filter(
+            ChainTarget.node_code != node).count()
+        assert bad == 0, f'缺口 {gid} 下有 {bad} 家企业环节不符'
+    print('[扩容] 缺口 1/3/4/9 目标企业各 20 家，环节归属一致 ✓')
+
+    # ---- 招商建议与缺口的关联必须语义正确 ----
+    # 方向九（纺织服装）应关联 TEXTILE 缺口，不得指向功能性营养食品
+    gap_by_id = {g.id: g for g in ChainGap.query.all()}
+    for a in ChainAdvice.query.all():
+        if a.gap_id <= 0:
+            continue
+        g = gap_by_id.get(a.gap_id)
+        assert g is not None, f'建议「{a.title}」关联的缺口 {a.gap_id} 不存在'
+        if '纺织服装' in a.title:
+            assert g.node_code == 'TEXTILE', \
+                f'纺织方向应关联 TEXTILE 缺口，实际 {g.node_code}'
+        if '功能性营养食品' in a.title:
+            assert g.node_code == 'FUNC', \
+                f'功能营养方向应关联 FUNC 缺口，实际 {g.node_code}'
+    # 风险提示与下一步工作不应关联具体缺口
+    for a in ChainAdvice.query.all():
+        if '风险提示' in a.title or '下一步工作' in a.title:
+            assert a.gap_id <= 0, f'「{a.title}」不应关联缺口（当前 {a.gap_id}）'
+    print('[关联] 招商建议与缺口映射语义正确 ✓')
 
     # ---- 招商建议：不得出现版本对比措辞 ----
     banned = ['上一版', '这一版', '本轮', '此次', '上次', '旧版', '新版']
@@ -210,7 +248,7 @@ with app.app_context():
     from chain_seed import seed_chain_data
     seed_chain_data(app)
     assert ChainEnterprise.query.count() == 90, '重复初始化！'
-    assert ChainTarget.query.count() == 131, '目标企业重复初始化！'
+    assert ChainTarget.query.count() == 183, '目标企业重复初始化！'
     print('[幂等] 重复执行 seed_chain_data 后数据未翻倍 ✓')
 
 client = app.test_client()

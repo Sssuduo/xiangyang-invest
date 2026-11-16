@@ -337,6 +337,62 @@ for ds in ['enterprises', 'gaps', 'targets', 'changelog']:
     assert body[:3] == b'\xef\xbb\xbf', 'CSV 缺少 BOM'
     print(f'[导出] {ds}.csv -> {r.status_code}, {len(body)} bytes, BOM ✓')
 
+# ---- 缺口卡片内嵌表格：target_list 字段与详情接口 ----
+gaps_api = client.get('/api/chain/gaps').get_json()['data']
+assert len(gaps_api) == 18, f'缺口接口返回 {len(gaps_api)} 条，应为 18'
+_need = ('id', 'name', 'province', 'city', 'region', 'group_name', 'node_name',
+         'gap_title', 'chain_role', 'invest_fit_level', 'landing_form',
+         'review_status', 'total_score', 'strength')
+_missing = set()
+for g in gaps_api:
+    for t in g.get('target_list') or []:
+        _missing |= {k for k in _need if k not in t}
+assert not _missing, f'缺口 target_list 缺字段：{sorted(_missing)}'
+# 符合状态取值必须在约定集合内
+_bad_status = {t['review_status'] for g in gaps_api
+               for t in (g.get('target_list') or [])
+               if t['review_status'] not in ('待复核', '已复核', '已排除')}
+assert not _bad_status, f'符合状态取值异常：{_bad_status}'
+# target_list 家数合计应等于目标企业总数
+_total_inline = sum(len(g.get('target_list') or []) for g in gaps_api)
+assert _total_inline == 183, f'内嵌表格家数合计 {_total_inline}，应为 183'
+print(f'[内嵌] 18 张卡片 target_list 字段齐全，符合状态取值合法，合计 {_total_inline} 家 ✓')
+
+# 单条详情接口
+_tid = gaps_api[0]['target_list'][0]['id']
+r = client.get(f'/api/chain/targets/{_tid}')
+assert r.status_code == 200, f'目标企业详情接口失败 {r.status_code}'
+_j = r.get_json()
+assert _j.get('code') == 0, f'详情接口返回异常：{_j}'
+_d = _j['data']
+for _k in ('name', 'node_name', 'group_name', 'gap_title', 'gap_level',
+           'source_links', 'scores', 'review_status', 'reg_capital', 'revenue_3y'):
+    assert _k in _d, f'详情接口缺字段 {_k}'
+assert len(_d['source_links']) >= 3, '详情接口来源链接少于 3 条'
+assert _d['scores'], '详情接口缺六因子评分'
+r = client.get('/api/chain/targets/999999')
+assert r.status_code == 404, '不存在的目标企业应返回 404'
+print(f'[详情] /api/chain/targets/{_tid} -> 节点 {_d["node_name"]} / '
+      f'缺口 {_d["gap_title"]} / 来源链接 {len(_d["source_links"])} 条 ✓')
+
+# ---- 缺口目标企业九列导出 ----
+r = client.get('/api/chain/export/gap_targets.csv')
+assert r.status_code == 200, f'gap_targets 导出失败 {r.status_code}'
+_txt = r.get_data().decode('utf-8-sig')
+_lines = [x for x in _txt.split('\r\n') if x.strip()]
+# 结构：标题行 + 导出时间行 + 表头行 + N 行数据（空行已被过滤）
+assert len(_lines) == 183 + 3, f'gap_targets 导出行数偏少：{len(_lines)}'
+_header = _lines[2]
+for _h in ('目标企业', '产业类别', '产业环节', '对应缺口', '地址',
+           '可对接本地链主', '注册资本(万元)', '近三年营收', '规模资质'):
+    assert _h in _header, f'缺口目标企业导出表头缺「{_h}」：{_header}'
+# 按缺口过滤：缺口 1 应为 20 家
+r = client.get('/api/chain/export/gap_targets.csv?gap_id=1')
+_txt1 = r.get_data().decode('utf-8-sig')
+assert len([x for x in _txt1.split('\r\n') if x.strip()]) == 20 + 3, \
+    '缺口 1 导出应为 20 家目标企业'
+print(f'[导出] gap_targets.csv 九列表头齐全，全量 183 家 / 按 gap_id=1 过滤 20 家 ✓')
+
 # Word 导出
 r = client.get('/api/chain/export/word')
 assert r.status_code == 200, f'Word 导出失败 {r.status_code} {r.get_data()[:400]}'

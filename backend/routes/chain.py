@@ -388,10 +388,17 @@ def get_gaps():
             'name': t.name,
             'province': t.province or '',
             'city': t.city or '',
+            'region': t.region or '',
             'region_type': t.region_type or '',
+            'group_name': (node_map.get(t.node_code).group_name or '') if t.node_code in node_map else '',
+            'node_name': node_map.get(t.node_code).name if t.node_code in node_map else '',
+            'gap_title': g.title,
+            'gap_level': g.level,
             'chain_role': t.chain_role or '',
             'invest_fit_level': t.invest_fit_level or '',
             'landing_form': t.landing_form or '',
+            # 符合状态（与目标企业库的复核状态同一字段）
+            'review_status': t.review_status or '待复核',
             'total_score': t.total_score or 0,
             'strength': t.strength or 0,
         } for t in gap_targets]
@@ -450,6 +457,35 @@ def get_targets():
         d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
         data.append(d)
     return jsonify({'code': 0, 'data': data, 'total': len(data)})
+
+
+@bp.route('/targets/<int:target_id>', methods=['GET'])
+@business_login_required
+def get_target_detail(target_id):
+    """目标企业详情（含环节与缺口信息）
+
+    缺口卡片内嵌的目标企业表格点击后，由该接口取完整数据打开详情抽屉，
+    避免在缺口接口里塞入长文本字段把响应体撑大。
+    """
+    target = ChainTarget.query.get(target_id)
+    if target is None:
+        return jsonify({'code': 404, 'message': '目标企业不存在'}), 404
+
+    node_map = _node_map()
+    gap_map = _gap_map()
+    node = node_map.get(target.node_code)
+    gap = gap_map.get(target.gap_id)
+
+    d = target.to_dict()
+    d['node_name'] = node.name if node else ''
+    d['layer'] = node.layer if node else ''
+    d['layer_color'] = LAYER_COLORS.get(node.layer, '#5b9bd5') if node else '#5b9bd5'
+    d['group_name'] = (node.group_name or '') if node else ''
+    d['group_color'] = GROUP_COLORS.get(node.group_name or '', '#5b9bd5') if node else '#5b9bd5'
+    d['gap_title'] = gap.title if gap else ''
+    d['gap_level'] = gap.level if gap else ''
+    d['gap_score'] = gap.total_score if gap else 0
+    return jsonify({'code': 0, 'data': d})
 
 
 @bp.route('/target-filters', methods=['GET'])
@@ -525,6 +561,10 @@ CSV_DATASETS = {
         '链作用', '投资可行性', '建议落地形式', '可对接本地链主', '注册资本(万元)',
         '近三年营收', '规模资质', '上市情况', '匹配总分', '匹配理由', '来源链接', '复核状态',
     ]),
+    'gap_targets': ('缺口目标企业清单', [
+        '目标企业', '产业类别', '产业环节', '对应缺口', '地址',
+        '可对接本地链主', '注册资本(万元)', '近三年营收', '规模资质',
+    ]),
     'changelog': ('更新日志', [
         '版本号', '更新日期', '更新标题', '总体说明', '修改内容', '风险提示', '下一步工作',
     ]),
@@ -564,6 +604,27 @@ def export_csv(dataset):
                 node.name if node else '', g.title,
                 g.f1, g.f2, g.f3, g.f4, g.f5, g.f6, g.total_score, g.supporter_count,
                 g.demand, g.analysis_note,
+            ])
+    elif dataset == 'gap_targets':
+        # 缺口卡片内嵌表格的导出：可按 gap_id 只导某一个缺口的目标企业
+        gap_id = request.args.get('gap_id', '').strip()
+        items = ChainTarget.query.order_by(ChainTarget.total_score.desc()).all()
+        if gap_id and gap_id != '0':
+            items = [t for t in items if t.gap_id == int(gap_id)]
+        for t in items:
+            node = node_map.get(t.node_code)
+            gap = gap_map.get(t.gap_id)
+            try:
+                ml = json.loads(t.match_local_chain) if t.match_local_chain else []
+            except Exception:
+                ml = []
+            # 地址：省份 + 城市拼起来（缺省份时退回地域描述）
+            address = f"{t.province or ''}{t.city or ''}".strip() or (t.region or '')
+            rows.append([
+                t.name,
+                (node.group_name if node else ''), (node.name if node else ''),
+                gap.title if gap else '', address, '、'.join(ml),
+                t.reg_capital or 0, t.revenue_3y or '', t.scale or '',
             ])
     elif dataset == 'changelog':
         for c in ChainChangelog.query.order_by(ChainChangelog.sort_order.desc()).all():

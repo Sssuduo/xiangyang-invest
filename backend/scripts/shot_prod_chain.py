@@ -154,9 +154,13 @@ def main():
                 ? cm.getBoundingClientRect().left >= rb.getBoundingClientRect().right - 2
                 : false;
             return {
-                factorCards: document.querySelectorAll('.rules-panel .factor-item').length,
-                strengthCards: document.querySelectorAll('.strength-panel .strength-item').length,
-                roleBlocks: document.querySelectorAll('.role-fit-panel .role-block').length,
+                // 评分规则三块已迁至「评判规则」独立页签，缺口页签内不应再出现
+                ruleCardsInPane: document.querySelectorAll(
+                    '.el-tab-pane[aria-hidden="false"] .rf-card').length,
+                strengthCardsInPane: document.querySelectorAll(
+                    '.el-tab-pane[aria-hidden="false"] .st-card').length,
+                roleBlocksInPane: document.querySelectorAll(
+                    '.el-tab-pane[aria-hidden="false"] .role-block').length,
                 regionRows: document.querySelectorAll('.region-panel .region-item').length,
                 gapCards: cards.length,
                 radarCanvases: document.querySelectorAll('.gap-radar canvas').length,
@@ -170,9 +174,12 @@ def main():
             };
         }""")
         print('缺口页签探针:', gap_probe)
-        assert gap_probe['factorCards'] == 6, f'六因子卡片数异常 {gap_probe["factorCards"]}'
-        assert gap_probe['strengthCards'] == 5, f'企业实力维度数异常 {gap_probe["strengthCards"]}'
-        assert gap_probe['roleBlocks'] == 2, '链作用面板区块数异常'
+        assert gap_probe['ruleCardsInPane'] == 0, (
+            f'评分规则应已迁至评判规则页签，缺口页签仍有 {gap_probe["ruleCardsInPane"]} 张六因子卡片')
+        assert gap_probe['strengthCardsInPane'] == 0, (
+            f'企业实力五维应已迁出，缺口页签仍有 {gap_probe["strengthCardsInPane"]} 张卡片')
+        assert gap_probe['roleBlocksInPane'] == 0, (
+            f'链作用面板应已迁出，缺口页签仍有 {gap_probe["roleBlocksInPane"]} 个区块')
         assert gap_probe['regionRows'] == 3, '地域分布行数异常'
         assert gap_probe['gapCards'] == 18, f'缺口卡片应为 18：{gap_probe["gapCards"]}'
         assert gap_probe['radarCanvases'] == 18, f'雷达图 canvas 应为 18：{gap_probe["radarCanvases"]}'
@@ -217,7 +224,12 @@ def main():
 
         # 缺口卡片内嵌表格：点击目标企业名称打开详情抽屉
         page.locator('.gap-target-name').first.click()
-        page.wait_for_timeout(2000)
+        # 生产环境取详情需回源，等待抽屉内容出现（比固定 sleep 更稳）
+        try:
+            page.wait_for_selector('.chain-drawer .el-drawer__body', timeout=20000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
         gap_drawer_probe = page.evaluate("""() => {
             const body = document.querySelector('.chain-drawer .el-drawer__body');
             if (!body) return null;
